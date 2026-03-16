@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node /home/ken/.ghostmeter-frontend-modules/node_modules/vite/bin/vite.js --config /home/ken/.ghostmeter-frontend-modules/vite.config.ts /media/sf_AI_Service_Chatbot/GhostMeter/frontend",
-    "build": "node /home/ken/.ghostmeter-frontend-modules/node_modules/typescript/bin/tsc -b && node /home/ken/.ghostmeter-frontend-modules/node_modules/vite/bin/vite.js build --config /home/ken/.ghostmeter-frontend-modules/vite.config.ts /media/sf_AI_Service_Chatbot/GhostMeter/frontend",
+    "build": "tsc -b && vite build",
+    "build:local": "node /home/ken/.ghostmeter-frontend-modules/node_modules/typescript/bin/tsc -b tsconfig.local.json && node /home/ken/.ghostmeter-frontend-modules/node_modules/vite/bin/vite.js build --config /home/ken/.ghostmeter-frontend-modules/vite.config.ts /media/sf_AI_Service_Chatbot/GhostMeter/frontend",
     "lint": "node /home/ken/.ghostmeter-frontend-modules/node_modules/eslint/bin/eslint.js .",
-    "preview": "node /home/ken/.ghostmeter-frontend-modules/node_modules/vite/bin/vite.js preview --config /home/ken/.ghostmeter-frontend-modules/vite.config.ts /media/sf_AI_Service_Chatbot/GhostMeter/frontend"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
