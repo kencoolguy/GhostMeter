@@ -18,30 +18,29 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Uncomment after Dockerfiles are ready:
-  # backend:
-  #   build: ./backend
-  #   container_name: ghostmeter-backend
-  #   env_file: .env
-  #   environment:
-  #     POSTGRES_HOST: postgres
-  #     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ghostmeter}:${POSTGRES_PASSWORD:-ghostmeter}@postgres:5432/${POSTGRES_DB:-ghostmeter}
-  #   ports:
-  #     - "8000:8000"
-  #     - "502:502"
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   restart: unless-stopped
+  backend:
+    build: ./backend
+    container_name: ghostmeter-backend
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ghostmeter}:${POSTGRES_PASSWORD:-ghostmeter}@postgres:5432/${POSTGRES_DB:-ghostmeter}
+    ports:
+      - "8000:8000"
+      - "502:502"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
-  # frontend:
-  #   build: ./frontend
-  #   container_name: ghostmeter-frontend
-  #   ports:
-  #     - "3000:80"
-  #   depends_on:
-  #     - backend
-  #   restart: unless-stopped
+  frontend:
+    build: ./frontend
+    container_name: ghostmeter-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:
