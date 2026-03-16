@@ -1,8 +1,10 @@
 # Phase 1: Project Skeleton & Foundation — Design Spec
 
 **Date**: 2026-03-17
-**Branch**: `feature/claude-phase1-skeleton-20260317`
+**Branch**: `feature/claude-phase1-skeleton-20260317` (created from `dev`)
 **Approach**: Bottom-up (Docker+DB → Backend → Frontend)
+
+> **Note on `dev` branch**: The `dev` branch already exists and is the base for all feature branches per CLAUDE.md git workflow rules.
 
 ---
 
@@ -90,7 +92,7 @@ backend/
 ### Key Components
 
 **config.py** — `pydantic-settings` based:
-- `DATABASE_URL`: PostgreSQL connection string
+- `DATABASE_URL`: Auto-constructed from individual env vars (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`) using a `@computed_field`. This allows `.env` to be shared with docker-compose without duplication. A direct `DATABASE_URL` override is also supported.
 - `APP_NAME`, `APP_VERSION`, `DEBUG`, `LOG_LEVEL`
 - Reads from environment variables / `.env` file
 
@@ -116,13 +118,15 @@ backend/
 **health.py**:
 - `GET /health` — returns `{ status: "ok"|"error", database: "connected"|"disconnected", version: "0.1.0" }`
 - Executes `SELECT 1` to verify DB connectivity
+- Note: `/health` is a system-level endpoint (not under `/api/v1/`) and is exempt from the standard `{ data, message, success }` response wrapper convention, as it serves infrastructure monitoring (load balancers, Docker healthcheck) which expect a simple shape.
 
 **Alembic**:
 - `alembic.ini` at `backend/` root, `sqlalchemy.url` overridden in `env.py` from config
 - `env.py` uses `run_async` for async engine compatibility
 - Empty initial `versions/` directory (no models yet)
+- Note: `development-phases.md` Milestone 1.2 mentions "第一版 migration（所有表）", but since no ORM models exist yet, the actual table migrations will be created in Phase 2 when models are defined. Phase 1 only sets up Alembic infrastructure.
 
-**Dockerfile** (multi-stage):
+**Dockerfile**:
 ```dockerfile
 FROM python:3.12-slim AS base
 WORKDIR /app
@@ -259,6 +263,9 @@ antd, @ant-design/icons
 zustand
 axios
 ```
+
+### Testing
+- No test runner configured in Phase 1. Frontend testing (Vitest) will be set up in Phase 2 when there is actual logic to test.
 
 ### Acceptance Criteria
 - `npm install && npm run dev` starts dev server
