@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: ghostmeter-postgres
+    environment:
+      POSTGRES_USER: ghostmeter
+      POSTGRES_PASSWORD: ghostmeter
+      POSTGRES_DB: ghostmeter
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: ghostmeter-backend
+    ports:
+      - "8000:8000"
+      - "502:502"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ghostmeter:ghostmeter@postgres:5432/ghostmeter
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ./frontend
+    container_name: ghostmeter-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
