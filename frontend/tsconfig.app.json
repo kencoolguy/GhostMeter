@@ -7,6 +7,16 @@
     "module": "ESNext",
     "types": ["vite/client"],
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "react-router-dom": ["/home/ken/.ghostmeter-frontend-modules/node_modules/react-router-dom"],
+      "react-router-dom/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/react-router-dom/*"],
+      "react-router": ["/home/ken/.ghostmeter-frontend-modules/node_modules/react-router"],
+      "react-router/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/react-router/*"],
+      "@rc-component/menu": ["/home/ken/.ghostmeter-frontend-modules/node_modules/@rc-component/menu"],
+      "@rc-component/menu/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/@rc-component/menu/*"],
+      "@rc-component/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/@rc-component/*"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

@@ -6,6 +6,13 @@
     "module": "ESNext",
     "types": ["node"],
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "vite": ["/home/ken/.ghostmeter-frontend-modules/node_modules/vite/dist/node/index.d.ts"],
+      "vite/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/vite/*"],
+      "@vitejs/plugin-react": ["/home/ken/.ghostmeter-frontend-modules/node_modules/@vitejs/plugin-react/dist/index.d.ts"],
+      "@vitejs/plugin-react/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/@vitejs/plugin-react/*"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",
