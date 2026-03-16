@@ -1,0 +1,77 @@
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+
+from app.api.routes.health import router as health_router
+from app.config import get_settings
+from app.database import engine
+from app.exceptions import (
+    AppException,
+    app_exception_handler,
+    generic_exception_handler,
+)
+
+settings = get_settings()
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
+    logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
+
+    # Verify DB connection on startup
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connection verified")
+    except Exception:
+        logger.error("Database connection failed", exc_info=True)
+
+    yield
+
+    # Shutdown
+    await engine.dispose()
+    logger.info("Application shutdown complete")
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Exception handlers
+app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
+
+# Routes — health at root, API routes under /api/v1
+app.include_router(health_router)
+api_v1_router = APIRouter(prefix="/api/v1")
+# Future route routers will be included here:
+# api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
+app.include_router(api_v1_router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)

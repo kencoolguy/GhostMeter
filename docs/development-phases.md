@@ -3,27 +3,27 @@
 ## Phase 1：專案骨架與基礎建設（Week 1–2）
 
 ### Milestone 1.1：專案初始化
-- [ ] 建立 GitHub repo，設定 .gitignore / LICENSE (MIT) / README
-- [ ] 建立專案目錄結構（backend / frontend / docs）
-- [ ] 放入 CLAUDE.md 和 PRD.md
-- [ ] 建立 docker-compose.yml（FastAPI + PostgreSQL + Nginx）
-- [ ] 確認 docker compose up 可以正常啟動所有服務
+- [x] 建立 GitHub repo，設定 .gitignore / LICENSE (MIT) / README
+- [x] 建立專案目錄結構（backend / frontend / docs）
+- [x] 放入 CLAUDE.md 和 PRD.md
+- [x] 建立 docker-compose.yml（FastAPI + PostgreSQL + Nginx）
+- [x] 確認 docker compose up 可以正常啟動所有服務
 
 ### Milestone 1.2：後端基礎
-- [ ] FastAPI 專案骨架 + config（pydantic-settings，從 env 讀取）
-- [ ] PostgreSQL 連線（SQLAlchemy 2.0 async + asyncpg）
-- [ ] Alembic 初始化 + 第一版 migration（所有表）
-- [ ] 健康檢查 endpoint `/health`（含 DB connectivity check）
-- [ ] 統一錯誤處理 middleware + 自訂 exception classes
-- [ ] Logging 設定
+- [x] FastAPI 專案骨架 + config（pydantic-settings，從 env 讀取）
+- [x] PostgreSQL 連線（SQLAlchemy 2.0 async + asyncpg）
+- [x] Alembic 初始化（表結構 migration 延至 Phase 2，因為 ORM models 尚未定義）
+- [x] 健康檢查 endpoint `/health`（含 DB connectivity check）
+- [x] 統一錯誤處理 middleware + 自訂 exception classes
+- [x] Logging 設定
 
 ### Milestone 1.3：前端基礎
-- [ ] Vite + React + TypeScript 專案初始化
-- [ ] Ant Design 5 安裝 + 基礎 layout（側邊欄導航 + 內容區）
-- [ ] React Router 設定（Templates / Devices / Simulation / Monitor 四個頁面骨架）
-- [ ] Zustand store 骨架
-- [ ] Axios API client 封裝（base URL 設定 + error interceptor）
-- [ ] 前端 Dockerfile（multi-stage build: build → nginx serve）
+- [x] Vite + React + TypeScript 專案初始化
+- [x] Ant Design 5 安裝 + 基礎 layout（側邊欄導航 + 內容區）
+- [x] React Router 設定（Templates / Devices / Simulation / Monitor 四個頁面骨架）
+- [x] Zustand store 骨架
+- [x] Axios API client 封裝（base URL 設定 + error interceptor）
+- [x] 前端 Dockerfile（multi-stage build: build → nginx serve）
 
 ---
 
@@ -172,7 +172,7 @@
 
 | Phase | 內容 | 預估時間 | 狀態 |
 |-------|------|----------|------|
-| 1 | 專案骨架與基礎建設 | Week 1–2 | 🔲 |
+| 1 | 專案骨架與基礎建設 | Week 1–2 | ✅ |
 | 2 | 設備模板模組 | Week 2–3 | 🔲 |
 | 3 | 設備實例模組 | Week 3–4 | 🔲 |
 | 4 | Modbus TCP 協議引擎 | Week 4–5 | 🔲 |
