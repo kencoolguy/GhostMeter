@@ -1,5 +1,44 @@
 # CLAUDE.md — GhostMeter (GhostMeter)
 
+## Git Workflow Rules
+
+絕對不可以直接在 `dev` 或 `main` branch 上修改程式碼。
+不需要自動 merge，等待人工審查後再 merge。
+每完成一個小階段就 commit，commit message 格式：`feat: {描述}`
+
+### Push 前必須更新的文件
+
+每次準備 push（含建立 PR）之前，必須同步更新以下文件（若內容有變動才需更新）：
+
+1. **`CHANGELOG.md`** — 記錄新增功能、修改、修復（格式：`## [Unreleased]` → 對應版本區塊）
+2. **`docs/development-log.md`** — 本次實作的開發日誌（做了什麼、決策原因、遇到的問題）
+3. **`docs/development-phases.md`** — 更新當前階段狀態（In Progress → Complete）與下一階段規劃
+4. **`docs/api-reference.md`** — 新增或異動的 API endpoint、request/response schema
+5. **`docs/database-schema.md`** — 新增或異動的 DB table、欄位、關聯
+
+若某份文件在本次 push 中完全無關（例如只改前端 UI、DB schema 沒異動），可跳過，但必須**主動判斷**是否相關，不能全部略過。
+
+### 單一任務模式（預設）
+
+在開始執行任何實作任務前，你必須：
+
+1. 確認目前在 `dev` branch：`git checkout dev && git pull`
+2. 從 dev 建立新的 feature branch，命名格式：`feature/claude-{task描述}-{YYYYMMDD}`
+3. 所有修改都在這個 feature branch 上進行
+4. 完成後等待人工審查再 merge
+
+### 多工平行模式（需要同時進行多個任務時）
+
+當有多個獨立任務需要平行開發，使用 git worktree 建立獨立工作目錄，避免 session 互相干擾：
+
+1. 先從 dev 建立 feature branch：`git branch feature/claude-{task描述}-{YYYYMMDD} dev`
+2. 建立 worktree：`git worktree add ../enol-next-{task描述} feature/claude-{task描述}-{YYYYMMDD}`
+3. 每個 worktree 對應一個獨立的 Claude Code session
+4. 任務完成後清理：`git worktree remove ../enol-next-{task描述}`
+5. 同樣等待人工審查再 merge
+
+---
+
 ## Project Overview
 
 GhostMeter (GhostMeter) 是一個專為能源管理系統開發者打造的多協議設備模擬器。
@@ -125,9 +164,11 @@ ghostmeter/
 - HTTP status codes: 200 success, 201 created, 400 bad request, 404 not found, 422 validation error, 500 server error
 
 ### Git Conventions
-- Branch naming: `feature/xxx`, `fix/xxx`, `refactor/xxx`
+- Branch naming: `feature/claude-{task描述}-{YYYYMMDD}`, `fix/xxx`, `refactor/xxx`
 - Commit messages: conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
-- PR required for merge to main
+- 絕對不可以直接在 `dev` 或 `main` 上修改程式碼
+- PR required for merge，等待人工審查
+- Push 前同步更新相關文件（CHANGELOG、開發日誌、API 文件等）
 
 ## Key Domain Concepts
 

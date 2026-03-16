@@ -35,15 +35,27 @@ frontend/build/
 Thumbs.db
 
 # Docker
+docker-compose.override.yml
 *.log
 
 # Testing
 .coverage
 htmlcov/
 .pytest_cache/
+.tox/
 
 # Alembic
 backend/alembic/versions/__pycache__/
+
+# mypy / ruff
+.mypy_cache/
+.ruff_cache/
+
+# npm / pnpm
+.npm
+.pnpm-store/
+frontend/.eslintcache
+frontend/coverage/
 
 # Claude
 .claude/
