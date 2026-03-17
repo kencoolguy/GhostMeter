@@ -24,8 +24,12 @@ class AppException(Exception):
 class NotFoundException(AppException):
     """Resource not found."""
 
-    def __init__(self, detail: str = "Resource not found") -> None:
-        super().__init__(status_code=404, error_code="NOT_FOUND", detail=detail)
+    def __init__(
+        self,
+        detail: str = "Resource not found",
+        error_code: str = "NOT_FOUND",
+    ) -> None:
+        super().__init__(status_code=404, error_code=error_code, detail=detail)
 
 
 class ValidationException(AppException):
