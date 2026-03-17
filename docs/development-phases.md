@@ -50,19 +50,19 @@
 ## Phase 3：設備實例模組（Week 3–4）
 
 ### Milestone 3.1：設備後端 CRUD
-- [ ] SQLAlchemy model：device_instances
-- [ ] Pydantic schemas：CreateDevice / DeviceResponse
-- [ ] Service layer：device_service.py
-- [ ] API routes：CRUD + `/start` / `/stop` + `/registers`
-- [ ] 批量建立 API（指定 slave ID 範圍）
-- [ ] Slave ID 唯一性驗證（同 port 下不可重複）
-- [ ] 單元測試
+- [x] SQLAlchemy model：device_instances
+- [x] Pydantic schemas：CreateDevice / DeviceResponse
+- [x] Service layer：device_service.py
+- [x] API routes：CRUD + `/start` / `/stop` + `/registers`
+- [x] 批量建立 API（指定 slave ID 範圍）
+- [x] Slave ID 唯一性驗證（同 port 下不可重複）
+- [x] 單元測試
 
 ### Milestone 3.2：設備前端頁面
-- [ ] 設備列表頁：狀態卡片或表格，顯示 slave ID / 模板名 / 狀態
-- [ ] 建立設備 modal：選模板 → 填 slave ID（支援批量）
-- [ ] 設備啟停控制按鈕（即時狀態更新）
-- [ ] 設備詳情頁：顯示所有 register 當前值
+- [x] 設備列表頁：狀態卡片或表格，顯示 slave ID / 模板名 / 狀態
+- [x] 建立設備 modal：選模板 → 填 slave ID（支援批量）
+- [x] 設備啟停控制按鈕（即時狀態更新）
+- [x] 設備詳情頁：顯示所有 register 當前值
 
 ---
 
@@ -174,7 +174,7 @@
 |-------|------|----------|------|
 | 1 | 專案骨架與基礎建設 | Week 1–2 | ✅ |
 | 2 | 設備模板模組 | Week 2–3 | ✅ |
-| 3 | 設備實例模組 | Week 3–4 | 🔲 |
+| 3 | 設備實例模組 | Week 3–4 | ✅ |
 | 4 | Modbus TCP 協議引擎 | Week 4–5 | 🔲 |
 | 5 | 資料模擬引擎（核心）| Week 5–7 | 🔲 |
 | 6 | 即時監控 Dashboard | Week 7–8 | 🔲 |

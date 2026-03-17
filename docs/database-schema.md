@@ -57,6 +57,38 @@ A single Modbus register entry within a device template. Stores address, data ty
 
 ---
 
+### `device_instances`
+
+A virtual device instance created from a template. Devices bind to a Modbus slave ID and port, and have a status state machine (stopped/running/error).
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `template_id` | UUID | NOT NULL | — | FK → `device_templates.id` (RESTRICT) |
+| `name` | VARCHAR(200) | NOT NULL | — | Device name |
+| `slave_id` | INTEGER | NOT NULL | — | Modbus Slave ID (1–247) |
+| `status` | VARCHAR(20) | NOT NULL | `'stopped'` | `stopped`, `running`, or `error` |
+| `port` | INTEGER | NOT NULL | `502` | Modbus TCP port |
+| `description` | TEXT | NULL | — | Human-readable description |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `now()` | Creation time (UTC) |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `now()` | Last update time (UTC) |
+
+**Constraints:**
+- `UNIQUE (slave_id, port)` — same slave ID cannot be used twice on the same port
+- `FK template_id → device_templates.id ON DELETE RESTRICT` — templates with devices cannot be deleted
+
+**Relations:**
+- Belongs to `device_templates` (RESTRICT — must delete devices before deleting template)
+
+**Status State Machine:**
+- `stopped` → `running` (via POST /start)
+- `running` → `stopped` (via POST /stop)
+- `error` → `stopped` (via POST /stop)
+- `error` state cannot be started (only stopped)
+- Running devices cannot be deleted or updated
+
+---
+
 ## Register Address Notes
 
 - Addresses are **0-based** (following the pymodbus convention, not the legacy 1-based Modbus PDU convention)
@@ -73,3 +105,4 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 | Revision | Description |
 |----------|-------------|
 | `448f2e5c6613` | Create device_templates and register_definitions tables |
+| `d013e48e688a` | Add device_instances table with FK RESTRICT and unique (slave_id, port) |
