@@ -4,11 +4,14 @@ import DevicesPage from "./pages/Devices";
 import MonitorPage from "./pages/Monitor";
 import SimulationPage from "./pages/Simulation";
 import TemplatesPage from "./pages/Templates";
+import TemplateForm from "./pages/Templates/TemplateForm";
 
 function App() {
   return (
     <Routes>
       <Route element={<MainLayout />}>
+        <Route path="/templates/new" element={<TemplateForm />} />
+        <Route path="/templates/:id" element={<TemplateForm />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/simulation" element={<SimulationPage />} />
