@@ -39,6 +39,17 @@ class ValidationException(AppException):
         super().__init__(status_code=422, error_code="VALIDATION_ERROR", detail=detail)
 
 
+class ConflictException(AppException):
+    """Resource conflict."""
+
+    def __init__(
+        self,
+        detail: str = "Resource conflict",
+        error_code: str = "CONFLICT",
+    ) -> None:
+        super().__init__(status_code=409, error_code=error_code, detail=detail)
+
+
 class ForbiddenException(AppException):
     """Action not allowed."""
 
