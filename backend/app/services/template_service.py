@@ -164,8 +164,10 @@ async def update_template(
     template.protocol = data.protocol
     template.description = data.description
 
-    # Replace registers wholesale
+    # Replace registers wholesale — flush deletes before inserting new ones
+    # to avoid unique constraint violations on (template_id, address, function_code)
     template.registers.clear()
+    await session.flush()
     template.registers = _build_registers(data.registers)
 
     try:
