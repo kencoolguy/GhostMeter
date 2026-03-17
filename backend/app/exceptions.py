@@ -35,6 +35,17 @@ class ValidationException(AppException):
         super().__init__(status_code=422, error_code="VALIDATION_ERROR", detail=detail)
 
 
+class ForbiddenException(AppException):
+    """Action not allowed."""
+
+    def __init__(
+        self,
+        detail: str = "Action not allowed",
+        error_code: str = "FORBIDDEN",
+    ) -> None:
+        super().__init__(status_code=403, error_code=error_code, detail=detail)
+
+
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
     """Handle custom application exceptions."""
     return JSONResponse(
