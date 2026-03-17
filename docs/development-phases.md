@@ -30,20 +30,20 @@
 ## Phase 2：設備模板模組（Week 2–3）
 
 ### Milestone 2.1：模板後端 CRUD
-- [ ] SQLAlchemy models：device_templates + register_definitions
-- [ ] Pydantic schemas：CreateTemplate / UpdateTemplate / TemplateResponse
-- [ ] Service layer：template_service.py
-- [ ] API routes：GET / POST / PUT / DELETE `/api/v1/templates`
-- [ ] 模板匯入匯出 API（JSON）
-- [ ] Seed data loader：應用啟動時載入內建模板（三相電表 / 單相電表 / 逆變器）
-- [ ] 單元測試：template CRUD + seed data
+- [x] SQLAlchemy models：device_templates + register_definitions
+- [x] Pydantic schemas：CreateTemplate / UpdateTemplate / TemplateResponse
+- [x] Service layer：template_service.py
+- [x] API routes：GET / POST / PUT / DELETE `/api/v1/templates`
+- [x] 模板匯入匯出 API（JSON）
+- [x] Seed data loader：應用啟動時載入內建模板（三相電表 / 單相電表 / 逆變器）
+- [x] 單元測試：template CRUD + seed data
 
 ### Milestone 2.2：模板前端頁面
-- [ ] 模板列表頁：表格顯示所有模板 + 新增 / 編輯 / 刪除按鈕
-- [ ] 模板編輯頁：基本資訊 form + register map 可編輯表格
-- [ ] Register map 表格：支援新增 / 刪除 / 拖曳排序 register
-- [ ] JSON 匯入 / 匯出功能（上傳檔案 + 下載檔案）
-- [ ] 內建模板標示「系統內建」badge，禁止刪除
+- [x] 模板列表頁：表格顯示所有模板 + 新增 / 編輯 / 刪除按鈕
+- [x] 模板編輯頁：基本資訊 form + register map 可編輯表格
+- [x] Register map 表格：支援新增 / 刪除 / 拖曳排序 register
+- [x] JSON 匯入 / 匯出功能（上傳檔案 + 下載檔案）
+- [x] 內建模板標示「系統內建」badge，禁止刪除
 
 ---
 
@@ -173,7 +173,7 @@
 | Phase | 內容 | 預估時間 | 狀態 |
 |-------|------|----------|------|
 | 1 | 專案骨架與基礎建設 | Week 1–2 | ✅ |
-| 2 | 設備模板模組 | Week 2–3 | 🔲 |
+| 2 | 設備模板模組 | Week 2–3 | ✅ |
 | 3 | 設備實例模組 | Week 3–4 | 🔲 |
 | 4 | Modbus TCP 協議引擎 | Week 4–5 | 🔲 |
 | 5 | 資料模擬引擎（核心）| Week 5–7 | 🔲 |
