@@ -29,6 +29,18 @@ Phase 3 為 GhostMeter 加入設備實例（Device Instance）模組。用戶可
 - `(slave_id, port)` UNIQUE — 同 port 下 Slave ID 不可重複
 - `template_id` FK 設為 `RESTRICT` — 有設備引用的模板不可刪除
 
+### Status State Machine
+
+```
+stopped → running  (via POST /start)
+running → stopped  (via POST /stop)
+error   → stopped  (via POST /stop)
+```
+
+- `error` 狀態可以被 stop（回到 stopped），不可被 start
+- `error` 狀態的設備可以被刪除（跟 stopped 一樣）
+- 只有 `running` 狀態不可刪除
+
 ### Design Decisions
 
 - **slave_id 範圍 1-247**：Modbus 標準定義的合法 Unit ID 範圍。
@@ -46,19 +58,24 @@ Phase 3 為 GhostMeter 加入設備實例（Device Instance）模組。用戶可
 class DeviceCreate(BaseModel):
     template_id: UUID
     name: str
-    slave_id: int              # 1-247
+    slave_id: int              # 1-247, validated
     port: int = 502
     description: str | None = None
 
 class DeviceBatchCreate(BaseModel):
     template_id: UUID
-    slave_id_start: int        # 起始 Slave ID
-    slave_id_end: int          # 結束 Slave ID（inclusive）
+    slave_id_start: int        # 起始 Slave ID (1-247)
+    slave_id_end: int          # 結束 Slave ID（inclusive, 1-247）
     port: int = 502
     name_prefix: str | None = None  # 沒填就用模板名
     description: str | None = None
+    # 批量上限 50 台，避免單次過大事務
 
 class DeviceUpdate(BaseModel):
+    """Full replacement style (same as TemplateUpdate).
+    All fields required — caller must re-send current values for unchanged fields.
+    template_id and status are not updatable.
+    """
     name: str
     slave_id: int              # 1-247
     port: int = 502
@@ -67,8 +84,12 @@ class DeviceUpdate(BaseModel):
 
 ### Response Schemas
 
+All response schemas must include `model_config = ConfigDict(from_attributes=True)`.
+
 ```python
 class DeviceSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     template_id: UUID
     template_name: str         # JOIN from device_templates
@@ -81,15 +102,24 @@ class DeviceSummary(BaseModel):
     updated_at: datetime
 
 class RegisterValue(BaseModel):
+    """Register definition with current value.
+    Includes scale_factor and byte_order for display/interpretation.
+    Phase 3: value is always None. Phase 5: real-time value from simulation engine.
+    All numeric values (int/uint/float) are cast to float for uniformity.
+    """
     name: str
     address: int
     function_code: int
     data_type: str
+    byte_order: str
+    scale_factor: float
     unit: str | None
     description: str | None
-    value: float | None = None  # Phase 3: always null; Phase 5: real-time value
+    value: float | None = None
 
 class DeviceDetail(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     template_id: UUID
     template_name: str
@@ -107,7 +137,10 @@ class DeviceDetail(BaseModel):
 
 ## API Endpoints
 
-所有端點在 `/api/v1/devices` 下。
+所有端點在 `/api/v1/devices` 下。Route 在 main.py 中註冊：
+```python
+api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
+```
 
 ### Device CRUD
 
@@ -116,8 +149,8 @@ class DeviceDetail(BaseModel):
 | GET | `/devices` | 列出所有設備（含模板名稱） | 200 | `ApiResponse[list[DeviceSummary]]` |
 | GET | `/devices/{id}` | 取得設備詳情（含 register 定義列表，值為 null） | 200 | `ApiResponse[DeviceDetail]` |
 | POST | `/devices` | 建立單一設備 | 201 | `ApiResponse[DeviceSummary]` |
-| POST | `/devices/batch` | 批量建立設備（指定 slave_id 範圍） | 201 | `ApiResponse[list[DeviceSummary]]` |
-| PUT | `/devices/{id}` | 更新設備（name, description, slave_id, port） | 200 | `ApiResponse[DeviceSummary]` |
+| POST | `/devices/batch` | 批量建立設備（指定 slave_id 範圍，上限 50） | 201 | `ApiResponse[list[DeviceSummary]]` |
+| PUT | `/devices/{id}` | 更新設備（running 狀態不可更新） | 200 | `ApiResponse[DeviceSummary]` |
 | DELETE | `/devices/{id}` | 刪除設備（running 狀態不可刪除） | 200 | `ApiResponse[None]` with message |
 
 ### Start / Stop
@@ -125,7 +158,7 @@ class DeviceDetail(BaseModel):
 | Method | Path | 說明 | Status | Response |
 |--------|------|------|--------|----------|
 | POST | `/devices/{id}/start` | 啟動設備（stopped → running） | 200 | `ApiResponse[DeviceSummary]` |
-| POST | `/devices/{id}/stop` | 停止設備（running → stopped） | 200 | `ApiResponse[DeviceSummary]` |
+| POST | `/devices/{id}/stop` | 停止設備（running/error → stopped） | 200 | `ApiResponse[DeviceSummary]` |
 
 ### Register Values
 
@@ -139,18 +172,21 @@ class DeviceDetail(BaseModel):
 - 404: 模板不存在 → `{detail: "Template not found", error_code: "TEMPLATE_NOT_FOUND"}`
 - 422: Slave ID 超出範圍 (1-247) → `{detail: "...", error_code: "VALIDATION_ERROR"}`
 - 422: Slave ID 同 port 重複 → `{detail: "Slave ID N is already in use on port P", error_code: "VALIDATION_ERROR"}`
-- 422: 批量範圍無效 (start > end) → `{detail: "...", error_code: "VALIDATION_ERROR"}`
+- 422: 批量範圍無效 (start > end, 超過 50 台) → `{detail: "...", error_code: "VALIDATION_ERROR"}`
 - 409: 刪除 running 設備 → `{detail: "Cannot delete a running device", error_code: "DEVICE_RUNNING"}`
+- 409: 更新 running 設備 → `{detail: "Cannot update a running device", error_code: "DEVICE_RUNNING"}`
 - 409: 無效狀態轉換 → `{detail: "Device is already running/stopped", error_code: "INVALID_STATE_TRANSITION"}`
+- 409: 刪除被設備引用的模板 → `{detail: "Template is in use by N device(s)", error_code: "TEMPLATE_IN_USE"}`
 
 ### Design Decisions
 
 - **不做分頁**：MVP 階段設備數量有限（預估 < 100），暫不需分頁。
-- **批量建立**：一次 API call 建立多台設備，回傳所有建立的設備列表。任一 slave_id 衝突則整個 batch 失敗（atomic）。
-- **批量命名**：有 name_prefix 用 `"{prefix} {N}"`，沒有用 `"{template_name} - Slave {N}"`。
-- **不可更新 template_id**：設備建立後不可換模板（register map 不同會有問題）。
+- **批量建立**：一次 API call 建立多台設備，上限 50 台。回傳所有建立的設備列表。任一 slave_id 衝突則整個 batch 失敗（atomic）。
+- **批量命名**：有 name_prefix 用 `"{prefix} {N}"`，沒有用 `"{template_name} - Slave {N}"`。Service 層驗證產生的名稱不超過 VARCHAR(200) 限制。
+- **不可更新 template_id**：設備建立後不可換模板（register map 不同會有問題）。`DeviceUpdate` schema 不包含 template_id 欄位。
 - **不可更新 status**：只能透過 /start 和 /stop 端點控制。
-- **running 狀態不可刪除**：需先 stop 再刪除，避免意外。
+- **running 狀態不可刪除或更新**：需先 stop 再操作，避免 Phase 4+ Modbus server 運行中的設備被意外修改。
+- **DeviceUpdate 是 full replacement**：與 Phase 2 的 TemplateUpdate 模式一致，caller 需要送完整欄位。
 
 ---
 
@@ -160,21 +196,36 @@ class DeviceDetail(BaseModel):
 
 - `list_devices(session)` → 查詢所有設備，JOIN template 取 template_name
 - `get_device(session, id)` → 查詢單一設備 + template_name
-- `get_device_detail(session, id)` → 設備 + 模板的 register 定義列表（value=None）
+- `get_device_detail(session, id)` → 設備 + 模板的 register 定義列表（value=None），含 scale_factor 和 byte_order
 - `create_device(session, data)` → 驗證 template 存在、slave_id 1-247、同 port 不重複
-- `batch_create_devices(session, data)` → 驗證範圍、檢查所有 slave_id 可用、批量建立（atomic）
-- `update_device(session, id, data)` → 不可更新 template_id 和 status，驗證 slave_id 唯一
-- `delete_device(session, id)` → running 狀態回傳 409
-- `start_device(session, id)` → stopped → running（已 running → 409）
-- `stop_device(session, id)` → running → stopped（已 stopped → 409）
-- `get_device_registers(session, id)` → 從模板取 register 定義，value=None
+- `batch_create_devices(session, data)` → 驗證範圍（1-247, start ≤ end, ≤ 50 台）、檢查所有 slave_id 可用、批量建立（atomic）
+- `update_device(session, id, data)` → running 狀態不可更新（409）、不可更新 template_id 和 status、驗證 slave_id 唯一
+- `delete_device(session, id)` → running 狀態回傳 409，stopped/error 可刪除
+- `start_device(session, id)` → stopped → running（running/error → 409）
+- `stop_device(session, id)` → running/error → stopped（stopped → 409）
+- `get_device_registers(session, id)` → 從模板取 register 定義（含 byte_order, scale_factor），value=None
+
+### 新增 ConflictException
+
+在 `exceptions.py` 新增 `ConflictException`（HTTP 409），與 `ForbiddenException` 同樣模式（接受 `detail` 和 `error_code` 參數）。
+
+```python
+class ConflictException(AppException):
+    """Resource conflict."""
+
+    def __init__(
+        self,
+        detail: str = "Resource conflict",
+        error_code: str = "CONFLICT",
+    ) -> None:
+        super().__init__(status_code=409, error_code=error_code, detail=detail)
+```
 
 ### 模板刪除保護（修改 template_service.py）
 
 在 `delete_template` 中加入檢查：刪除前查詢是否有 device_instances 引用此模板。
 
 ```python
-# 在刪除前加入：
 device_count = await session.scalar(
     select(func.count(DeviceInstance.id))
     .where(DeviceInstance.template_id == template_id)
@@ -185,8 +236,6 @@ if device_count > 0:
         error_code="TEMPLATE_IN_USE",
     )
 ```
-
-需要新增 `ConflictException`（HTTP 409）到 exceptions.py。
 
 ---
 
@@ -213,6 +262,8 @@ export interface RegisterValue {
   address: number;
   function_code: number;
   data_type: string;
+  byte_order: string;
+  scale_factor: number;
   unit: string | null;
   description: string | null;
   value: number | null;
@@ -297,7 +348,7 @@ pages/Devices/
 ### 詳情頁行為
 
 - 上方：設備基本資訊（name、slave_id、模板名、status badge、port）
-- 下方：Register 列表表格（name、address、data_type、unit、value=`—`）
+- 下方：Register 列表表格（name、address、data_type、byte_order、scale_factor、unit、value=`—`）
 - Phase 5 時 value 會接上 WebSocket 即時值
 
 ---
