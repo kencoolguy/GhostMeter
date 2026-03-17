@@ -5,7 +5,7 @@
 - Base path: `/api/v1/`
 - All endpoints return a JSON envelope: `{ "success": bool, "data": <T> | null, "message": string | null }`
 - Error responses: `{ "detail": string, "error_code": string }`
-- HTTP status codes: `200` OK, `201` Created, `400` Bad Request, `404` Not Found, `422` Validation Error, `403` Forbidden, `500` Server Error
+- HTTP status codes: `200` OK, `201` Created, `400` Bad Request, `404` Not Found, `409` Conflict, `422` Validation Error, `403` Forbidden, `500` Server Error
 - All IDs are UUID v4
 
 ---
@@ -252,3 +252,217 @@ Import a template from a JSON file upload.
 
 **Error cases:**
 - `422` — invalid JSON, validation errors, or name already exists
+
+---
+
+## Devices
+
+Base path: `/api/v1/devices`
+
+### Schemas
+
+#### `DeviceCreate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `template_id` | UUID | yes | — | Template to use |
+| `name` | string | yes | — | Device name |
+| `slave_id` | integer | yes | — | Modbus Slave ID (1–247) |
+| `port` | integer | no | `502` | Modbus TCP port |
+| `description` | string\|null | no | `null` | Description |
+
+#### `DeviceBatchCreate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `template_id` | UUID | yes | — | Template to use |
+| `slave_id_start` | integer | yes | — | Start of Slave ID range (1–247) |
+| `slave_id_end` | integer | yes | — | End of Slave ID range (inclusive, 1–247) |
+| `port` | integer | no | `502` | Modbus TCP port |
+| `name_prefix` | string\|null | no | `null` | Name prefix; defaults to template name |
+| `description` | string\|null | no | `null` | Description for all created devices |
+
+> Batch limit: 50 devices per call. Naming: `"{prefix} {N}"` if prefix given, else `"{template_name} - Slave {N}"`.
+
+#### `DeviceUpdate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | yes | — | Device name |
+| `slave_id` | integer | yes | — | Modbus Slave ID (1–247) |
+| `port` | integer | no | `502` | Modbus TCP port |
+| `description` | string\|null | no | `null` | Description |
+
+> Full replacement — caller must re-send all fields. `template_id` and `status` are not updatable.
+
+#### `DeviceSummary` (response — list items)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Device ID |
+| `template_id` | UUID | Template ID |
+| `template_name` | string | Template name (joined) |
+| `name` | string | Device name |
+| `slave_id` | integer | Modbus Slave ID |
+| `status` | string | `stopped`, `running`, or `error` |
+| `port` | integer | Modbus TCP port |
+| `description` | string\|null | Description |
+| `created_at` | datetime | ISO 8601 UTC |
+| `updated_at` | datetime | ISO 8601 UTC |
+
+#### `DeviceDetail` (response — single item)
+
+Same as `DeviceSummary` plus `registers: RegisterValue[]`.
+
+#### `RegisterValue` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Register name |
+| `address` | integer | 0-based address |
+| `function_code` | integer | Modbus FC (3 or 4) |
+| `data_type` | string | Data type |
+| `byte_order` | string | Byte order |
+| `scale_factor` | float | Scale multiplier |
+| `unit` | string\|null | Physical unit |
+| `description` | string\|null | Description |
+| `value` | float\|null | Current value (Phase 3: always `null`) |
+
+---
+
+### Endpoints
+
+#### `GET /api/v1/devices`
+
+List all device instances.
+
+**Response** `200 OK` — `ApiResponse[DeviceSummary[]]`
+
+---
+
+#### `POST /api/v1/devices`
+
+Create a single device instance.
+
+**Request body:** `DeviceCreate`
+
+**Response** `201 Created` — `ApiResponse[DeviceSummary]`
+
+**Error cases:**
+- `404` — template not found (`TEMPLATE_NOT_FOUND`)
+- `422` — Slave ID out of range or already in use on port
+
+---
+
+#### `POST /api/v1/devices/batch`
+
+Batch create device instances. Atomic — all or nothing.
+
+**Request body:** `DeviceBatchCreate`
+
+**Response** `201 Created` — `ApiResponse[DeviceSummary[]]`
+
+**Error cases:**
+- `404` — template not found
+- `422` — invalid range (start > end), exceeds 50 limit, or any Slave ID conflict
+
+---
+
+#### `GET /api/v1/devices/{device_id}`
+
+Get device detail with register definitions.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[DeviceDetail]`
+
+**Error cases:**
+- `404` — `{ "detail": "Device not found", "error_code": "DEVICE_NOT_FOUND" }`
+
+---
+
+#### `PUT /api/v1/devices/{device_id}`
+
+Update a device instance. Running devices cannot be updated.
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `DeviceUpdate`
+
+**Response** `200 OK` — `ApiResponse[DeviceSummary]`
+
+**Error cases:**
+- `404` — device not found
+- `409` — `{ "detail": "Cannot update a running device", "error_code": "DEVICE_RUNNING" }`
+- `422` — Slave ID conflict
+
+---
+
+#### `DELETE /api/v1/devices/{device_id}`
+
+Delete a device instance. Running devices cannot be deleted.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Device deleted successfully" }
+```
+
+**Error cases:**
+- `404` — device not found
+- `409` — `{ "detail": "Cannot delete a running device", "error_code": "DEVICE_RUNNING" }`
+
+---
+
+#### `POST /api/v1/devices/{device_id}/start`
+
+Start a device (stopped → running).
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[DeviceSummary]`
+
+**Error cases:**
+- `404` — device not found
+- `409` — `{ "detail": "Device is already running/error", "error_code": "INVALID_STATE_TRANSITION" }`
+
+---
+
+#### `POST /api/v1/devices/{device_id}/stop`
+
+Stop a device (running/error → stopped).
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[DeviceSummary]`
+
+**Error cases:**
+- `404` — device not found
+- `409` — `{ "detail": "Device is already stopped", "error_code": "INVALID_STATE_TRANSITION" }`
+
+---
+
+#### `GET /api/v1/devices/{device_id}/registers`
+
+Get register definitions for a device. Phase 3: values are always `null`.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[RegisterValue[]]`
+
+**Error cases:**
+- `404` — device not found
+
+---
+
+### Template Deletion Protection
+
+When a template has associated devices, `DELETE /api/v1/templates/{template_id}` returns:
+
+**`409 Conflict`**
+```json
+{ "detail": "Template is in use by 3 device(s)", "error_code": "TEMPLATE_IN_USE" }
+```
+
+Delete all associated devices first, then delete the template

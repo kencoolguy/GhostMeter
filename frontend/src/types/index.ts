@@ -10,6 +10,15 @@ export interface ApiErrorResponse {
 }
 
 export type {
+  BatchCreateDevice,
+  CreateDevice,
+  DeviceDetail,
+  DeviceSummary,
+  RegisterValue,
+  UpdateDevice,
+} from "./device";
+
+export type {
   ApiResponse,
   CreateTemplate,
   RegisterDefinition,

@@ -1,5 +1,41 @@
 # Development Log
 
+## 2026-03-18 — Phase 3: Device Instance Module
+
+### What was done
+- Implemented full device instance CRUD backend (Milestone 3.1)
+- Implemented frontend device management UI (Milestone 3.2)
+- 50/50 backend tests passing; frontend TypeScript check and Vite build pass
+
+### Backend highlights
+- **ORM model**: `DeviceInstance` with FK RESTRICT to `device_templates`, unique constraint on `(slave_id, port)`
+- **Alembic migration**: `d013e48e688a` creates `device_instances` table
+- **Pydantic schemas**: `DeviceCreate`, `DeviceBatchCreate`, `DeviceUpdate`, `DeviceSummary`, `DeviceDetail`, `RegisterValue`
+- **Service layer** (`device_service.py`): CRUD, batch create (atomic, up to 50), start/stop state machine, register view (value=None in Phase 3)
+- **API routes** (`/api/v1/devices`): list, create, batch create, get detail, update, delete, start, stop, get registers
+- **ConflictException** (HTTP 409): used for running device protection and invalid state transitions
+- **Template deletion protection**: `delete_template` now checks for referencing devices before allowing deletion
+- **Tests**: `test_devices.py` (24 cases) + `test_template_protection.py` (2 cases) = 26 new tests
+
+### Frontend highlights
+- **Types**: `DeviceSummary`, `DeviceDetail`, `RegisterValue`, `CreateDevice`, `BatchCreateDevice`, `UpdateDevice` in `src/types/device.ts`
+- **API service**: `src/services/deviceApi.ts` wraps all device Axios calls
+- **Zustand store**: `deviceStore` holds device list, current device, loading state
+- **Pages**: `DeviceList` (table with status badges, start/stop toggle, delete), `CreateDeviceModal` (single + batch tabs), `DeviceDetail` (register map table)
+- **Routing**: `/devices` → list, `/devices/:id` → detail
+
+### Key decisions
+- **Status is pure DB field in Phase 3**: start/stop only toggles the `status` column; actual Modbus server lifecycle will be added in Phase 4
+- **FK RESTRICT**: templates cannot be deleted while devices reference them; service layer checks first with friendly error, DB constraint acts as safety net
+- **Batch create is atomic**: any slave_id conflict fails the entire batch
+- **DeviceUpdate is full replacement**: consistent with Phase 2's `TemplateUpdate` pattern; `template_id` and `status` are excluded from update schema
+
+### Issues encountered
+- VirtualBox shared folder still cannot run `npm install` (symlink restriction); used existing external node_modules at `/home/ken/.ghostmeter-frontend-modules/`
+- Frontend build requires using the custom `vite.config.ts` from the external modules directory
+
+---
+
 ## 2026-03-17 — Phase 2: Device Template Module
 
 ### What was done

@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Device instance CRUD API (`/api/v1/devices`) — create, list, get, update, delete
+- Batch device creation endpoint (`POST /api/v1/devices/batch`) — up to 50 devices at once
+- Device start/stop state control (`POST /api/v1/devices/{id}/start`, `/stop`)
+- Device register view endpoint (`GET /api/v1/devices/{id}/registers`) — returns template registers with null values (Phase 3)
+- `ConflictException` custom exception class with HTTP 409 response
+- Template deletion protection — cannot delete templates referenced by devices (`409 TEMPLATE_IN_USE`)
+- Slave ID uniqueness validation per port (1–247 range)
+- Frontend Devices page: list view with status badges, start/stop toggle, delete
+- Frontend Create Device modal with single and batch creation tabs
+- Frontend Device Detail page showing register map table
+- Zustand `deviceStore` for device list and selection state
+- `deviceApi` service for all `/api/v1/devices` Axios calls
+- TypeScript interfaces for `DeviceSummary`, `DeviceDetail`, `RegisterValue`, `CreateDevice`, `BatchCreateDevice`, `UpdateDevice`
+- React Router route for `/devices/:id`
+- Alembic migration for `device_instances` table with FK RESTRICT to `device_templates`
 - Device template CRUD API (`/api/v1/templates`) — create, list, get, update, delete
 - Register definition management with address overlap validation and data type constraints
 - Template clone endpoint (`POST /api/v1/templates/{id}/clone`) with auto-generated name

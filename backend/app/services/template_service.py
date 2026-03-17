@@ -6,7 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.exceptions import ForbiddenException, NotFoundException, ValidationException
+from app.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    NotFoundException,
+    ValidationException,
+)
+from app.models.device import DeviceInstance
 from app.models.template import DeviceTemplate, RegisterDefinition
 from app.schemas.template import (
     DATA_TYPE_REGISTER_COUNT,
@@ -185,6 +191,17 @@ async def delete_template(
 ) -> None:
     """Delete a template and its registers."""
     template = await get_template(session, template_id)
+
+    # Check if template is in use by devices
+    device_count = await session.scalar(
+        select(func.count(DeviceInstance.id))
+        .where(DeviceInstance.template_id == template_id)
+    )
+    if device_count > 0:
+        raise ConflictException(
+            detail=f"Template is in use by {device_count} device(s)",
+            error_code="TEMPLATE_IN_USE",
+        )
 
     if template.is_builtin:
         raise ForbiddenException(
