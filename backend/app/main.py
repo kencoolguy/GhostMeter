@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.routes.health import router as health_router
+from app.api.routes.templates import router as templates_router
 from app.config import get_settings
 from app.database import engine
+from app.seed.loader import seed_builtin_templates
 from app.exceptions import (
     AppException,
     app_exception_handler,
@@ -36,6 +38,10 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection verified")
     except Exception:
         logger.error("Database connection failed", exc_info=True)
+
+    # Seed built-in templates
+    await seed_builtin_templates()
+    logger.info("Seed data check complete")
 
     yield
 
@@ -66,8 +72,7 @@ app.add_exception_handler(Exception, generic_exception_handler)
 # Routes — health at root, API routes under /api/v1
 app.include_router(health_router)
 api_v1_router = APIRouter(prefix="/api/v1")
-# Future route routers will be included here:
-# api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
+api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
 app.include_router(api_v1_router)
 
 

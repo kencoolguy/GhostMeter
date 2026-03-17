@@ -24,8 +24,12 @@ class AppException(Exception):
 class NotFoundException(AppException):
     """Resource not found."""
 
-    def __init__(self, detail: str = "Resource not found") -> None:
-        super().__init__(status_code=404, error_code="NOT_FOUND", detail=detail)
+    def __init__(
+        self,
+        detail: str = "Resource not found",
+        error_code: str = "NOT_FOUND",
+    ) -> None:
+        super().__init__(status_code=404, error_code=error_code, detail=detail)
 
 
 class ValidationException(AppException):
@@ -33,6 +37,17 @@ class ValidationException(AppException):
 
     def __init__(self, detail: str = "Validation error") -> None:
         super().__init__(status_code=422, error_code="VALIDATION_ERROR", detail=detail)
+
+
+class ForbiddenException(AppException):
+    """Action not allowed."""
+
+    def __init__(
+        self,
+        detail: str = "Action not allowed",
+        error_code: str = "FORBIDDEN",
+    ) -> None:
+        super().__init__(status_code=403, error_code=error_code, detail=detail)
 
 
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:

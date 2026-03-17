@@ -1,0 +1,17 @@
+{
+  "name": "SunSpec Solar Inverter",
+  "protocol": "modbus_tcp",
+  "description": "Solar inverter based on SunSpec/Fronius Symo register map. Uses Holding Registers (FC03) with 0-based addressing.",
+  "registers": [
+    {"name": "dc_voltage", "address": 0, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "DC input voltage", "sort_order": 0},
+    {"name": "dc_current", "address": 2, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "DC input current", "sort_order": 1},
+    {"name": "dc_power", "address": 4, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "DC input power", "sort_order": 2},
+    {"name": "ac_voltage", "address": 6, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "AC output voltage", "sort_order": 3},
+    {"name": "ac_current", "address": 8, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "AC output current", "sort_order": 4},
+    {"name": "ac_power", "address": 10, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "AC output power", "sort_order": 5},
+    {"name": "ac_frequency", "address": 12, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "Hz", "description": "AC output frequency", "sort_order": 6},
+    {"name": "total_energy", "address": 14, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "kWh", "description": "Total energy generated", "sort_order": 7},
+    {"name": "inverter_status", "address": 16, "function_code": 3, "data_type": "uint16", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "", "description": "Inverter operating status (0=Off, 1=Sleeping, 2=Starting, 3=Running, 4=Throttled, 5=Fault)", "sort_order": 8},
+    {"name": "efficiency", "address": 17, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 0.1, "unit": "%", "description": "Conversion efficiency", "sort_order": 9}
+  ]
+}

@@ -3,6 +3,7 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.local.app.tsbuildinfo",
     "baseUrl": ".",
+    "typeRoots": ["/home/ken/.ghostmeter-frontend-modules/node_modules/@types", "/home/ken/.ghostmeter-frontend-modules/node_modules"],
     "paths": {
       "react-router-dom": ["/home/ken/.ghostmeter-frontend-modules/node_modules/react-router-dom"],
       "react-router-dom/*": ["/home/ken/.ghostmeter-frontend-modules/node_modules/react-router-dom/*"],
