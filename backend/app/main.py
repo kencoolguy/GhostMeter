@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.routes.health import router as health_router
+from app.api.routes.devices import router as devices_router
 from app.api.routes.templates import router as templates_router
 from app.config import get_settings
 from app.database import engine
@@ -73,6 +74,7 @@ app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(health_router)
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
+api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
 app.include_router(api_v1_router)
 
 

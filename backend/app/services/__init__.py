@@ -1,3 +1,3 @@
-from app.services import template_service
+from app.services import device_service, template_service
 
-__all__ = ["template_service"]
+__all__ = ["device_service", "template_service"]
