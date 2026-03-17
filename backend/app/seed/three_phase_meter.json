@@ -1,0 +1,20 @@
+{
+  "name": "SDM630 Three-Phase Meter",
+  "protocol": "modbus_tcp",
+  "description": "Three-phase power meter based on Eastron SDM630 register map. Registers use Input Register (FC04) with 0-based addressing.",
+  "registers": [
+    {"name": "voltage_l1", "address": 0, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Phase L1 line-to-neutral voltage", "sort_order": 0},
+    {"name": "voltage_l2", "address": 2, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Phase L2 line-to-neutral voltage", "sort_order": 1},
+    {"name": "voltage_l3", "address": 4, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Phase L3 line-to-neutral voltage", "sort_order": 2},
+    {"name": "current_l1", "address": 6, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Phase L1 current", "sort_order": 3},
+    {"name": "current_l2", "address": 8, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Phase L2 current", "sort_order": 4},
+    {"name": "current_l3", "address": 10, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Phase L3 current", "sort_order": 5},
+    {"name": "power_l1", "address": 12, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "Phase L1 active power", "sort_order": 6},
+    {"name": "power_l2", "address": 14, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "Phase L2 active power", "sort_order": 7},
+    {"name": "power_l3", "address": 16, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "Phase L3 active power", "sort_order": 8},
+    {"name": "total_power", "address": 52, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "Total system active power", "sort_order": 9},
+    {"name": "frequency", "address": 70, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "Hz", "description": "Line frequency", "sort_order": 10},
+    {"name": "total_energy", "address": 342, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "kWh", "description": "Total active energy imported", "sort_order": 11},
+    {"name": "power_factor_total", "address": 62, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "", "description": "Total system power factor", "sort_order": 12}
+  ]
+}

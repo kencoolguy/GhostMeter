@@ -1,0 +1,15 @@
+{
+  "name": "SDM120 Single-Phase Meter",
+  "protocol": "modbus_tcp",
+  "description": "Single-phase power meter based on Eastron SDM120 register map. Registers use Input Register (FC04) with 0-based addressing.",
+  "registers": [
+    {"name": "voltage", "address": 0, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Line-to-neutral voltage", "sort_order": 0},
+    {"name": "current", "address": 6, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Current", "sort_order": 1},
+    {"name": "active_power", "address": 12, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "Active power", "sort_order": 2},
+    {"name": "apparent_power", "address": 18, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "VA", "description": "Apparent power", "sort_order": 3},
+    {"name": "reactive_power", "address": 24, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "VAr", "description": "Reactive power", "sort_order": 4},
+    {"name": "power_factor", "address": 30, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "", "description": "Power factor", "sort_order": 5},
+    {"name": "frequency", "address": 70, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "Hz", "description": "Line frequency", "sort_order": 6},
+    {"name": "total_energy", "address": 342, "function_code": 4, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "kWh", "description": "Total active energy", "sort_order": 7}
+  ]
+}
