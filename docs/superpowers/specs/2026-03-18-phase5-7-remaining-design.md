@@ -52,7 +52,9 @@ Schedules are defined relative to device start time. When a device starts, Simul
 | `created_at` | TIMESTAMP(tz) | |
 | `updated_at` | TIMESTAMP(tz) | |
 
-**Unique constraint:** `(device_id, register_name, trigger_after_seconds)` — prevents overlapping schedules for the same register at the same trigger time.
+**Unique constraint:** `(device_id, register_name, trigger_after_seconds)` — prevents duplicate trigger times.
+
+**Overlap handling:** Application-level validation in `anomaly_service.py` rejects schedules with overlapping time windows for the same register. When saving via `PUT /anomaly/schedules`, check that no two entries for the same `register_name` have overlapping `[trigger_after_seconds, trigger_after_seconds + duration_seconds)` ranges. Return 422 if overlap detected.
 
 ### In-Memory State
 
@@ -62,7 +64,16 @@ Schedules are defined relative to device start time. When a device starts, Simul
 
 ### API Endpoints
 
-All under `/api/v1/devices/{device_id}/anomaly`.
+All under `/api/v1/devices/{device_id}/anomaly`. Anomaly routes are defined in a separate `APIRouter` in `anomaly.py`, mounted on the existing devices router prefix (same pattern as simulation routes).
+
+### Parameter Validation
+
+Pydantic validators enforce required params per anomaly type:
+- `spike`: requires `multiplier` (float, > 0) and `probability` (float, 0-1)
+- `drift`: requires `drift_per_second` (float) and `max_drift` (float, > 0)
+- `flatline`: `value` is optional (float); if omitted, freezes at current value
+- `out_of_range`: requires `value` (float)
+- `data_loss`: no params required
 
 #### Real-time Control
 
@@ -118,25 +129,64 @@ All under `/api/v1/devices/{device_id}/anomaly`.
 | `backend/tests/test_anomaly_api.py` | API integration tests |
 | `backend/tests/test_anomaly_injector.py` | Unit tests for injection logic |
 
-### Integration with SimulationEngine
+### Singleton Pattern
 
-Modify `engine.py` `_run_device()`:
+Add to `simulation/__init__.py`, consistent with existing `simulation_engine` and `fault_simulator`:
 
 ```python
-# After generating value
-value = self._data_generator.generate(config, context)
+from app.simulation.anomaly_injector import AnomalyInjector
+anomaly_injector = AnomalyInjector()
+```
+
+### Integration with SimulationEngine
+
+Modify `engine.py` `_run_device()`. The actual DataGenerator call uses `generate(mode, params, context)`:
+
+```python
+# After generating value (existing code)
+generated = self._data_generator.generate(
+    config.data_mode, config.mode_params, context,
+)
 
 # Apply anomaly (new step)
-value = anomaly_injector.apply(
+generated = anomaly_injector.apply(
     device_id=device_id,
     register_name=config.register_name,
-    value=value,
+    value=generated,
     elapsed_seconds=context.elapsed_seconds,
 )
 
-# Scale and write to adapter
-raw_value = value / scale_factor
-await adapter.update_register(...)
+# Scale and write to adapter (existing code)
+if reg.scale_factor != 0:
+    raw_value = generated / reg.scale_factor
+else:
+    raw_value = generated
+current_values[config.register_name] = generated
+
+await adapter.update_register(
+    device_id, reg.address, reg.function_code,
+    raw_value, reg.data_type, reg.byte_order,
+)
+```
+
+### Current Values Exposure
+
+Promote `current_values` from local variable to instance state for Phase 6 WebSocket access:
+
+```python
+# In SimulationEngine.__init__
+self._device_values: dict[UUID, dict[str, float]] = {}
+
+# In _run_device(), replace local current_values with:
+self._device_values[device_id] = {}
+# ... use self._device_values[device_id] throughout the loop
+
+# In stop_device(), cleanup:
+self._device_values.pop(device_id, None)
+
+# Public accessor for Phase 6:
+def get_current_values(self, device_id: UUID) -> dict[str, float]:
+    return dict(self._device_values.get(device_id, {}))
 ```
 
 ---
@@ -180,9 +230,15 @@ async def _handle_request(self, request):
 
 The `_slave_to_device` reverse mapping already exists from Phase 5 Round 1.
 
-### pymodbus Integration
+### pymodbus Integration (v3.12.1)
 
-pymodbus `ModbusTcpServer` supports a custom `request_handler` class. Override `handle()` or use the server's callback mechanism to intercept before datastore access.
+pymodbus 3.x `ModbusTcpServer` accepts a `request_tracer` callback parameter — a callable invoked on each request/response pair. However, `request_tracer` is read-only (for logging) and cannot modify responses.
+
+**Recommended approach:** Use pymodbus's `ModbusRequest` handler override. Subclass `ModbusConnectedRequestHandler` and override the `execute()` method to intercept before datastore access. Pass the custom handler class via `ModbusTcpServer(handler=FaultAwareHandler, ...)`.
+
+In pymodbus 3.x, the request object uses `unit_id` attribute (also aliased as `slave_id` in some versions). Use `request.slave_id` for forward compatibility.
+
+If `request_tracer` + handler subclassing proves insufficient, an alternative is to wrap the `ModbusServerContext` with a proxy that intercepts `getValues()` / `setValues()` calls per slave ID.
 
 ### Integration Tests
 
@@ -320,6 +376,8 @@ interface FaultConfigRequest {
 
 **Endpoint:** `GET ws://localhost:8000/ws/monitor`
 
+> WebSocket endpoints use `/ws/` prefix (separate from `/api/v1/`). This is standard practice — WS connections are long-lived and don't follow REST versioning semantics.
+
 **Connection lifecycle:**
 1. Client connects → server adds to broadcast list
 2. Server pushes every 1 second
@@ -385,7 +443,17 @@ class EventLogEntry:
     detail: str             # human-readable description
 ```
 
-Events are emitted by calling `monitor_service.log_event()` from device_service, anomaly_service, fault routes. Pushed to WebSocket clients as a separate message type or included in monitor_update.
+Events are emitted by calling `monitor_service.log_event()` from device_service, anomaly_service, fault routes. Pushed to WebSocket clients included in `monitor_update` messages.
+
+**MonitorService instantiation:** Module-level singleton in `services/monitor_service.py`, consistent with simulation engine pattern:
+
+```python
+# services/monitor_service.py
+monitor_service = MonitorService()
+
+# Other services import it:
+from app.services.monitor_service import monitor_service
+```
 
 ### Backend Files
 
@@ -483,6 +551,19 @@ VITE_API_BASE_URL=http://localhost:8000
 - See `docs/api-curl-samples.md` for examples
 ```
 
+### Linting Configuration
+
+Add `[tool.ruff]` section to `backend/pyproject.toml` (create if not exists):
+
+```toml
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]  # pycodestyle + pyflakes + isort
+```
+
 ### GitHub Actions CI
 
 `.github/workflows/ci.yml`:
@@ -498,6 +579,7 @@ VITE_API_BASE_URL=http://localhost:8000
 | `.env.example` | New: all configurable variables |
 | `README.md` | Update: quick start + data collector section |
 | `.github/workflows/ci.yml` | New: CI pipeline |
+| `backend/pyproject.toml` | New or update: ruff configuration |
 
 ---
 
