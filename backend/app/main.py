@@ -5,6 +5,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api.routes.anomaly import router as anomaly_router
 from app.api.routes.health import router as health_router
 from app.api.routes.devices import router as devices_router
 from app.api.routes.simulation import router as simulation_router
@@ -97,6 +98,7 @@ api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
 api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simulation"])
+api_v1_router.include_router(anomaly_router, prefix="/devices", tags=["anomaly"])
 app.include_router(api_v1_router)
 
 
