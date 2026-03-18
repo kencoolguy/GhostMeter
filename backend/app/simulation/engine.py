@@ -51,6 +51,11 @@ class SimulationEngine:
             logger.info("No simulation configs for device %s, skipping", device_id)
             return
 
+        # Load anomaly schedules
+        schedules = await self._load_anomaly_schedules(device_id)
+        from app.simulation import anomaly_injector
+        anomaly_injector.load_schedules(device_id, schedules)
+
         interval = min(c.update_interval_ms for c in configs) / 1000.0
         task = asyncio.create_task(
             self._run_device(device_id, configs, register_map, device_protocol, interval),
@@ -69,6 +74,8 @@ class SimulationEngine:
             except asyncio.CancelledError:
                 pass
             self._device_values.pop(device_id, None)
+            from app.simulation import anomaly_injector
+            anomaly_injector.clear_device(device_id)
             logger.info("Simulation stopped for device %s", device_id)
 
     async def reload_device(self, device_id: UUID) -> None:
@@ -136,6 +143,27 @@ class SimulationEngine:
                 )
 
             return (configs, register_map, template.protocol)
+
+    async def _load_anomaly_schedules(self, device_id: UUID) -> list[dict]:
+        """Load enabled anomaly schedules from DB."""
+        async with async_session_factory() as session:
+            from app.models.anomaly import AnomalySchedule
+            stmt = select(AnomalySchedule).where(
+                AnomalySchedule.device_id == device_id,
+                AnomalySchedule.is_enabled.is_(True),
+            )
+            result = await session.execute(stmt)
+            schedules = result.scalars().all()
+            return [
+                {
+                    "register_name": s.register_name,
+                    "anomaly_type": s.anomaly_type,
+                    "anomaly_params": s.anomaly_params,
+                    "trigger_after_seconds": s.trigger_after_seconds,
+                    "duration_seconds": s.duration_seconds,
+                }
+                for s in schedules
+            ]
 
     async def _run_device(
         self,
