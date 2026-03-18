@@ -314,7 +314,7 @@ async def start_device(
         try:
             await simulation_engine.start_device(device.id)
         except Exception as e:
-            logger.warning("Failed to start simulation for device %s: %s", device_id, e)
+            logger.error("Failed to start simulation for device %s: %s", device_id, e)
 
     device.status = "running"
     await session.commit()

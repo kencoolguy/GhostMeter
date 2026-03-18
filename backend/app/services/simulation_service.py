@@ -45,7 +45,7 @@ async def _get_template_register_names(
 
 async def _reload_if_running(device_id: uuid.UUID) -> None:
     """Reload simulation engine if the device is currently running."""
-    if device_id in simulation_engine._device_tasks:
+    if simulation_engine.is_device_simulating(device_id):
         await simulation_engine.reload_device(device_id)
         logger.info("Reloaded simulation for running device %s", device_id)
 

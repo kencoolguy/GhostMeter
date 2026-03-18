@@ -74,11 +74,18 @@ class SimulationEngine:
         await self.stop_device(device_id)
         await self.start_device(device_id)
 
+    def is_device_simulating(self, device_id: UUID) -> bool:
+        """Check if a device has an active simulation task."""
+        return device_id in self._device_tasks
+
     async def shutdown(self) -> None:
-        """Cancel all simulation tasks."""
-        device_ids = list(self._device_tasks.keys())
-        for device_id in device_ids:
-            await self.stop_device(device_id)
+        """Cancel all simulation tasks concurrently."""
+        tasks = list(self._device_tasks.values())
+        self._device_tasks.clear()
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         logger.info("Simulation engine shut down")
 
     async def _load_device_data(
@@ -139,31 +146,32 @@ class SimulationEngine:
 
         adapter = protocol_manager.get_adapter(protocol)
 
-        # Sort configs by register sort_order
+        # Sort and filter configs — warn once for missing registers
         default_meta = RegisterMeta(0, 3, "float32", "big_endian", 1.0, 9999)
-        sorted_configs = sorted(
-            configs,
-            key=lambda c: register_map.get(c.register_name, default_meta).sort_order,
-        )
+        valid_configs = []
+        for c in sorted(configs, key=lambda c: register_map.get(c.register_name, default_meta).sort_order):
+            if c.register_name in register_map:
+                valid_configs.append(c)
+            else:
+                logger.warning(
+                    "Register '%s' not found in template for device %s — skipping",
+                    c.register_name, device_id,
+                )
 
         while True:
             try:
                 now = datetime.now(timezone.utc)
                 elapsed = (now - start_time).total_seconds()
+                now_hour = now.hour + now.minute / 60.0
                 context = GeneratorContext(
                     current_values=current_values,
                     elapsed_seconds=elapsed,
                     tick_count=tick_count,
+                    current_hour_utc=now_hour,
                 )
 
-                for config in sorted_configs:
-                    reg = register_map.get(config.register_name)
-                    if reg is None:
-                        logger.warning(
-                            "Register '%s' not found in template for device %s",
-                            config.register_name, device_id,
-                        )
-                        continue
+                for config in valid_configs:
+                    reg = register_map[config.register_name]
 
                     try:
                         generated = self._data_generator.generate(
