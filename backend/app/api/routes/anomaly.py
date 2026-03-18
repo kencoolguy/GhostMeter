@@ -57,18 +57,6 @@ async def get_active_anomalies(
 
 
 @router.delete(
-    "/{device_id}/anomaly/{register_name}",
-    response_model=ApiResponse[None],
-)
-async def remove_anomaly(
-    device_id: uuid.UUID,
-    register_name: str,
-) -> ApiResponse[None]:
-    anomaly_service.remove_anomaly(device_id, register_name)
-    return ApiResponse(message="Anomaly removed")
-
-
-@router.delete(
     "/{device_id}/anomaly",
     response_model=ApiResponse[None],
 )
@@ -78,6 +66,9 @@ async def clear_anomalies(
     anomaly_service.clear_anomalies(device_id)
     return ApiResponse(message="All anomalies cleared")
 
+
+# Schedule routes must be registered before /{register_name} to avoid
+# the wildcard matching "schedules" as a register name.
 
 @router.get(
     "/{device_id}/anomaly/schedules",
@@ -118,3 +109,15 @@ async def delete_schedules(
 ) -> ApiResponse[None]:
     await anomaly_service.delete_schedules(session, device_id)
     return ApiResponse(message="All schedules deleted")
+
+
+@router.delete(
+    "/{device_id}/anomaly/{register_name}",
+    response_model=ApiResponse[None],
+)
+async def remove_anomaly(
+    device_id: uuid.UUID,
+    register_name: str,
+) -> ApiResponse[None]:
+    anomaly_service.remove_anomaly(device_id, register_name)
+    return ApiResponse(message="Anomaly removed")
