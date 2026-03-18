@@ -1622,16 +1622,17 @@ def _create_trace_pdu(self):
 
 def _suppress_slave(self, slave_id: int) -> None:
     """Temporarily remove a slave from the context to simulate no-response.
-    Restore it after a short delay using asyncio."""
+    Restore it after a short delay using asyncio.
+    Uses _devices dict directly (ModbusServerContext has no public remove/setitem)."""
     if self._context and slave_id in self._slave_contexts:
         ctx = self._slave_contexts[slave_id]
-        # Remove from server context
-        self._context.remove(slave_id)
+        # Remove from server context (internal dict, same pattern as remove_device)
+        self._context._devices.pop(slave_id, None)
         # Schedule restoration
         async def _restore():
             await asyncio.sleep(0.1)
             if slave_id in self._slave_contexts:
-                self._context[slave_id] = ctx
+                self._context._devices[slave_id] = ctx
         try:
             asyncio.get_event_loop().create_task(_restore())
         except RuntimeError:
@@ -1683,6 +1684,9 @@ Create `backend/tests/test_modbus_integration.py`:
 
 Starts a real Modbus TCP server, registers a slave with static data,
 and uses pymodbus AsyncModbusTcpClient to verify fault behaviors.
+
+IMPORTANT: Uses the global fault_simulator singleton (same instance
+that trace_pdu callback uses), not a local FaultSimulator.
 """
 
 import asyncio
@@ -1694,8 +1698,10 @@ import pytest
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusIOException
 
+from app.protocols.base import RegisterInfo
 from app.protocols.modbus_tcp import ModbusTcpAdapter
-from app.simulation.fault_simulator import FaultConfig, FaultSimulator
+from app.simulation import fault_simulator  # Global singleton!
+from app.simulation.fault_simulator import FaultConfig
 
 TEST_PORT = 15502
 SLAVE_ID = 1
@@ -1705,26 +1711,25 @@ SLAVE_ID = 1
 async def modbus_env():
     """Start Modbus adapter with one slave and static register data."""
     adapter = ModbusTcpAdapter(host="127.0.0.1", port=TEST_PORT)
-    fault_sim = FaultSimulator()
 
     await adapter.start()
 
     # Register a slave with known register data
     device_id = uuid.uuid4()
     registers = [
-        {"name": "voltage", "address": 0, "function_code": 4,
-         "data_type": "float32", "byte_order": "big_endian"},
+        RegisterInfo(address=0, function_code=4,
+                     data_type="float32", byte_order="big_endian"),
     ]
     await adapter.add_device(device_id, SLAVE_ID, registers)
 
-    # Write a known value (230.0 as float32 = 0x4366_0000)
+    # Write a known value (230.0 as float32)
     await adapter.update_register(
         device_id, 0, 4, 230.0, "float32", "big_endian",
     )
 
-    yield adapter, fault_sim, device_id
+    yield adapter, device_id
 
-    fault_sim.clear_all()
+    fault_simulator.clear_all()
     await adapter.stop()
 
 
@@ -1751,8 +1756,8 @@ class TestNormalRead:
 class TestDelayFault:
     async def test_response_delayed(self, modbus_env, client) -> None:
         """Delay fault adds latency to response."""
-        _, fault_sim, device_id = modbus_env
-        fault_sim.set_fault(device_id, FaultConfig("delay", {"delay_ms": 500}))
+        _, device_id = modbus_env
+        fault_simulator.set_fault(device_id, FaultConfig("delay", {"delay_ms": 500}))
 
         start = time.monotonic()
         result = await client.read_input_registers(0, 2, slave=SLAVE_ID)
@@ -1765,8 +1770,8 @@ class TestDelayFault:
 class TestTimeoutFault:
     async def test_client_times_out(self, modbus_env, client) -> None:
         """Timeout fault causes no response — client times out."""
-        _, fault_sim, device_id = modbus_env
-        fault_sim.set_fault(device_id, FaultConfig("timeout", {}))
+        _, device_id = modbus_env
+        fault_simulator.set_fault(device_id, FaultConfig("timeout", {}))
 
         # Use short timeout client
         short_client = AsyncModbusTcpClient(
@@ -1786,8 +1791,8 @@ class TestTimeoutFault:
 class TestExceptionFault:
     async def test_returns_modbus_exception(self, modbus_env, client) -> None:
         """Exception fault returns a Modbus exception code."""
-        _, fault_sim, device_id = modbus_env
-        fault_sim.set_fault(
+        _, device_id = modbus_env
+        fault_simulator.set_fault(
             device_id,
             FaultConfig("exception", {"exception_code": 0x02}),
         )
@@ -1800,8 +1805,8 @@ class TestExceptionFault:
 class TestIntermittentFault:
     async def test_partial_failure(self, modbus_env, client) -> None:
         """Intermittent fault fails at approximately the configured rate."""
-        _, fault_sim, device_id = modbus_env
-        fault_sim.set_fault(
+        _, device_id = modbus_env
+        fault_simulator.set_fault(
             device_id,
             FaultConfig("intermittent", {"failure_rate": 0.5}),
         )
@@ -1826,11 +1831,11 @@ class TestIntermittentFault:
 class TestClearFault:
     async def test_normal_after_clear(self, modbus_env, client) -> None:
         """Clearing fault restores normal read behavior."""
-        _, fault_sim, device_id = modbus_env
+        _, device_id = modbus_env
 
         # Set and clear fault
-        fault_sim.set_fault(device_id, FaultConfig("exception", {"exception_code": 0x02}))
-        fault_sim.clear_fault(device_id)
+        fault_simulator.set_fault(device_id, FaultConfig("exception", {"exception_code": 0x02}))
+        fault_simulator.clear_fault(device_id)
 
         result = await client.read_input_registers(0, 2, slave=SLAVE_ID)
         assert not result.isError()
