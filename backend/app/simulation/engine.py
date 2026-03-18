@@ -36,6 +36,7 @@ class SimulationEngine:
 
     def __init__(self) -> None:
         self._device_tasks: dict[UUID, asyncio.Task] = {}
+        self._device_values: dict[UUID, dict[str, float]] = {}
         self._data_generator = DataGenerator()
 
     async def start_device(self, device_id: UUID) -> None:
@@ -67,6 +68,7 @@ class SimulationEngine:
                 await task
             except asyncio.CancelledError:
                 pass
+            self._device_values.pop(device_id, None)
             logger.info("Simulation stopped for device %s", device_id)
 
     async def reload_device(self, device_id: UUID) -> None:
@@ -78,6 +80,10 @@ class SimulationEngine:
         """Check if a device has an active simulation task."""
         return device_id in self._device_tasks
 
+    def get_current_values(self, device_id: UUID) -> dict[str, float]:
+        """Get last generated values for a device (for monitoring)."""
+        return dict(self._device_values.get(device_id, {}))
+
     async def shutdown(self) -> None:
         """Cancel all simulation tasks concurrently."""
         tasks = list(self._device_tasks.values())
@@ -86,6 +92,7 @@ class SimulationEngine:
             t.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        self._device_values.clear()
         logger.info("Simulation engine shut down")
 
     async def _load_device_data(
@@ -140,11 +147,13 @@ class SimulationEngine:
     ) -> None:
         """Per-device simulation loop."""
         start_time = datetime.now(timezone.utc)
-        current_values: dict[str, float] = {}
         tick_count = 0
         error_count = 0
 
+        from app.simulation import anomaly_injector
+
         adapter = protocol_manager.get_adapter(protocol)
+        self._device_values[device_id] = {}
 
         # Sort and filter configs — warn once for missing registers
         default_meta = RegisterMeta(0, 3, "float32", "big_endian", 1.0, 9999)
@@ -164,7 +173,7 @@ class SimulationEngine:
                 elapsed = (now - start_time).total_seconds()
                 now_hour = now.hour + now.minute / 60.0
                 context = GeneratorContext(
-                    current_values=current_values,
+                    current_values=self._device_values[device_id],
                     elapsed_seconds=elapsed,
                     tick_count=tick_count,
                     current_hour_utc=now_hour,
@@ -177,11 +186,15 @@ class SimulationEngine:
                         generated = self._data_generator.generate(
                             config.data_mode, config.mode_params, context,
                         )
+                        generated = anomaly_injector.apply(
+                            device_id, config.register_name, generated,
+                            context.elapsed_seconds,
+                        )
                         if reg.scale_factor != 0:
                             raw_value = generated / reg.scale_factor
                         else:
                             raw_value = generated
-                        current_values[config.register_name] = generated
+                        self._device_values[device_id][config.register_name] = generated
 
                         await adapter.update_register(
                             device_id, reg.address, reg.function_code,
