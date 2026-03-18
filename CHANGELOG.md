@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Simulation engine: per-device async task loop generates register values and writes to Modbus adapter
+- DataGenerator with 5 modes: static, random (uniform/gaussian), daily_curve (sinusoidal), computed (safe expression parser), accumulator
+- Safe AST-based expression parser for computed mode — supports `{register_name}` variable references and four arithmetic operators
+- SimulationConfig DB model (`simulation_configs` table) with per-register configuration and JSONB mode_params
+- Simulation config CRUD API: GET/PUT/PATCH/DELETE `/api/v1/devices/{id}/simulation`
+- FaultSimulator for in-memory per-device communication fault state (delay, timeout, exception, intermittent)
+- Fault control API: PUT/GET/DELETE `/api/v1/devices/{id}/fault`
+- Reverse slave-to-device mapping in ModbusTcpAdapter (`get_device_id_for_slave`)
+- Simulation engine integrated into device start/stop lifecycle and FastAPI lifespan shutdown
+- Pydantic schemas with validation for simulation config and fault control
 - Device instance CRUD API (`/api/v1/devices`) — create, list, get, update, delete
 - Batch device creation endpoint (`POST /api/v1/devices/batch`) — up to 50 devices at once
 - Device start/stop state control (`POST /api/v1/devices/{id}/start`, `/stop`)

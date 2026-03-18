@@ -89,14 +89,14 @@
 ## Phase 5：資料模擬引擎（Week 5–7）⭐ 核心
 
 ### Milestone 5.1：數據產生引擎
-- [ ] `simulation/data_generator.py`：
+- [x] `simulation/data_generator.py`：
   - Static mode：固定值
   - Random mode：base ± amplitude（uniform / gaussian）
   - Daily Curve mode：基於時間的正弦 / 自訂曲線
   - Computed mode：支援簡單公式（power = voltage × current）
   - Accumulator mode：隨時間遞增的累積值
-- [ ] Generator 以 async task 運行，按設定頻率更新 register 值
-- [ ] simulation_configs DB model + CRUD API
+- [x] Generator 以 async task 運行，按設定頻率更新 register 值
+- [x] simulation_configs DB model + CRUD API
 
 ### Milestone 5.2：異常注入引擎
 - [ ] `simulation/anomaly_injector.py`：
@@ -109,13 +109,13 @@
 - [ ] 異常可設定排程（在指定時間自動觸發）
 
 ### Milestone 5.3：通訊故障模擬
-- [ ] `simulation/fault_simulator.py`：
+- [x] `simulation/fault_simulator.py`：
   - Delay：延遲回應 N ms
   - Timeout：完全不回應
   - Exception：回傳 Modbus exception code
   - Intermittent：按機率隨機不回應
-- [ ] 故障模擬在 protocol adapter 層攔截處理
-- [ ] 整合測試：驗證各種故障行為
+- [x] 故障模擬在 protocol adapter 層攔截處理
+- [ ] 整合測試：驗證各種故障行為（Round 2）
 
 ### Milestone 5.4：模擬設定前端
 - [ ] 模擬設定頁：選擇設備 → 每個 register 設定數據模式
@@ -175,8 +175,8 @@
 | 1 | 專案骨架與基礎建設 | Week 1–2 | ✅ |
 | 2 | 設備模板模組 | Week 2–3 | ✅ |
 | 3 | 設備實例模組 | Week 3–4 | ✅ |
-| 4 | Modbus TCP 協議引擎 | Week 4–5 | 🔲 |
-| 5 | 資料模擬引擎（核心）| Week 5–7 | 🔲 |
+| 4 | Modbus TCP 協議引擎 | Week 4–5 | ✅ |
+| 5 | 資料模擬引擎（核心）| Week 5–7 | 🔨 |
 | 6 | 即時監控 Dashboard | Week 7–8 | 🔲 |
 | 7 | 系統完善與發布 | Week 8–9 | 🔲 |
 
