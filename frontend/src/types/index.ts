@@ -27,3 +27,18 @@ export type {
   TemplateSummary,
   UpdateTemplate,
 } from "./template";
+
+export type {
+  AnomalyActiveResponse,
+  AnomalyInjectRequest,
+  AnomalyScheduleBatchSet,
+  AnomalyScheduleRequest,
+  AnomalyScheduleResponse,
+  AnomalyType,
+  FaultConfigRequest,
+  FaultConfigResponse,
+  FaultType,
+  SimulationConfigBatchSet,
+  SimulationConfigRequest,
+  SimulationConfigResponse,
+} from "./simulation";
