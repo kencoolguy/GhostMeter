@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+import random
 import struct
+import time
 from uuid import UUID
 
 from pymodbus.datastore import (
@@ -10,6 +12,7 @@ from pymodbus.datastore import (
     ModbusSequentialDataBlock,
     ModbusServerContext,
 )
+from pymodbus.pdu import ExceptionResponse
 from pymodbus.server import ModbusTcpServer
 
 from app.protocols.base import ProtocolAdapter, RegisterInfo
@@ -98,6 +101,68 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_contexts: dict[int, ModbusDeviceContext] = {}
         self._device_registers: dict[UUID, list[RegisterInfo]] = {}
 
+    def _create_trace_pdu(self):
+        """Create trace_pdu callback for fault interception."""
+        def trace_pdu(sending: bool, pdu):
+            if not sending:
+                # Incoming request — check timeout/intermittent
+                dev_id = self._slave_to_device.get(pdu.dev_id)
+                if dev_id is not None:
+                    from app.simulation import fault_simulator
+                    fault = fault_simulator.get_fault(dev_id)
+                    if fault:
+                        if fault.fault_type == "timeout":
+                            self._suppress_slave(pdu.dev_id)
+                        elif fault.fault_type == "intermittent":
+                            rate = fault.params.get("failure_rate", 0.5)
+                            if random.random() < rate:
+                                self._suppress_slave(pdu.dev_id)
+                return pdu
+
+            # Outgoing response — check delay/exception
+            dev_id = self._slave_to_device.get(pdu.dev_id)
+            if dev_id is None:
+                return pdu
+
+            from app.simulation import fault_simulator
+            fault = fault_simulator.get_fault(dev_id)
+            if fault is None:
+                return pdu
+
+            if fault.fault_type == "delay":
+                delay_ms = fault.params.get("delay_ms", 500)
+                time.sleep(delay_ms / 1000.0)
+            elif fault.fault_type == "exception":
+                exc_code = fault.params.get("exception_code", 0x04)
+                resp = ExceptionResponse(pdu.function_code, exc_code)
+                resp.transaction_id = pdu.transaction_id
+                resp.dev_id = pdu.dev_id
+                return resp
+
+            return pdu
+
+        return trace_pdu
+
+    def _suppress_slave(self, slave_id: int) -> None:
+        """Temporarily remove slave from context to simulate no-response.
+
+        Uses _devices dict directly (ModbusServerContext has no public API
+        for this).
+        """
+        if self._context and slave_id in self._slave_contexts:
+            ctx = self._slave_contexts[slave_id]
+            self._context._devices.pop(slave_id, None)
+
+            async def _restore():
+                await asyncio.sleep(0.1)
+                if slave_id in self._slave_contexts and self._context is not None:
+                    self._context._devices[slave_id] = ctx
+
+            try:
+                asyncio.get_event_loop().create_task(_restore())
+            except RuntimeError:
+                pass
+
     async def start(self) -> None:
         """Start the Modbus TCP server."""
         # Start with empty device dict — slaves added dynamically
@@ -107,6 +172,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
             context=self._context,
             address=(self._host, self._port),
             ignore_missing_devices=True,
+            trace_pdu=self._create_trace_pdu(),
         )
 
         self._server_task = asyncio.create_task(self._server.serve_forever())
