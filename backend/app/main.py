@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app.api.routes.health import router as health_router
 from app.api.routes.devices import router as devices_router
+from app.api.routes.simulation import router as simulation_router
 from app.api.routes.templates import router as templates_router
 from app.config import get_settings
 from app.database import engine
@@ -75,6 +76,7 @@ app.include_router(health_router)
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
+api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simulation"])
 app.include_router(api_v1_router)
 
 
