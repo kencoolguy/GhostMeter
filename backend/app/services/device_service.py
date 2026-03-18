@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.exceptions import ConflictException, NotFoundException, ValidationException
+from app.protocols import protocol_manager
+from app.protocols.base import RegisterInfo
+from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
 from app.models.template import DeviceTemplate, RegisterDefinition
 from app.schemas.device import (
@@ -271,7 +274,7 @@ async def delete_device(
 async def start_device(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> dict:
-    """Start a device (stopped → running)."""
+    """Start a device (stopped → running). Registers slave in protocol adapter."""
     device = await _get_device_raw(session, device_id)
 
     if device.status != "stopped":
@@ -279,6 +282,39 @@ async def start_device(
             detail=f"Device is already {device.status}",
             error_code="INVALID_STATE_TRANSITION",
         )
+
+    # Load template with registers for protocol adapter
+    template = await _get_template_or_404(session, device.template_id)
+    register_infos = [
+        RegisterInfo(
+            address=reg.address,
+            function_code=reg.function_code,
+            data_type=reg.data_type,
+            byte_order=reg.byte_order,
+        )
+        for reg in template.registers
+    ]
+
+    # Register device in protocol adapter
+    if protocol_manager.is_running:
+        try:
+            await protocol_manager.add_device(
+                template.protocol, device.id, device.slave_id, register_infos,
+            )
+        except Exception as e:
+            device.status = "error"
+            await session.commit()
+            raise ConflictException(
+                detail=f"Failed to start device: {e}",
+                error_code="PROTOCOL_ERROR",
+            ) from e
+
+    # Start simulation engine for this device
+    if protocol_manager.is_running:
+        try:
+            await simulation_engine.start_device(device.id)
+        except Exception as e:
+            logger.warning("Failed to start simulation for device %s: %s", device_id, e)
 
     device.status = "running"
     await session.commit()
@@ -288,7 +324,7 @@ async def start_device(
 async def stop_device(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> dict:
-    """Stop a device (running/error → stopped)."""
+    """Stop a device (running/error → stopped). Unregisters slave from protocol adapter."""
     device = await _get_device_raw(session, device_id)
 
     if device.status == "stopped":
@@ -296,6 +332,20 @@ async def stop_device(
             detail="Device is already stopped",
             error_code="INVALID_STATE_TRANSITION",
         )
+
+    # Stop simulation engine for this device
+    try:
+        await simulation_engine.stop_device(device.id)
+    except Exception as e:
+        logger.warning("Failed to stop simulation for device %s: %s", device_id, e)
+
+    # Unregister device from protocol adapter (best-effort for error state)
+    if protocol_manager.is_running:
+        template = await _get_template_or_404(session, device.template_id)
+        try:
+            await protocol_manager.remove_device(template.protocol, device.id)
+        except Exception:
+            logger.warning("Failed to remove device %s from adapter", device_id)
 
     device.status = "stopped"
     await session.commit()

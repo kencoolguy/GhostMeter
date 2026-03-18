@@ -11,7 +11,10 @@ from app.api.routes.simulation import router as simulation_router
 from app.api.routes.templates import router as templates_router
 from app.config import get_settings
 from app.database import engine
+from app.protocols import protocol_manager
+from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.seed.loader import seed_builtin_templates
+from app.simulation import simulation_engine
 from app.exceptions import (
     AppException,
     app_exception_handler,
@@ -45,7 +48,24 @@ async def lifespan(app: FastAPI):
     await seed_builtin_templates()
     logger.info("Seed data check complete")
 
+    # Start Modbus TCP protocol adapter
+    modbus_adapter = ModbusTcpAdapter(
+        host=settings.MODBUS_HOST,
+        port=settings.MODBUS_PORT,
+    )
+    protocol_manager.register_adapter("modbus_tcp", modbus_adapter)
+    await protocol_manager.start_all()
+    logger.info("Protocol manager started")
+
     yield
+
+    # Shutdown simulation engine
+    await simulation_engine.shutdown()
+    logger.info("Simulation engine stopped")
+
+    # Shutdown protocol manager
+    await protocol_manager.stop_all()
+    logger.info("Protocol manager stopped")
 
     # Shutdown
     await engine.dispose()
