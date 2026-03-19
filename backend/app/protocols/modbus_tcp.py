@@ -5,6 +5,7 @@ import logging
 import random
 import struct
 import time
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from pymodbus.datastore import (
@@ -18,6 +19,23 @@ from pymodbus.server import ModbusTcpServer
 from app.protocols.base import ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DeviceStats:
+    """Per-device communication statistics."""
+
+    request_count: int = 0
+    success_count: int = 0
+    error_count: int = 0
+    total_response_ms: float = 0.0
+
+    @property
+    def avg_response_ms(self) -> float:
+        """Average response time in milliseconds."""
+        if self.success_count == 0:
+            return 0.0
+        return self.total_response_ms / self.success_count
 
 # Data type → register count
 DATA_TYPE_REGISTER_COUNT: dict[str, int] = {
@@ -100,44 +118,66 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_to_device: dict[int, UUID] = {}
         self._slave_contexts: dict[int, ModbusDeviceContext] = {}
         self._device_registers: dict[UUID, list[RegisterInfo]] = {}
+        self._device_stats: dict[UUID, DeviceStats] = {}
+        self._request_start_times: dict[int, float] = {}  # transaction_id → monotonic time
 
     def _create_trace_pdu(self):
-        """Create trace_pdu callback for fault interception."""
+        """Create trace_pdu callback for fault interception and stats tracking."""
         def trace_pdu(sending: bool, pdu):
             if not sending:
-                # Incoming request — check timeout/intermittent
+                # Incoming request — record start time and check faults
                 dev_id = self._slave_to_device.get(pdu.dev_id)
                 if dev_id is not None:
+                    # Track request start time for response latency
+                    self._request_start_times[pdu.transaction_id] = time.monotonic()
+                    stats = self._device_stats.get(dev_id)
+                    if stats:
+                        stats.request_count += 1
+
                     from app.simulation import fault_simulator
                     fault = fault_simulator.get_fault(dev_id)
                     if fault:
                         if fault.fault_type == "timeout":
                             self._suppress_slave(pdu.dev_id)
+                            if stats:
+                                stats.error_count += 1
                         elif fault.fault_type == "intermittent":
                             rate = fault.params.get("failure_rate", 0.5)
                             if random.random() < rate:
                                 self._suppress_slave(pdu.dev_id)
+                                if stats:
+                                    stats.error_count += 1
                 return pdu
 
-            # Outgoing response — check delay/exception
+            # Outgoing response — track stats and check delay/exception faults
             dev_id = self._slave_to_device.get(pdu.dev_id)
             if dev_id is None:
                 return pdu
 
+            stats = self._device_stats.get(dev_id)
+            start_time = self._request_start_times.pop(pdu.transaction_id, None)
+
             from app.simulation import fault_simulator
             fault = fault_simulator.get_fault(dev_id)
-            if fault is None:
-                return pdu
 
-            if fault.fault_type == "delay":
-                delay_ms = fault.params.get("delay_ms", 500)
-                time.sleep(delay_ms / 1000.0)
-            elif fault.fault_type == "exception":
-                exc_code = fault.params.get("exception_code", 0x04)
-                resp = ExceptionResponse(pdu.function_code, exc_code)
-                resp.transaction_id = pdu.transaction_id
-                resp.dev_id = pdu.dev_id
-                return resp
+            if fault is not None:
+                if fault.fault_type == "delay":
+                    delay_ms = fault.params.get("delay_ms", 500)
+                    time.sleep(delay_ms / 1000.0)
+                elif fault.fault_type == "exception":
+                    exc_code = fault.params.get("exception_code", 0x04)
+                    resp = ExceptionResponse(pdu.function_code, exc_code)
+                    resp.transaction_id = pdu.transaction_id
+                    resp.dev_id = pdu.dev_id
+                    if stats:
+                        stats.error_count += 1
+                    return resp
+
+            # Successful response — track latency
+            if stats and start_time is not None:
+                elapsed_ms = (time.monotonic() - start_time) * 1000
+                stats.success_count += 1
+                stats.total_response_ms += elapsed_ms
 
             return pdu
 
@@ -197,6 +237,8 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_contexts.clear()
         self._device_registers.clear()
         self._slave_to_device.clear()
+        self._device_stats.clear()
+        self._request_start_times.clear()
         logger.info("Modbus TCP server stopped")
 
     async def add_device(
@@ -237,6 +279,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._device_to_slave[device_id] = slave_id
         self._slave_to_device[slave_id] = device_id
         self._device_registers[device_id] = registers
+        self._device_stats[device_id] = DeviceStats()
         logger.info("Added device %s as slave %d", device_id, slave_id)
 
     async def remove_device(self, device_id: UUID) -> None:
@@ -248,6 +291,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_to_device.pop(slave_id, None)
         self._slave_contexts.pop(slave_id, None)
         self._device_registers.pop(device_id, None)
+        self._device_stats.pop(device_id, None)
         if self._context is not None:
             self._context._devices.pop(slave_id, None)
         logger.info("Removed device %s (slave %d)", device_id, slave_id)
@@ -281,6 +325,15 @@ class ModbusTcpAdapter(ProtocolAdapter):
             "device_count": len(self._device_to_slave),
             "slave_ids": list(self._slave_contexts.keys()),
         }
+
+    def get_stats(self, device_id: UUID) -> DeviceStats | None:
+        """Get communication stats for a device."""
+        return self._device_stats.get(device_id)
+
+    def reset_stats(self, device_id: UUID) -> None:
+        """Reset stats counters for a device."""
+        if device_id in self._device_stats:
+            self._device_stats[device_id] = DeviceStats()
 
     def get_device_id_for_slave(self, slave_id: int) -> UUID | None:
         """Resolve device UUID from Modbus slave ID."""
