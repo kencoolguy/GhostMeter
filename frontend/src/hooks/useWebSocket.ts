@@ -14,9 +14,9 @@ export function useWebSocket({
   maxReconnectInterval = 30000,
 }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const reconnectDelayRef = useRef(reconnectInterval);
-  const [connected, setConnected] = useState(false);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const reconnectDelayRef = useRef<number>(reconnectInterval);
+  const [connected, setConnected] = useState<boolean>(false);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
