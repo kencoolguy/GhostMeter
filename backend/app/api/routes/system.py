@@ -7,6 +7,8 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.schemas.common import ApiResponse
+from app.schemas.system import ImportResult, SystemImport
 from app.services import system_service
 
 router = APIRouter()
@@ -22,3 +24,13 @@ async def export_config(session: AsyncSession = Depends(get_session)) -> Respons
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=ghostmeter-config.json"},
     )
+
+
+@router.post("/import", response_model=ApiResponse[ImportResult])
+async def import_config(
+    data: SystemImport,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[ImportResult]:
+    """Import system configuration from JSON snapshot."""
+    result = await system_service.import_system(session, data)
+    return ApiResponse(data=result, message="Import completed successfully")
