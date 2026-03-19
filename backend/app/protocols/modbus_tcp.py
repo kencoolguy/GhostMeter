@@ -5,7 +5,7 @@ import logging
 import random
 import struct
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from uuid import UUID
 
 from pymodbus.datastore import (

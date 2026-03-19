@@ -1,6 +1,5 @@
 """Integration tests for Modbus TCP protocol adapter."""
 
-import asyncio
 import struct
 import uuid
 

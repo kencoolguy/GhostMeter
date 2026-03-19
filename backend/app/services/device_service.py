@@ -11,7 +11,7 @@ from app.protocols import protocol_manager
 from app.protocols.base import RegisterInfo
 from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
-from app.models.template import DeviceTemplate, RegisterDefinition
+from app.models.template import DeviceTemplate
 from app.schemas.device import (
     DeviceBatchCreate,
     DeviceCreate,

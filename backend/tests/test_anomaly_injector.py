@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from app.simulation.anomaly_injector import AnomalyInjector, AnomalyState
+from app.simulation.anomaly_injector import AnomalyInjector
 
 
 @pytest.fixture
