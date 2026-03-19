@@ -42,3 +42,13 @@ export type {
   SimulationConfigRequest,
   SimulationConfigResponse,
 } from "./simulation";
+
+export type {
+  CommunicationStats,
+  DeviceMonitorData,
+  FaultInfo,
+  MonitorEvent,
+  MonitorUpdate,
+  RegisterData,
+  RegisterHistoryPoint,
+} from "./monitor";
