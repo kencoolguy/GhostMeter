@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  backend:
+    name: Backend (lint + test)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ghostmeter
+          POSTGRES_PASSWORD: ghostmeter
+          POSTGRES_DB: ghostmeter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ghostmeter"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt ruff pytest-cov
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Run migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: ghostmeter
+          POSTGRES_PASSWORD: ghostmeter
+          POSTGRES_DB: ghostmeter
+          APP_NAME: GhostMeter
+          APP_VERSION: 0.1.0
+          MODBUS_HOST: 0.0.0.0
+          MODBUS_PORT: 5020
+        run: alembic upgrade head
+
+      - name: Run tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: ghostmeter
+          POSTGRES_PASSWORD: ghostmeter
+          POSTGRES_DB: ghostmeter
+          APP_NAME: GhostMeter
+          APP_VERSION: 0.1.0
+          MODBUS_HOST: 0.0.0.0
+          MODBUS_PORT: 5020
+        run: pytest --cov=app --cov-report=term-missing -v
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
