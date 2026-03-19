@@ -5,6 +5,7 @@ import {
   HddOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { Button, Layout, Menu, theme } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -17,6 +18,7 @@ const menuItems = [
   { key: "/devices", icon: <HddOutlined />, label: "Devices" },
   { key: "/simulation", icon: <ExperimentOutlined />, label: "Simulation" },
   { key: "/monitor", icon: <DashboardOutlined />, label: "Monitor" },
+  { key: "/settings", icon: <SettingOutlined />, label: "Settings" },
 ];
 
 export function MainLayout() {
