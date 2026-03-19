@@ -35,7 +35,10 @@ class DeviceStats:
         return self.total_response_time_ms / self.success_count if self.success_count else 0.0
 ```
 
-- Increment counters in existing `_create_trace_pdu()` callback (request interception point already exists)
+- Increment counters in existing `_create_trace_pdu()` callback:
+  - Count requests on `sending=False` path
+  - Count success/error on `sending=True` path (check if response is `ExceptionResponse`)
+  - Suppressed requests (timeout/intermittent) count as errors in the `sending=False` path
 - `get_stats(device_id: UUID) -> DeviceStats | None`
 - Initialize on device start, clear on device stop
 
@@ -53,7 +56,7 @@ MonitorService
 
 `get_snapshot()` queries on each call:
 - `SimulationEngine.get_current_values(device_id)` — live register values
-- `AnomalyInjector.get_active(device_id)` — active anomaly register names
+- `AnomalyInjector.get_active(device_id)` — returns `dict[str, AnomalyState]`; extract keys via `list(...keys())` for the `active_anomalies` list in the WebSocket message
 - `FaultSimulator.get_fault(device_id)` — current fault config
 - `ModbusTcpAdapter.get_stats(device_id)` — communication statistics
 - Device status from DB (running/stopped/error)
@@ -68,8 +71,9 @@ Event sources — add `monitor_service.log_event()` calls in:
 
 `backend/app/api/websocket.py`:
 
-- Endpoint: `GET /ws/monitor`
-- On connect: add to client set. On disconnect: remove.
+- Endpoint: `GET /ws/monitor` (outside `/api/v1/` prefix — WebSocket is a persistent connection, not a REST resource)
+- On connect: add to client set, send an immediate snapshot so UI doesn't wait up to 1s. On disconnect: remove.
+- Broadcast catches per-client send exceptions, removes disconnected clients, and logs warnings.
 - Dedicated asyncio task: every 1 second, call `MonitorService.get_snapshot()`, serialize to JSON, broadcast to all connected clients.
 - Start/stop broadcast task in FastAPI lifespan.
 
@@ -145,7 +149,7 @@ interface MonitorState {
 }
 ```
 
-`registerHistory` rolling buffer: max 300 points per register (5 minutes @ 1Hz). Only accumulate history for `selectedDeviceId`'s registers. Clear history on device switch.
+`registerHistory` rolling buffer: max 300 points per register (5 minutes @ 1Hz). Only accumulate history for `selectedDeviceId`'s registers. Clear history on device switch (intentional — chart starts fresh, no backfill; acceptable for MVP).
 
 ### 3. TypeScript Types (new)
 
@@ -160,6 +164,11 @@ interface DeviceMonitorData {
   active_anomalies: string[];
   fault: FaultInfo | null;
   stats: CommunicationStats;
+}
+
+interface FaultInfo {
+  fault_type: string;
+  params: Record<string, unknown>;
 }
 
 interface CommunicationStats {
