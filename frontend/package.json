@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "build:local": "node /home/ken/.ghostmeter-frontend-modules/node_modules/typescript/bin/tsc -b tsconfig.local.json && node /home/ken/.ghostmeter-frontend-modules/node_modules/vite/bin/vite.js build --config /home/ken/.ghostmeter-frontend-modules/vite.config.ts /media/sf_AI_Service_Chatbot/GhostMeter/frontend",
     "lint": "node /home/ken/.ghostmeter-frontend-modules/node_modules/eslint/bin/eslint.js .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
@@ -21,6 +22,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
