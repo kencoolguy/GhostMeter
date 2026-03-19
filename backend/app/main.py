@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.routes.anomaly import router as anomaly_router
+from app.api.websocket import router as ws_router, start_broadcast, stop_broadcast
 from app.api.routes.health import router as health_router
 from app.api.routes.devices import router as devices_router
 from app.api.routes.simulation import router as simulation_router
@@ -58,7 +59,15 @@ async def lifespan(app: FastAPI):
     await protocol_manager.start_all()
     logger.info("Protocol manager started")
 
+    # Start WebSocket monitor broadcast
+    start_broadcast()
+    logger.info("Monitor broadcast started")
+
     yield
+
+    # Stop monitor broadcast
+    await stop_broadcast()
+    logger.info("Monitor broadcast stopped")
 
     # Shutdown simulation engine
     await simulation_engine.shutdown()
@@ -92,8 +101,9 @@ app.add_middleware(
 app.add_exception_handler(AppException, app_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 
-# Routes — health at root, API routes under /api/v1
+# Routes — health at root, WebSocket at root, API routes under /api/v1
 app.include_router(health_router)
+app.include_router(ws_router)
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(templates_router, prefix="/templates", tags=["templates"])
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])

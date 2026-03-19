@@ -14,6 +14,7 @@ from app.schemas.anomaly import (
 )
 from app.schemas.common import ApiResponse
 from app.services import anomaly_service
+from app.services.monitor_service import monitor_service
 
 router = APIRouter()
 
@@ -27,6 +28,10 @@ async def inject_anomaly(
     data: AnomalyInjectRequest,
 ) -> ApiResponse[AnomalyActiveResponse]:
     anomaly_service.inject_anomaly(device_id, data)
+    monitor_service.log_event(
+        device_id, str(device_id), "anomaly_inject",
+        f"Injected {data.anomaly_type} on {data.register_name}",
+    )
     return ApiResponse(
         data=AnomalyActiveResponse(
             register_name=data.register_name,
@@ -64,6 +69,9 @@ async def clear_anomalies(
     device_id: uuid.UUID,
 ) -> ApiResponse[None]:
     anomaly_service.clear_anomalies(device_id)
+    monitor_service.log_event(
+        device_id, str(device_id), "anomaly_clear", "All anomalies cleared",
+    )
     return ApiResponse(message="All anomalies cleared")
 
 

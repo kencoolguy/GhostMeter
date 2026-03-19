@@ -318,6 +318,12 @@ async def start_device(
 
     device.status = "running"
     await session.commit()
+
+    from app.services.monitor_service import monitor_service
+    monitor_service.log_event(
+        device.id, device.name, "device_start", f"Device started (slave {device.slave_id})",
+    )
+
     return await get_device(session, device.id)
 
 
@@ -349,6 +355,12 @@ async def stop_device(
 
     device.status = "stopped"
     await session.commit()
+
+    from app.services.monitor_service import monitor_service
+    monitor_service.log_event(
+        device.id, device.name, "device_stop", "Device stopped",
+    )
+
     return await get_device(session, device.id)
 
 

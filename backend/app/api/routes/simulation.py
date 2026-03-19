@@ -15,6 +15,7 @@ from app.schemas.simulation import (
     SimulationConfigResponse,
 )
 from app.services import simulation_service
+from app.services.monitor_service import monitor_service
 from app.simulation import fault_simulator
 from app.simulation.fault_simulator import FaultConfig
 
@@ -99,6 +100,10 @@ async def set_fault(
     """Set a communication fault on a device (in-memory)."""
     fault = FaultConfig(fault_type=data.fault_type, params=data.params)
     fault_simulator.set_fault(device_id, fault)
+    monitor_service.log_event(
+        device_id, str(device_id), "fault_set",
+        f"Fault set: {data.fault_type}",
+    )
     return ApiResponse(
         data=FaultConfigResponse(
             fault_type=fault.fault_type,
@@ -135,4 +140,7 @@ async def clear_fault(
 ) -> ApiResponse[None]:
     """Clear the active fault for a device."""
     fault_simulator.clear_fault(device_id)
+    monitor_service.log_event(
+        device_id, str(device_id), "fault_clear", "Fault cleared",
+    )
     return ApiResponse(message="Fault cleared successfully")
