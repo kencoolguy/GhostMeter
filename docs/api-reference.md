@@ -466,3 +466,103 @@ When a template has associated devices, `DELETE /api/v1/templates/{template_id}`
 ```
 
 Delete all associated devices first, then delete the template
+
+---
+
+## System
+
+### Export Configuration
+
+#### `GET /api/v1/system/export`
+
+Exports the full system configuration (templates, devices, simulation configs, anomaly schedules) as a JSON file download.
+
+**Response** `200 OK` — JSON file with `Content-Disposition: attachment`
+
+```json
+{
+  "version": "1.0",
+  "exported_at": "2026-03-19T12:00:00+00:00",
+  "templates": [
+    {
+      "name": "SDM630 Three-Phase Meter",
+      "protocol": "modbus_tcp",
+      "description": "...",
+      "is_builtin": true,
+      "registers": [
+        {
+          "name": "voltage_l1",
+          "address": 0,
+          "function_code": 4,
+          "data_type": "float32",
+          "byte_order": "big_endian",
+          "scale_factor": 1.0,
+          "unit": "V",
+          "description": "Phase 1 Voltage",
+          "sort_order": 0
+        }
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "name": "Meter-01",
+      "template_name": "SDM630 Three-Phase Meter",
+      "slave_id": 1,
+      "port": 502,
+      "description": "..."
+    }
+  ],
+  "simulation_configs": [
+    {
+      "device_name": "Meter-01",
+      "register_name": "voltage_l1",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 230, "amplitude": 10, "peak_hour": 14},
+      "is_enabled": true,
+      "update_interval_ms": 1000
+    }
+  ],
+  "anomaly_schedules": [
+    {
+      "device_name": "Meter-01",
+      "register_name": "voltage_l1",
+      "anomaly_type": "spike",
+      "anomaly_params": {"multiplier": 3.0, "probability": 0.1},
+      "trigger_after_seconds": 300,
+      "duration_seconds": 60,
+      "is_enabled": true
+    }
+  ]
+}
+```
+
+---
+
+### Import Configuration
+
+#### `POST /api/v1/system/import`
+
+Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port). Built-in templates are skipped.
+
+**Request Body** — Same JSON format as export
+
+**Response** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "templates_created": 2,
+    "templates_updated": 1,
+    "templates_skipped": 3,
+    "devices_created": 5,
+    "devices_updated": 0,
+    "simulation_configs_set": 15,
+    "anomaly_schedules_set": 3
+  },
+  "message": "Import completed successfully"
+}
+```
+
+**Errors:**
+- `422` — unsupported version, device references unknown template, invalid data

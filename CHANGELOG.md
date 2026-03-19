@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- System config export/import API (`GET /api/v1/system/export`, `POST /api/v1/system/import`)
+- Settings page with export/import UI for full environment migration
+- GitHub Actions CI pipeline (backend lint/test + frontend typecheck/build)
+- Playwright smoke tests for all frontend pages
+- CONTRIBUTING.md with development setup and guidelines
+- `.dockerignore` files for backend and frontend to reduce build context
+
+### Previously Added
 - Real-time Monitor Dashboard: WebSocket `/ws/monitor` endpoint broadcasting device state at 1Hz
 - MonitorService with in-memory event log (circular buffer, 100 events) and data aggregation from simulation engine, anomaly injector, fault simulator, and protocol adapter
 - Per-device communication statistics (request count, success/error count, avg response time) in ModbusTcpAdapter

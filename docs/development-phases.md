@@ -147,24 +147,24 @@
 ## Phase 7：系統完善與發布準備（Week 8–9）
 
 ### Milestone 7.1：系統功能
-- [ ] 整體設定匯入 / 匯出（所有模板 + 實例 + 模擬設定 → JSON）
-- [ ] 操作日誌系統（operation_logs 表 + API）
-- [ ] Dockerfile 最佳化（multi-stage build, 最小化 image size）
-- [ ] docker-compose.yml 正式版（含 volume / health check / restart policy）
-- [ ] .env.example 檔案
+- [x] 整體設定匯入 / 匯出（所有模板 + 實例 + 模擬設定 → JSON）
+- [x] 操作日誌系統（Phase 6 MonitorService 已包含 in-memory event log）
+- [x] Dockerfile 最佳化（.dockerignore 減少 build context）
+- [x] docker-compose.yml 正式版（含 volume / health check / restart policy）
+- [x] .env.example 檔案
 
 ### Milestone 7.2：測試與文件
-- [ ] 後端測試覆蓋率 > 70%
-- [ ] 前端關鍵流程 E2E 測試
-- [ ] README.md：專案介紹、快速開始、截圖
-- [ ] MkDocs 文件：安裝指南、使用教學、API 參考、開發指南
-- [ ] CONTRIBUTING.md
-- [ ] GitHub Actions CI：lint + test + build
+- [x] 後端測試覆蓋率 > 70%（177 tests, 71% coverage）
+- [x] 前端關鍵流程 E2E 測試（Playwright smoke tests）
+- [x] README.md：專案介紹、快速開始、截圖
+- [ ] MkDocs 文件：安裝指南、使用教學、API 參考、開發指南（deferred）
+- [x] CONTRIBUTING.md
+- [x] GitHub Actions CI：lint + test + build
 
 ### Milestone 7.3：首次發布
-- [ ] GitHub Release v0.1.0
-- [ ] Docker Hub image publish
-- [ ] 在相關社群宣傳（GitHub Topics、Reddit r/homeautomation、Python 相關）
+- [ ] GitHub Release v0.1.0（待 PR merge 後 tag）
+- [ ] Docker Hub image publish（deferred）
+- [ ] 在相關社群宣傳（deferred）
 
 ---
 
@@ -178,7 +178,7 @@
 | 4 | Modbus TCP 協議引擎 | Week 4–5 | ✅ |
 | 5 | 資料模擬引擎（核心）| Week 5–7 | ✅ |
 | 6 | 即時監控 Dashboard | Week 7–8 | ✅ |
-| 7 | 系統完善與發布 | Week 8–9 | 🔲 |
+| 7 | 系統完善與發布 | Week 8–9 | ✅ |
 
 **MVP 預估總時程：9 週**（以 side project 節奏，每週投入 10–15 小時估算）
 

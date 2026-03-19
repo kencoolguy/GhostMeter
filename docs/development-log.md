@@ -1,5 +1,38 @@
 # Development Log
 
+## 2026-03-20 — Phase 7: System Finalization
+
+### What was done
+- Implemented system config export API (`GET /api/v1/system/export`) — full snapshot of templates, devices, simulation configs, anomaly schedules as JSON file download
+- Implemented system config import API (`POST /api/v1/system/import`) — upsert by name/slave_id, skips built-in templates, all-or-nothing transaction
+- Created Pydantic schemas for export/import format (reference by name, not UUID)
+- Built frontend Settings page with export button (file download) and import button (file upload with result summary modal)
+- Added Settings route and sidebar menu item
+- Created GitHub Actions CI pipeline: backend (Python 3.12 + PostgreSQL 16 service + ruff lint + pytest) and frontend (Node 20 + tsc + build)
+- Added Playwright smoke tests for all 5 pages (Templates, Devices, Simulation, Monitor, Settings)
+- Added `.dockerignore` files for backend and frontend
+- Created CONTRIBUTING.md with development setup, conventions, and PR process
+- Backend test coverage: 71% (177 tests passing, 14 new tests for export/import)
+
+### Decisions
+- Export format uses names (template_name, device_name) instead of UUIDs for cross-machine portability
+- Import upserts templates by `name`, devices by `(slave_id, port)` — existing data gets updated, not duplicated
+- Built-in templates (`is_builtin=true`) are exported but skipped on import (already seeded)
+- Simulation configs and anomaly schedules are replaced per-device on import (delete-then-insert)
+- Playwright tests run against built preview server — no backend required for smoke tests
+- CI skips Playwright (not installed in CI yet) — frontend job only does typecheck + build
+
+### Issues encountered
+- npm install fails on shared folder (VirtualBox) due to symlink permissions — Playwright added to package.json manually
+- Pre-existing antd v6 + React 19 TypeScript issues in icon imports — not related to Phase 7 changes
+
+### Test results
+- 177 backend tests passing (14 new for export/import)
+- Frontend TypeScript check passes (`tsc --noEmit`)
+- Overall backend coverage: 71%
+
+---
+
 ## 2026-03-19 — Phase 6: Real-time Monitor Dashboard
 
 ### What was done
