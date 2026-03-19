@@ -6,6 +6,7 @@ asyncpg>=0.30
 alembic>=1.15
 pydantic>=2.0
 pydantic-settings>=2.0
+pymodbus>=3.12
 python-dotenv>=1.0
 pytest>=8.0
 pytest-asyncio>=0.25

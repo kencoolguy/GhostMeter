@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "ghostmeter"
 
+    # Modbus TCP
+    MODBUS_HOST: str = "0.0.0.0"
+    MODBUS_PORT: int = 502
+
     # Direct override (takes precedence if set)
     DATABASE_URL: str | None = None
 
