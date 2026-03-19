@@ -27,8 +27,7 @@ Response: JSON file download with `Content-Disposition: attachment`.
   "templates": [
     {
       "name": "SDM630 Three-Phase Meter",
-      "manufacturer": "Eastron",
-      "model": "SDM630",
+      "protocol": "modbus_tcp",
       "description": "...",
       "is_builtin": false,
       "registers": [
@@ -36,11 +35,12 @@ Response: JSON file download with `Content-Disposition: attachment`.
           "name": "voltage_l1",
           "address": 0,
           "data_type": "float32",
-          "byte_order": "big",
-          "function_code": 3,
+          "byte_order": "big_endian",
+          "function_code": 4,
           "scale_factor": 1.0,
           "unit": "V",
-          "description": "Phase 1 Voltage"
+          "description": "Phase 1 Voltage",
+          "sort_order": 0
         }
       ]
     }
@@ -136,6 +136,7 @@ Minimal UI — no new page needed. Can be placed in a dropdown menu in the sideb
 | `backend/app/schemas/system.py` | Pydantic schemas for export/import format |
 | `backend/app/services/system_service.py` | Export query + import upsert logic |
 | `backend/app/api/routes/system.py` | API route handlers |
+| `backend/app/main.py` | Update: register system router (`/api/v1/system`) |
 | `frontend/src/services/systemApi.ts` | API client for export/import |
 | `frontend/src/pages/Settings/index.tsx` | Settings page with export/import buttons |
 
@@ -223,7 +224,7 @@ Already committed in `backend/pyproject.toml`. No further work needed.
 - `frontend/e2e/smoke.spec.ts` — all smoke tests
 - `frontend/package.json` — add `playwright` dev dependency + `test:e2e` script
 
-**Note:** These tests run against the built frontend only (no backend needed for smoke). They verify pages load and critical UI elements render without JavaScript errors.
+**Note:** These tests run against the built frontend only (no backend). Pages that fetch data on mount must handle network errors gracefully (show empty state, not crash). If needed, use MSW (Mock Service Worker) to stub API responses.
 
 ### 7.2.3 GitHub Actions CI
 
@@ -290,6 +291,7 @@ Already committed in `backend/pyproject.toml`. No further work needed.
 | `backend/app/schemas/system.py` | New: export/import Pydantic schemas |
 | `backend/app/services/system_service.py` | New: export/import business logic |
 | `backend/app/api/routes/system.py` | New: export/import API routes |
+| `backend/app/main.py` | Update: register system router |
 | `backend/tests/test_system_export_import.py` | New: export/import tests |
 | `backend/Dockerfile` | Update: multi-stage build |
 | `backend/.dockerignore` | New |
