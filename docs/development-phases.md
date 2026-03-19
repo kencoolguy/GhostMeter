@@ -99,14 +99,14 @@
 - [x] simulation_configs DB model + CRUD API
 
 ### Milestone 5.2：異常注入引擎
-- [ ] `simulation/anomaly_injector.py`：
+- [x] `simulation/anomaly_injector.py`：
   - Spike：瞬間突刺
   - Drift：漸進飄移
   - Flatline：數值凍結
   - Out of Range：超限值
   - Data Loss：歸零或 NaN
-- [ ] 異常可即時注入 / 移除（API 控制）
-- [ ] 異常可設定排程（在指定時間自動觸發）
+- [x] 異常可即時注入 / 移除（API 控制）
+- [x] 異常可設定排程（在指定時間自動觸發）
 
 ### Milestone 5.3：通訊故障模擬
 - [x] `simulation/fault_simulator.py`：
@@ -115,32 +115,32 @@
   - Exception：回傳 Modbus exception code
   - Intermittent：按機率隨機不回應
 - [x] 故障模擬在 protocol adapter 層攔截處理
-- [ ] 整合測試：驗證各種故障行為（Round 2）
+- [x] 整合測試：驗證各種故障行為
 
 ### Milestone 5.4：模擬設定前端
-- [ ] 模擬設定頁：選擇設備 → 每個 register 設定數據模式
-- [ ] 異常注入控制面板：選擇異常類型 + 參數 + 即時注入按鈕
-- [ ] 通訊故障控制面板
-- [ ] 排程設定 UI（時間軸或簡易 cron 設定）
+- [x] 模擬設定頁：選擇設備 → 每個 register 設定數據模式
+- [x] 異常注入控制面板：選擇異常類型 + 參數 + 即時注入按鈕
+- [x] 通訊故障控制面板
+- [x] 排程設定 UI
 
 ---
 
 ## Phase 6：即時監控 Dashboard（Week 7–8）
 
 ### Milestone 6.1：WebSocket 後端
-- [ ] WebSocket endpoint `/ws/monitor`
-- [ ] 定時推送（1s 間隔）：所有運行設備的 register 值
-- [ ] 推送通訊統計：request count / success / error / avg response time
-- [ ] 推送系統事件：設備啟停、異常注入開始/結束
+- [x] WebSocket endpoint `/ws/monitor`
+- [x] 定時推送（1s 間隔）：所有運行設備的 register 值
+- [x] 推送通訊統計：request count / success / error / avg response time
+- [x] 推送系統事件：設備啟停、異常注入開始/結束
 
 ### Milestone 6.2：監控前端頁面
-- [ ] 設備總覽：狀態卡片牆，running（綠）/ stopped（灰）/ error（紅）
-- [ ] 設備詳情 Dashboard：
+- [x] 設備總覽：狀態卡片牆，running（綠）/ stopped（灰）/ error（紅）
+- [x] 設備詳情 Dashboard：
   - 即時數值表格（每秒更新）
   - 關鍵 register 折線圖（最近 5 分鐘）
   - 異常注入狀態指示
-- [ ] 通訊統計圖表
-- [ ] 操作日誌列表（最近 100 筆）
+- [x] 通訊統計圖表
+- [x] 操作日誌列表（最近 100 筆）
 
 ---
 
@@ -176,8 +176,8 @@
 | 2 | 設備模板模組 | Week 2–3 | ✅ |
 | 3 | 設備實例模組 | Week 3–4 | ✅ |
 | 4 | Modbus TCP 協議引擎 | Week 4–5 | ✅ |
-| 5 | 資料模擬引擎（核心）| Week 5–7 | 🔨 |
-| 6 | 即時監控 Dashboard | Week 7–8 | 🔲 |
+| 5 | 資料模擬引擎（核心）| Week 5–7 | ✅ |
+| 6 | 即時監控 Dashboard | Week 7–8 | ✅ |
 | 7 | 系統完善與發布 | Week 8–9 | 🔲 |
 
 **MVP 預估總時程：9 週**（以 side project 節奏，每週投入 10–15 小時估算）

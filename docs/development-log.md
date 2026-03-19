@@ -1,5 +1,32 @@
 # Development Log
 
+## 2026-03-19 — Phase 6: Real-time Monitor Dashboard
+
+### What was done
+- Implemented WebSocket `/ws/monitor` backend with 1Hz broadcast loop
+- Created MonitorService with in-memory event log (deque, max 100) and data aggregation
+- Added per-device communication statistics (DeviceStats) to ModbusTcpAdapter
+- Wired event logging into device start/stop, anomaly inject/clear, fault set/clear
+- Built frontend Monitor Dashboard: DeviceCardGrid, DeviceDetailPanel, RegisterChart (Recharts), StatsPanel, EventLog
+- Created useWebSocket hook with exponential backoff reconnect
+- Created monitorStore (Zustand) with rolling register history buffer (300 points)
+
+### Decisions
+- Used `Flex` instead of `Row`/`Col` for antd v6 compatibility (Col has TypeScript index signature conflict with children)
+- Icons imported without `@ant-design/icons` barrel to avoid `verbatimModuleSyntax` TS errors
+- MonitorService queries DB for running devices each snapshot cycle — acceptable for MVP, may need caching if >100 devices
+- WebSocket broadcast sends all device data to all clients (no per-device subscription) — simple for MVP
+
+### Issues encountered
+- Missing `pymodbus` in requirements.txt — was never added, Docker build cached old layer
+- Missing `MODBUS_HOST`/`MODBUS_PORT` in Settings config — main.py referenced them but config never had them
+- antd v6 + React 19 has widespread TypeScript issues with icon imports and Col component — pre-existing across codebase
+
+### Test results
+- 163 backend tests passing (all existing tests unaffected)
+
+---
+
 ## 2026-03-18 — Phase 3: Device Instance Module
 
 ### What was done

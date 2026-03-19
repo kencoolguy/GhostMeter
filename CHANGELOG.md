@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Real-time Monitor Dashboard: WebSocket `/ws/monitor` endpoint broadcasting device state at 1Hz
+- MonitorService with in-memory event log (circular buffer, 100 events) and data aggregation from simulation engine, anomaly injector, fault simulator, and protocol adapter
+- Per-device communication statistics (request count, success/error count, avg response time) in ModbusTcpAdapter
+- Event logging on device start/stop, anomaly inject/clear, fault set/clear
+- Frontend Monitor page: device card grid, register table, Recharts line chart (5-min rolling window), stats panel, event log
+- useWebSocket hook with exponential backoff reconnect
+- monitorStore (Zustand) with rolling register history buffer (300 points per device/register)
+- Monitor TypeScript types (DeviceMonitorData, MonitorEvent, MonitorUpdate, etc.)
+
+### Fixed
+- Added missing `pymodbus` to backend requirements.txt
+- Added missing `MODBUS_HOST`/`MODBUS_PORT` to Settings config
+
+### Previously Added
 - Simulation engine: per-device async task loop generates register values and writes to Modbus adapter
 - DataGenerator with 5 modes: static, random (uniform/gaussian), daily_curve (sinusoidal), computed (safe expression parser), accumulator
 - Safe AST-based expression parser for computed mode — supports `{register_name}` variable references and four arithmetic operators
