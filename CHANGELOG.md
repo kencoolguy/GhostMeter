@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-(No unreleased changes)
+### Added
+- Device edit UI: edit modal accessible from both device list (edit icon) and device detail page (Edit button)
+- Editable fields: name, description, slave ID, port
+- Slave ID and port fields are disabled when device is running (with tooltip explanation)
+- Backend PUT endpoint already existed; this change adds the missing frontend UI
 
 ## [0.1.0] - 2026-03-20
 

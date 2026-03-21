@@ -1,5 +1,25 @@
 # Development Log
 
+## 2026-03-22 — Device Edit UI
+
+### What was done
+- Added `EditDeviceModal` component for editing device name, description, slave ID, and port
+- Integrated edit button into DeviceList actions column (pen icon)
+- Integrated Edit button into DeviceDetail page header
+- Slave ID and port fields are disabled when device is running, with tooltip explaining why
+- Template binding is intentionally not editable (changing template = different device, user should delete and recreate)
+
+### Decisions
+- Edit modal reused across both list and detail pages for consistency
+- Running devices can still open edit modal (to change name/description), but Slave ID and port fields are disabled — backend also enforces this but frontend gives immediate feedback
+- No separate "view mode" vs "edit mode" on detail page — simple Edit button opens modal
+
+### Issues encountered
+- Pre-existing TypeScript errors in other pages (antd v6 icon imports, recharts types) — not related to this change
+- Device edit files have zero TypeScript errors
+
+---
+
 ## 2026-03-20 — Phase 7: System Finalization
 
 ### What was done

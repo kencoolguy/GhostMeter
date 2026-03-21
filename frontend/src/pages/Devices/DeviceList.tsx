@@ -1,5 +1,6 @@
 import {
   DeleteOutlined,
+  EditOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -11,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import type { DeviceSummary } from "../../types";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { CreateDeviceModal } from "./CreateDeviceModal";
+import { EditDeviceModal } from "./EditDeviceModal";
 
 const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; text: string }> = {
   running: { status: "success", text: "Running" },
@@ -20,7 +22,9 @@ const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; t
 
 export function DeviceList() {
   const navigate = useNavigate();
-  const [modalOpen, setModalOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingDevice, setEditingDevice] = useState<DeviceSummary | null>(null);
   const {
     devices,
     loading,
@@ -44,6 +48,11 @@ export function DeviceList() {
     if (success) {
       await fetchDevices();
     }
+  };
+
+  const handleEdit = (device: DeviceSummary) => {
+    setEditingDevice(device);
+    setEditModalOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -112,6 +121,14 @@ export function DeviceList() {
               disabled={record.status === "error"}
             />
           </Tooltip>
+          <Tooltip title="Edit">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+            />
+          </Tooltip>
           {record.status !== "running" && (
             <Popconfirm
               title="Delete this device?"
@@ -144,7 +161,7 @@ export function DeviceList() {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setModalOpen(true)}
+          onClick={() => setCreateModalOpen(true)}
         >
           New Device
         </Button>
@@ -157,8 +174,17 @@ export function DeviceList() {
         pagination={false}
       />
       <CreateDeviceModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+      />
+      <EditDeviceModal
+        open={editModalOpen}
+        device={editingDevice}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingDevice(null);
+        }}
+        onSuccess={() => fetchDevices()}
       />
     </div>
   );

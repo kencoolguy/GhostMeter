@@ -1,9 +1,11 @@
+import { EditOutlined } from "@ant-design/icons";
 import { Badge, Button, Card, Descriptions, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { RegisterValue } from "../../types";
+import type { DeviceSummary, RegisterValue } from "../../types";
 import { useDeviceStore } from "../../stores/deviceStore";
+import { EditDeviceModal } from "./EditDeviceModal";
 
 const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; text: string }> = {
   running: { status: "success", text: "Running" },
@@ -42,6 +44,7 @@ const registerColumns: ColumnsType<RegisterValue> = [
 export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const { currentDevice, loading, fetchDevice, clearCurrentDevice } =
     useDeviceStore();
 
@@ -63,6 +66,12 @@ export default function DeviceDetail() {
     <div>
       <Space style={{ marginBottom: 16 }}>
         <Button onClick={() => navigate("/devices")}>Back to List</Button>
+        <Button
+          icon={<EditOutlined />}
+          onClick={() => setEditModalOpen(true)}
+        >
+          Edit
+        </Button>
       </Space>
 
       <Typography.Title level={2}>{currentDevice?.name}</Typography.Title>
@@ -97,6 +106,13 @@ export default function DeviceDetail() {
           size="small"
         />
       </Card>
+
+      <EditDeviceModal
+        open={editModalOpen}
+        device={currentDevice as DeviceSummary | null}
+        onClose={() => setEditModalOpen(false)}
+        onSuccess={() => { if (id) fetchDevice(id); }}
+      />
     </div>
   );
 }
