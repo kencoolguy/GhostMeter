@@ -69,7 +69,6 @@ export default function SimulationPage() {
       <Tabs
         items={tabItems}
         defaultActiveKey="data_mode"
-        disabled={!selectedDeviceId}
       />
     </div>
   );

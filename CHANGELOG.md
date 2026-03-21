@@ -10,7 +10,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Device edit UI: edit modal accessible from both device list (edit icon) and device detail page (Edit button)
 - Editable fields: name, description, slave ID, port
 - Slave ID and port fields are disabled when device is running (with tooltip explanation)
-- Backend PUT endpoint already existed; this change adds the missing frontend UI
+- Built-in template read-only view: View button (eye icon) on template list, read-only form with "Built-in" tag
+- Template import error feedback: import failure now shows detailed error with expected JSON format reference
+- Demo startup script (`scripts/start-demo.sh`): one-command setup with auto device creation, simulation config, and Modbus verification
+
+### Changed
+- Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)
+- Backend CORS updated to allow port 3002
+
+### Fixed
+- Removed unused imports in Simulation pages (AnomalyTab, index)
 
 ## [0.1.0] - 2026-03-20
 

@@ -6,7 +6,6 @@ import {
   Input,
   Popconfirm,
   Select,
-  Space,
   Table,
   message,
 } from "antd";
@@ -33,7 +32,6 @@ export function AnomalyTab({ deviceId }: { deviceId: string }) {
   const {
     activeAnomalies,
     schedules,
-    loading,
     fetchActiveAnomalies,
     injectAnomaly,
     removeAnomaly,
