@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.routes.anomaly import router as anomaly_router
+from app.api.routes.mqtt import router as mqtt_router
 from app.api.routes.simulation_profiles import router as profiles_router
 from app.api.routes.system import router as system_router
 from app.api.websocket import router as ws_router, start_broadcast, stop_broadcast
@@ -115,6 +116,7 @@ api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simula
 api_v1_router.include_router(anomaly_router, prefix="/devices", tags=["anomaly"])
 api_v1_router.include_router(profiles_router, prefix="/simulation-profiles", tags=["simulation-profiles"])
 api_v1_router.include_router(system_router, prefix="/system", tags=["system"])
+api_v1_router.include_router(mqtt_router, prefix="/system", tags=["mqtt"])
 app.include_router(api_v1_router)
 
 
