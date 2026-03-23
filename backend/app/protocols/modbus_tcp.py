@@ -1,0 +1,340 @@
+"""Modbus TCP protocol adapter using pymodbus async server."""
+
+import asyncio
+import logging
+import random
+import struct
+import time
+from dataclasses import dataclass
+from uuid import UUID
+
+from pymodbus.datastore import (
+    ModbusDeviceContext,
+    ModbusSequentialDataBlock,
+    ModbusServerContext,
+)
+from pymodbus.pdu import ExceptionResponse
+from pymodbus.server import ModbusTcpServer
+
+from app.protocols.base import ProtocolAdapter, RegisterInfo
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DeviceStats:
+    """Per-device communication statistics."""
+
+    request_count: int = 0
+    success_count: int = 0
+    error_count: int = 0
+    total_response_ms: float = 0.0
+
+    @property
+    def avg_response_ms(self) -> float:
+        """Average response time in milliseconds."""
+        if self.success_count == 0:
+            return 0.0
+        return self.total_response_ms / self.success_count
+
+# Data type → register count
+DATA_TYPE_REGISTER_COUNT: dict[str, int] = {
+    "int16": 1,
+    "uint16": 1,
+    "int32": 2,
+    "uint32": 2,
+    "float32": 2,
+    "float64": 4,
+}
+
+
+def encode_value(
+    value: float,
+    data_type: str,
+    byte_order: str,
+) -> list[int]:
+    """Encode a value into 16-bit register words based on data type and byte order.
+
+    Returns a list of unsigned 16-bit integers.
+    """
+    if data_type == "int16":
+        raw = struct.pack(">h", int(value))
+        return [struct.unpack(">H", raw)[0]]
+    if data_type == "uint16":
+        return [int(value) & 0xFFFF]
+    if data_type == "int32":
+        raw = struct.pack(">i", int(value))
+    elif data_type == "uint32":
+        raw = struct.pack(">I", int(value))
+    elif data_type == "float32":
+        raw = struct.pack(">f", value)
+    elif data_type == "float64":
+        raw = struct.pack(">d", value)
+    else:
+        raise ValueError(f"Unsupported data type: {data_type}")
+
+    # Split into 16-bit words (big endian byte order within each word)
+    words = []
+    for i in range(0, len(raw), 2):
+        words.append(struct.unpack(">H", raw[i : i + 2])[0])
+
+    # Apply word/byte order
+    if byte_order == "big_endian":
+        # AB CD — already in correct order
+        return words
+    elif byte_order == "little_endian":
+        # DC BA — reverse bytes within each word, then reverse word order
+        reversed_words = []
+        for w in words:
+            b = struct.pack(">H", w)
+            reversed_words.append(struct.unpack("<H", b)[0])
+        reversed_words.reverse()
+        return reversed_words
+    elif byte_order == "big_endian_word_swap":
+        # BA DC — reverse bytes within each word, keep word order
+        result = []
+        for w in words:
+            b = struct.pack(">H", w)
+            result.append(struct.unpack("<H", b)[0])
+        return result
+    elif byte_order == "little_endian_word_swap":
+        # CD AB — keep bytes within word, reverse word order
+        words.reverse()
+        return words
+    else:
+        raise ValueError(f"Unsupported byte order: {byte_order}")
+
+
+class ModbusTcpAdapter(ProtocolAdapter):
+    """Modbus TCP server adapter using pymodbus."""
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 502) -> None:
+        self._host = host
+        self._port = port
+        self._server: ModbusTcpServer | None = None
+        self._server_task: asyncio.Task | None = None
+        self._context: ModbusServerContext | None = None
+        self._device_to_slave: dict[UUID, int] = {}
+        self._slave_to_device: dict[int, UUID] = {}
+        self._slave_contexts: dict[int, ModbusDeviceContext] = {}
+        self._device_registers: dict[UUID, list[RegisterInfo]] = {}
+        self._device_stats: dict[UUID, DeviceStats] = {}
+        self._request_start_times: dict[int, float] = {}  # transaction_id → monotonic time
+
+    def _create_trace_pdu(self):
+        """Create trace_pdu callback for fault interception and stats tracking."""
+        def trace_pdu(sending: bool, pdu):
+            if not sending:
+                # Incoming request — record start time and check faults
+                dev_id = self._slave_to_device.get(pdu.dev_id)
+                if dev_id is not None:
+                    # Track request start time for response latency
+                    self._request_start_times[pdu.transaction_id] = time.monotonic()
+                    stats = self._device_stats.get(dev_id)
+                    if stats:
+                        stats.request_count += 1
+
+                    from app.simulation import fault_simulator
+                    fault = fault_simulator.get_fault(dev_id)
+                    if fault:
+                        if fault.fault_type == "timeout":
+                            self._suppress_slave(pdu.dev_id)
+                            if stats:
+                                stats.error_count += 1
+                        elif fault.fault_type == "intermittent":
+                            rate = fault.params.get("failure_rate", 0.5)
+                            if random.random() < rate:
+                                self._suppress_slave(pdu.dev_id)
+                                if stats:
+                                    stats.error_count += 1
+                return pdu
+
+            # Outgoing response — track stats and check delay/exception faults
+            dev_id = self._slave_to_device.get(pdu.dev_id)
+            if dev_id is None:
+                return pdu
+
+            stats = self._device_stats.get(dev_id)
+            start_time = self._request_start_times.pop(pdu.transaction_id, None)
+
+            from app.simulation import fault_simulator
+            fault = fault_simulator.get_fault(dev_id)
+
+            if fault is not None:
+                if fault.fault_type == "delay":
+                    delay_ms = fault.params.get("delay_ms", 500)
+                    time.sleep(delay_ms / 1000.0)
+                elif fault.fault_type == "exception":
+                    exc_code = fault.params.get("exception_code", 0x04)
+                    resp = ExceptionResponse(pdu.function_code, exc_code)
+                    resp.transaction_id = pdu.transaction_id
+                    resp.dev_id = pdu.dev_id
+                    if stats:
+                        stats.error_count += 1
+                    return resp
+
+            # Successful response — track latency
+            if stats and start_time is not None:
+                elapsed_ms = (time.monotonic() - start_time) * 1000
+                stats.success_count += 1
+                stats.total_response_ms += elapsed_ms
+
+            return pdu
+
+        return trace_pdu
+
+    def _suppress_slave(self, slave_id: int) -> None:
+        """Temporarily remove slave from context to simulate no-response.
+
+        Uses _devices dict directly (ModbusServerContext has no public API
+        for this).
+        """
+        if self._context and slave_id in self._slave_contexts:
+            ctx = self._slave_contexts[slave_id]
+            self._context._devices.pop(slave_id, None)
+
+            async def _restore():
+                await asyncio.sleep(0.1)
+                if slave_id in self._slave_contexts and self._context is not None:
+                    self._context._devices[slave_id] = ctx
+
+            try:
+                asyncio.get_event_loop().create_task(_restore())
+            except RuntimeError:
+                pass
+
+    async def start(self) -> None:
+        """Start the Modbus TCP server."""
+        # Start with empty device dict — slaves added dynamically
+        self._context = ModbusServerContext(devices={}, single=False)
+
+        self._server = ModbusTcpServer(
+            context=self._context,
+            address=(self._host, self._port),
+            ignore_missing_devices=True,
+            trace_pdu=self._create_trace_pdu(),
+        )
+
+        self._server_task = asyncio.create_task(self._server.serve_forever())
+        # Give server a moment to bind
+        await asyncio.sleep(0.1)
+        logger.info("Modbus TCP server started on %s:%d", self._host, self._port)
+
+    async def stop(self) -> None:
+        """Stop the Modbus TCP server."""
+        if self._server:
+            await self._server.shutdown()
+        if self._server_task:
+            self._server_task.cancel()
+            try:
+                await self._server_task
+            except asyncio.CancelledError:
+                pass
+        self._server = None
+        self._server_task = None
+        self._context = None
+        self._device_to_slave.clear()
+        self._slave_contexts.clear()
+        self._device_registers.clear()
+        self._slave_to_device.clear()
+        self._device_stats.clear()
+        self._request_start_times.clear()
+        logger.info("Modbus TCP server stopped")
+
+    async def add_device(
+        self,
+        device_id: UUID,
+        slave_id: int,
+        registers: list[RegisterInfo],
+    ) -> None:
+        """Add a device as a Modbus slave."""
+        if self._context is None:
+            raise RuntimeError("Modbus server not started")
+
+        if slave_id in self._slave_contexts:
+            raise ValueError(f"Slave ID {slave_id} already registered")
+
+        # Calculate required datastore sizes per function code.
+        # pymodbus ModbusDeviceContext.getValues/setValues adds +1 to the address
+        # internally, so we need size = end_addr + 1 to avoid ILLEGAL_ADDRESS.
+        hr_size = 1
+        ir_size = 1
+        for reg in registers:
+            reg_count = DATA_TYPE_REGISTER_COUNT.get(reg.data_type, 1)
+            end_addr = reg.address + reg_count + 1
+            if reg.function_code == 3:
+                hr_size = max(hr_size, end_addr)
+            elif reg.function_code == 4:
+                ir_size = max(ir_size, end_addr)
+
+        # Create slave context with zero-initialized datastores
+        slave_context = ModbusDeviceContext(
+            hr=ModbusSequentialDataBlock(0, [0] * hr_size),
+            ir=ModbusSequentialDataBlock(0, [0] * ir_size),
+        )
+
+        # Register in server context via internal _devices dict
+        self._context._devices[slave_id] = slave_context
+        self._slave_contexts[slave_id] = slave_context
+        self._device_to_slave[device_id] = slave_id
+        self._slave_to_device[slave_id] = device_id
+        self._device_registers[device_id] = registers
+        self._device_stats[device_id] = DeviceStats()
+        logger.info("Added device %s as slave %d", device_id, slave_id)
+
+    async def remove_device(self, device_id: UUID) -> None:
+        """Remove a device from the server."""
+        slave_id = self._device_to_slave.pop(device_id, None)
+        if slave_id is None:
+            return  # No-op for non-existent device
+
+        self._slave_to_device.pop(slave_id, None)
+        self._slave_contexts.pop(slave_id, None)
+        self._device_registers.pop(device_id, None)
+        self._device_stats.pop(device_id, None)
+        if self._context is not None:
+            self._context._devices.pop(slave_id, None)
+        logger.info("Removed device %s (slave %d)", device_id, slave_id)
+
+    async def update_register(
+        self,
+        device_id: UUID,
+        address: int,
+        function_code: int,
+        value: float,
+        data_type: str,
+        byte_order: str,
+    ) -> None:
+        """Write a value into a device's register datastore."""
+        slave_id = self._device_to_slave.get(device_id)
+        if slave_id is None:
+            raise ValueError(f"Device {device_id} not registered")
+
+        slave_ctx = self._slave_contexts[slave_id]
+        words = encode_value(value, data_type, byte_order)
+
+        # function_code 3 → holding registers (fx=3), 4 → input registers (fx=4)
+        slave_ctx.setValues(function_code, address, words)
+
+    def get_status(self) -> dict:
+        """Return adapter status."""
+        return {
+            "host": self._host,
+            "port": self._port,
+            "running": self._server is not None,
+            "device_count": len(self._device_to_slave),
+            "slave_ids": list(self._slave_contexts.keys()),
+        }
+
+    def get_stats(self, device_id: UUID) -> DeviceStats | None:
+        """Get communication stats for a device."""
+        return self._device_stats.get(device_id)
+
+    def reset_stats(self, device_id: UUID) -> None:
+        """Reset stats counters for a device."""
+        if device_id in self._device_stats:
+            self._device_stats[device_id] = DeviceStats()
+
+    def get_device_id_for_slave(self, slave_id: int) -> UUID | None:
+        """Resolve device UUID from Modbus slave ID."""
+        return self._slave_to_device.get(slave_id)

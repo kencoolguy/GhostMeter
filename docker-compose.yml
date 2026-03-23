@@ -2,33 +2,56 @@ services:
   postgres:
     image: postgres:16
     container_name: ghostmeter-postgres
+    env_file: .env
     environment:
-      POSTGRES_USER: ghostmeter
-      POSTGRES_PASSWORD: ghostmeter
-      POSTGRES_DB: ghostmeter
+      POSTGRES_USER: ${POSTGRES_USER:-ghostmeter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ghostmeter}
+      POSTGRES_DB: ${POSTGRES_DB:-ghostmeter}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ghostmeter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   backend:
     build: ./backend
     container_name: ghostmeter-backend
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ghostmeter}:${POSTGRES_PASSWORD:-ghostmeter}@postgres:5432/${POSTGRES_DB:-ghostmeter}
     ports:
       - "8000:8000"
       - "502:502"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://ghostmeter:ghostmeter@postgres:5432/ghostmeter
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
     container_name: ghostmeter-frontend
     ports:
-      - "3000:80"
+      - "3002:80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
 volumes:
   pgdata:
