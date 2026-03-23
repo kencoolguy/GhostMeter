@@ -1,5 +1,26 @@
 # Development Log
 
+## 2026-03-22 — Template & Device UX Improvements
+
+### What was done
+- **Device edit UI**: Added `EditDeviceModal` component for editing name, description, slave ID, port. Integrated into DeviceList (pen icon) and DeviceDetail (Edit button). Slave ID/port disabled when running.
+- **Built-in template read-only view**: Added View button (eye icon) on TemplateList for built-in templates. TemplateForm now detects `is_builtin` and shows read-only mode with "Built-in" tag, disabled inputs, and Back button instead of Save.
+- **Template import error feedback**: ImportExportButtons now shows a detailed error modal on import failure, including the specific validation error and a collapsible section with expected JSON format.
+- **Port change**: Frontend Docker port changed from 3000 to 3002; CORS updated accordingly.
+- **Demo script**: Added `scripts/start-demo.sh` — one-command startup that builds Docker containers, creates a test device, configures simulation, and verifies Modbus TCP reads.
+- **Cleanup**: Removed unused imports in AnomalyTab and Simulation index.
+
+### Decisions
+- Edit modal reused across both list and detail pages for consistency
+- Running devices can still open edit modal (to change name/description), but Slave ID and port fields are disabled — backend also enforces this but frontend gives immediate feedback
+- Built-in templates use the same TemplateForm in read-only mode rather than a separate component
+- Port 3002 chosen to avoid conflicts with other local services on 3000
+
+### Issues encountered
+- Pre-existing TypeScript errors in other pages (antd v6 icon imports, recharts types) — not related to these changes
+
+---
+
 ## 2026-03-20 — Phase 7: System Finalization
 
 ### What was done

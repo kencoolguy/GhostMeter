@@ -3,6 +3,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
+  EyeOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
 import { Button, Popconfirm, Space, Table, Tag, Tooltip } from "antd";
@@ -70,7 +71,16 @@ export function TemplateList() {
       key: "actions",
       render: (_, record) => (
         <Space size="small">
-          {!record.is_builtin && (
+          {record.is_builtin ? (
+            <Tooltip title="View">
+              <Button
+                type="text"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => navigate(`/templates/${record.id}`)}
+              />
+            </Tooltip>
+          ) : (
             <Tooltip title="Edit">
               <Button
                 type="text"
