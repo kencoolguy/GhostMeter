@@ -28,7 +28,7 @@ export const mqttApi = {
       .then((r) => r.data),
 
   deleteDeviceConfig: (deviceId: string) =>
-    api.delete<ApiResponse>(`/system/devices/${deviceId}/mqtt`).then((r) => r.data),
+    api.delete<ApiResponse<null>>(`/system/devices/${deviceId}/mqtt`).then((r) => r.data),
 
   startPublishing: (deviceId: string) =>
     api
