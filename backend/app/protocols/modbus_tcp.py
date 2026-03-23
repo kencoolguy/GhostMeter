@@ -5,7 +5,6 @@ import logging
 import random
 import struct
 import time
-from dataclasses import dataclass
 from uuid import UUID
 
 from pymodbus.datastore import (
@@ -16,26 +15,10 @@ from pymodbus.datastore import (
 from pymodbus.pdu import ExceptionResponse
 from pymodbus.server import ModbusTcpServer
 
-from app.protocols.base import ProtocolAdapter, RegisterInfo
+from app.protocols.base import DeviceStats, ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class DeviceStats:
-    """Per-device communication statistics."""
-
-    request_count: int = 0
-    success_count: int = 0
-    error_count: int = 0
-    total_response_ms: float = 0.0
-
-    @property
-    def avg_response_ms(self) -> float:
-        """Average response time in milliseconds."""
-        if self.success_count == 0:
-            return 0.0
-        return self.total_response_ms / self.success_count
 
 # Data type → register count
 DATA_TYPE_REGISTER_COUNT: dict[str, int] = {
@@ -109,6 +92,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
     """Modbus TCP server adapter using pymodbus."""
 
     def __init__(self, host: str = "0.0.0.0", port: int = 502) -> None:
+        super().__init__()
         self._host = host
         self._port = port
         self._server: ModbusTcpServer | None = None
@@ -118,7 +102,6 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_to_device: dict[int, UUID] = {}
         self._slave_contexts: dict[int, ModbusDeviceContext] = {}
         self._device_registers: dict[UUID, list[RegisterInfo]] = {}
-        self._device_stats: dict[UUID, DeviceStats] = {}
         self._request_start_times: dict[int, float] = {}  # transaction_id → monotonic time
 
     def _create_trace_pdu(self):
@@ -241,7 +224,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._request_start_times.clear()
         logger.info("Modbus TCP server stopped")
 
-    async def add_device(
+    async def _do_add_device(
         self,
         device_id: UUID,
         slave_id: int,
@@ -279,10 +262,9 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._device_to_slave[device_id] = slave_id
         self._slave_to_device[slave_id] = device_id
         self._device_registers[device_id] = registers
-        self._device_stats[device_id] = DeviceStats()
         logger.info("Added device %s as slave %d", device_id, slave_id)
 
-    async def remove_device(self, device_id: UUID) -> None:
+    async def _do_remove_device(self, device_id: UUID) -> None:
         """Remove a device from the server."""
         slave_id = self._device_to_slave.pop(device_id, None)
         if slave_id is None:
@@ -291,7 +273,6 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_to_device.pop(slave_id, None)
         self._slave_contexts.pop(slave_id, None)
         self._device_registers.pop(device_id, None)
-        self._device_stats.pop(device_id, None)
         if self._context is not None:
             self._context._devices.pop(slave_id, None)
         logger.info("Removed device %s (slave %d)", device_id, slave_id)
@@ -325,15 +306,6 @@ class ModbusTcpAdapter(ProtocolAdapter):
             "device_count": len(self._device_to_slave),
             "slave_ids": list(self._slave_contexts.keys()),
         }
-
-    def get_stats(self, device_id: UUID) -> DeviceStats | None:
-        """Get communication stats for a device."""
-        return self._device_stats.get(device_id)
-
-    def reset_stats(self, device_id: UUID) -> None:
-        """Reset stats counters for a device."""
-        if device_id in self._device_stats:
-            self._device_stats[device_id] = DeviceStats()
 
     def get_device_id_for_slave(self, slave_id: int) -> UUID | None:
         """Resolve device UUID from Modbus slave ID."""
