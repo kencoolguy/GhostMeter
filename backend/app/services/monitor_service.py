@@ -125,6 +125,16 @@ class MonitorService:
                     "avg_response_ms": round(stats.avg_response_ms, 1),
                 }
 
+            # MQTT stats
+            mqtt_stats_data: dict[str, Any] | None = None
+            mqtt_stats = protocol_manager.get_stats("mqtt", device_id)
+            if mqtt_stats and mqtt_stats.request_count > 0:
+                mqtt_stats_data = {
+                    "request_count": mqtt_stats.request_count,
+                    "success_count": mqtt_stats.success_count,
+                    "error_count": mqtt_stats.error_count,
+                }
+
             devices_data.append({
                 "device_id": str(device_id),
                 "name": device.name,
@@ -135,6 +145,7 @@ class MonitorService:
                 "active_anomalies": active_anomalies,
                 "active_fault": active_fault,
                 "stats": stats_data,
+                "mqtt_stats": mqtt_stats_data,
             })
 
         return {
