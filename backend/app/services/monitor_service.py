@@ -64,10 +64,9 @@ class MonitorService:
         - SimulationEngine: current register values
         - AnomalyInjector: active anomalies
         - FaultSimulator: active faults
-        - ModbusTcpAdapter: communication stats
+        - ProtocolManager: communication stats
         """
         from app.protocols import protocol_manager
-        from app.protocols.modbus_tcp import ModbusTcpAdapter
         from app.simulation import anomaly_injector, fault_simulator, simulation_engine
 
         devices_data: list[dict[str, Any]] = []
@@ -80,13 +79,6 @@ class MonitorService:
             )
             result = await session.execute(stmt)
             devices = result.scalars().all()
-
-        # Get adapter for stats
-        adapter: ModbusTcpAdapter | None = None
-        try:
-            adapter = protocol_manager.get_adapter("modbus_tcp")  # type: ignore[assignment]
-        except KeyError:
-            pass
 
         for device in devices:
             device_id = device.id
@@ -124,15 +116,14 @@ class MonitorService:
                 "error_count": 0,
                 "avg_response_ms": 0.0,
             }
-            if adapter:
-                stats = adapter.get_stats(device_id)
-                if stats:
-                    stats_data = {
-                        "request_count": stats.request_count,
-                        "success_count": stats.success_count,
-                        "error_count": stats.error_count,
-                        "avg_response_ms": round(stats.avg_response_ms, 1),
-                    }
+            stats = protocol_manager.get_stats("modbus_tcp", device_id)
+            if stats:
+                stats_data = {
+                    "request_count": stats.request_count,
+                    "success_count": stats.success_count,
+                    "error_count": stats.error_count,
+                    "avg_response_ms": round(stats.avg_response_ms, 1),
+                }
 
             devices_data.append({
                 "device_id": str(device_id),
