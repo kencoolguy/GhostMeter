@@ -1,4 +1,4 @@
-import { Form, Input, InputNumber, Modal, Tooltip } from "antd";
+import { Form, InputNumber, Modal, Tooltip } from "antd";
 import { useEffect } from "react";
 import type { DeviceSummary, UpdateDevice } from "../../types";
 import { useDeviceStore } from "../../stores/deviceStore";
@@ -11,16 +11,14 @@ interface EditDeviceModalProps {
 }
 
 export function EditDeviceModal({ open, device, onClose, onSuccess }: EditDeviceModalProps) {
-  const [form] = Form.useForm<UpdateDevice>();
+  const [form] = Form.useForm<Pick<UpdateDevice, "slave_id" | "port">>();
   const { updateDevice, loading } = useDeviceStore();
 
   useEffect(() => {
     if (open && device) {
       form.setFieldsValue({
-        name: device.name,
         slave_id: device.slave_id,
         port: device.port,
-        description: device.description,
       });
     }
   }, [open, device, form]);
@@ -30,7 +28,11 @@ export function EditDeviceModal({ open, device, onClose, onSuccess }: EditDevice
   const handleSubmit = async () => {
     if (!device) return;
     const values = await form.validateFields();
-    const result = await updateDevice(device.id, values);
+    const result = await updateDevice(device.id, {
+      name: device.name,
+      description: device.description,
+      ...values,
+    });
     if (result) {
       onSuccess();
       onClose();
@@ -39,7 +41,7 @@ export function EditDeviceModal({ open, device, onClose, onSuccess }: EditDevice
 
   return (
     <Modal
-      title="Edit Device"
+      title="Edit Device Settings"
       open={open}
       onOk={handleSubmit}
       onCancel={onClose}
@@ -47,13 +49,6 @@ export function EditDeviceModal({ open, device, onClose, onSuccess }: EditDevice
       destroyOnClose
     >
       <Form form={form} layout="vertical">
-        <Form.Item
-          name="name"
-          label="Device Name"
-          rules={[{ required: true, message: "Please enter device name" }]}
-        >
-          <Input />
-        </Form.Item>
         <Tooltip title={isRunning ? "Stop the device before changing Slave ID" : undefined}>
           <Form.Item
             name="slave_id"
@@ -72,9 +67,6 @@ export function EditDeviceModal({ open, device, onClose, onSuccess }: EditDevice
             <InputNumber min={1} max={65535} style={{ width: "100%" }} disabled={isRunning} />
           </Form.Item>
         </Tooltip>
-        <Form.Item name="description" label="Description">
-          <Input.TextArea rows={2} />
-        </Form.Item>
       </Form>
     </Modal>
   );

@@ -1,5 +1,6 @@
-import { EditOutlined } from "@ant-design/icons";
+import { SettingOutlined } from "@ant-design/icons";
 import { Badge, Button, Card, Descriptions, Space, Table, Typography } from "antd";
+import "./DeviceDetail.css";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -45,8 +46,25 @@ export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const { currentDevice, loading, fetchDevice, clearCurrentDevice } =
+  const { currentDevice, loading, fetchDevice, clearCurrentDevice, updateDevice } =
     useDeviceStore();
+
+  const handleInlineUpdate = async (field: "name" | "description", value: string) => {
+    if (!currentDevice || !id) return;
+    const trimmed = value.trim();
+    if (field === "name" && !trimmed) return;
+    if (trimmed === (currentDevice[field] ?? "")) return;
+    const result = await updateDevice(id, {
+      name: currentDevice.name,
+      slave_id: currentDevice.slave_id,
+      port: currentDevice.port,
+      description: currentDevice.description,
+      [field]: trimmed || null,
+    });
+    if (result) {
+      fetchDevice(id);
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -67,14 +85,24 @@ export default function DeviceDetail() {
       <Space style={{ marginBottom: 16 }}>
         <Button onClick={() => navigate("/devices")}>Back to List</Button>
         <Button
-          icon={<EditOutlined />}
+          icon={<SettingOutlined />}
           onClick={() => setEditModalOpen(true)}
         >
-          Edit
+          Edit Settings
         </Button>
       </Space>
 
-      <Typography.Title level={2}>{currentDevice?.name}</Typography.Title>
+      <Typography.Title
+        level={2}
+        className="device-detail-title"
+        editable={{
+          onChange: (value) => handleInlineUpdate("name", value),
+          triggerType: ["icon"],
+          tooltip: "Rename",
+        }}
+      >
+        {currentDevice?.name}
+      </Typography.Title>
 
       <Card style={{ marginBottom: 16 }}>
         <Descriptions column={2}>
@@ -91,7 +119,17 @@ export default function DeviceDetail() {
             <Badge status={statusConfig.status} text={statusConfig.text} />
           </Descriptions.Item>
           <Descriptions.Item label="Description" span={2}>
-            {currentDevice?.description ?? "\u2014"}
+            <Typography.Paragraph
+              className="device-detail-desc"
+              editable={{
+                onChange: (value) => handleInlineUpdate("description", value),
+                triggerType: ["icon"],
+                tooltip: "Edit description",
+              }}
+              style={{ marginBottom: 0 }}
+            >
+              {currentDevice?.description ?? ""}
+            </Typography.Paragraph>
           </Descriptions.Item>
         </Descriptions>
       </Card>
