@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from app.protocols.base import ProtocolAdapter, RegisterInfo
+from app.protocols.base import DeviceStats, ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 
@@ -65,3 +65,16 @@ class ProtocolManager:
     def get_adapter(self, protocol: str) -> ProtocolAdapter:
         """Get adapter by protocol name."""
         return self._adapters[protocol]
+
+    def get_stats(self, protocol: str, device_id: UUID) -> DeviceStats | None:
+        """Get device stats via the named adapter. Returns None if adapter not found."""
+        adapter = self._adapters.get(protocol)
+        if adapter is None:
+            return None
+        return adapter.get_stats(device_id)
+
+    def reset_stats(self, protocol: str, device_id: UUID) -> None:
+        """Reset device stats via the named adapter. No-op if adapter not found."""
+        adapter = self._adapters.get(protocol)
+        if adapter is not None:
+            adapter.reset_stats(device_id)
