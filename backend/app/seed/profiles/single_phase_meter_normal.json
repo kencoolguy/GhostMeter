@@ -1,0 +1,64 @@
+{
+  "template_name": "SDM120 Single-Phase Meter",
+  "name": "Normal Operation",
+  "description": "Physically consistent single-phase meter simulation with daily load curve. Voltage ~220V, current peaks at 14:00, power and energy computed from measurements.",
+  "is_default": true,
+  "configs": [
+    {
+      "register_name": "voltage",
+      "data_mode": "random",
+      "mode_params": {"base": 220, "amplitude": 3, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "current",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 8, "amplitude": 6, "peak_hour": 14},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "power_factor",
+      "data_mode": "random",
+      "mode_params": {"base": 0.95, "amplitude": 0.03, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "active_power",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage} * {current} * {power_factor}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "apparent_power",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage} * {current}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "reactive_power",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{apparent_power} * 0.31"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "frequency",
+      "data_mode": "random",
+      "mode_params": {"base": 60, "amplitude": 0.05, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "total_energy",
+      "data_mode": "accumulator",
+      "mode_params": {"start_value": 500, "increment_per_second": 0.00046},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    }
+  ]
+}
