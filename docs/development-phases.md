@@ -168,6 +168,27 @@
 
 ---
 
+## Phase 8：Post-MVP 功能擴充
+
+### Milestone 8.1：Simulation Profiles
+- [x] `simulation_profiles` DB table + ORM model + migration
+- [x] Pydantic schemas（Create / Update / Response / ProfileConfigEntry）
+- [x] Profile CRUD service + API routes (`/api/v1/simulation-profiles`)
+- [x] Device creation auto-apply: `profile_id` field in DeviceCreate / DeviceBatchCreate
+- [x] Built-in seed profiles for all 3 templates (physically consistent data)
+- [x] Seed loader: `seed_builtin_profiles()` called at app startup
+- [x] 22 integration tests (CRUD, auto-apply, seed, protection)
+
+### Milestone 8.2：MQTT Adapter（In Progress）
+- [ ] MQTT protocol adapter + broker settings
+- [ ] MQTT publish for device data
+
+### Milestone 8.3：Frontend Profile Selector (#13)
+- [ ] Profile selector dropdown in device creation UI
+- [ ] Profile management page
+
+---
+
 ## 時程總覽
 
 | Phase | 內容 | 預估時間 | 狀態 |
@@ -179,6 +200,7 @@
 | 5 | 資料模擬引擎（核心）| Week 5–7 | ✅ |
 | 6 | 即時監控 Dashboard | Week 7–8 | ✅ |
 | 7 | 系統完善與發布 | Week 8–9 | ✅ |
+| 8 | Post-MVP 功能擴充 | Week 9+ | 🔄 |
 
 **MVP 預估總時程：9 週**（以 side project 節奏，每週投入 10–15 小時估算）
 
