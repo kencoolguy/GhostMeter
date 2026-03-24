@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.database import engine
 from app.protocols import protocol_manager
 from app.protocols.modbus_tcp import ModbusTcpAdapter
-from app.seed.loader import seed_builtin_templates
+from app.seed.loader import seed_builtin_profiles, seed_builtin_templates
 from app.simulation import simulation_engine
 from app.exceptions import (
     AppException,
@@ -48,9 +48,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.error("Database connection failed", exc_info=True)
 
-    # Seed built-in templates
+    # Seed built-in templates and profiles
     await seed_builtin_templates()
-    logger.info("Seed data check complete")
+    logger.info("Template seed data check complete")
+    await seed_builtin_profiles()
+    logger.info("Profile seed data check complete")
 
     # Start Modbus TCP protocol adapter
     modbus_adapter = ModbusTcpAdapter(
