@@ -53,6 +53,22 @@ async def _get_template_or_404(
     return template
 
 
+async def _commit_or_raise_conflict(
+    session: AsyncSession, name: str,
+) -> None:
+    """Commit and convert unique constraint violations to ConflictException."""
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        if "uq_simulation_profile_template_name" in str(e):
+            raise ConflictException(
+                detail=f"Profile name '{name}' already exists for this template",
+                error_code="PROFILE_NAME_CONFLICT",
+            ) from e
+        raise ValidationException(f"Database constraint violation: {e}") from e
+
+
 async def _clear_existing_default(
     session: AsyncSession, template_id: uuid.UUID,
 ) -> None:
@@ -105,16 +121,7 @@ async def create_profile(
         configs=[c.model_dump() for c in data.configs],
     )
     session.add(profile)
-    try:
-        await session.commit()
-    except IntegrityError as e:
-        await session.rollback()
-        if "uq_simulation_profile_template_name" in str(e):
-            raise ConflictException(
-                detail=f"Profile name '{data.name}' already exists for this template",
-                error_code="PROFILE_NAME_CONFLICT",
-            ) from e
-        raise ValidationException(f"Database constraint violation: {e}") from e
+    await _commit_or_raise_conflict(session, data.name)
     await session.refresh(profile)
     return profile
 
@@ -144,16 +151,7 @@ async def update_profile(
     if data.configs is not None:
         profile.configs = [c.model_dump() for c in data.configs]
 
-    try:
-        await session.commit()
-    except IntegrityError as e:
-        await session.rollback()
-        if "uq_simulation_profile_template_name" in str(e):
-            raise ConflictException(
-                detail=f"Profile name '{data.name}' already exists for this template",
-                error_code="PROFILE_NAME_CONFLICT",
-            ) from e
-        raise ValidationException(f"Database constraint violation: {e}") from e
+    await _commit_or_raise_conflict(session, data.name or profile.name)
     await session.refresh(profile)
     return profile
 

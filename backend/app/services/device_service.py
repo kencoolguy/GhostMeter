@@ -101,7 +101,6 @@ async def _resolve_and_apply_profile(
     profile = None
 
     if "profile_id" in data.model_fields_set:
-        # Explicitly provided
         if data.profile_id is not None:
             profile = await simulation_profile_service.get_profile(
                 session, data.profile_id,
@@ -110,9 +109,7 @@ async def _resolve_and_apply_profile(
                 raise ValidationException(
                     "Profile does not belong to the device's template"
                 )
-        # else: explicit null → skip
     else:
-        # Absent → auto-apply default
         profile = await simulation_profile_service.get_default_profile(
             session, template_id,
         )

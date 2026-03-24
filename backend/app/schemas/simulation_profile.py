@@ -6,33 +6,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.schemas.simulation import VALID_DATA_MODES
+from app.schemas.simulation import SimulationConfigCreate
 
-
-class ProfileConfigEntry(BaseModel):
-    """A single register config entry within a profile."""
-
-    register_name: str
-    data_mode: str
-    mode_params: dict[str, Any] = {}
-    is_enabled: bool = True
-    update_interval_ms: int = 1000
-
-    @field_validator("data_mode")
-    @classmethod
-    def validate_data_mode(cls, v: str) -> str:
-        if v not in VALID_DATA_MODES:
-            raise ValueError(f"data_mode must be one of {VALID_DATA_MODES}")
-        return v
-
-    @field_validator("update_interval_ms")
-    @classmethod
-    def validate_interval(cls, v: int) -> int:
-        if v < 100:
-            raise ValueError("update_interval_ms must be >= 100")
-        if v > 60000:
-            raise ValueError("update_interval_ms must be <= 60000")
-        return v
+# Reuse SimulationConfigCreate — identical fields and validators
+ProfileConfigEntry = SimulationConfigCreate
 
 
 class SimulationProfileCreate(BaseModel):
