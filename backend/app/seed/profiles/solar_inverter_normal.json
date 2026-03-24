@@ -1,0 +1,78 @@
+{
+  "template_name": "SunSpec Solar Inverter",
+  "name": "Normal Operation",
+  "description": "Solar inverter simulation with daily solar curve peaking at noon. DC voltage/current follow sunlight, AC power computed via efficiency, energy accumulates.",
+  "is_default": true,
+  "configs": [
+    {
+      "register_name": "dc_voltage",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 350, "amplitude": 100, "peak_hour": 12},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "dc_current",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 8, "amplitude": 7.5, "peak_hour": 12},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "dc_power",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{dc_voltage} * {dc_current}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "ac_voltage",
+      "data_mode": "random",
+      "mode_params": {"base": 220, "amplitude": 3, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "efficiency",
+      "data_mode": "random",
+      "mode_params": {"base": 960, "amplitude": 10, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "ac_power",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{dc_power} * {efficiency} * 0.001"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "ac_current",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{ac_power} / {ac_voltage}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "ac_frequency",
+      "data_mode": "random",
+      "mode_params": {"base": 60, "amplitude": 0.05, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "inverter_status",
+      "data_mode": "static",
+      "mode_params": {"value": 3},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "total_energy",
+      "data_mode": "accumulator",
+      "mode_params": {"start_value": 5000, "increment_per_second": 0.00069},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    }
+  ]
+}

@@ -270,6 +270,7 @@ Base path: `/api/v1/devices`
 | `slave_id` | integer | yes | — | Modbus Slave ID (1–247) |
 | `port` | integer | no | `502` | Modbus TCP port |
 | `description` | string\|null | no | `null` | Description |
+| `profile_id` | UUID\|null | no | `null` | Simulation profile to apply. Absent = auto-apply default; explicit `null` = skip |
 
 #### `DeviceBatchCreate` (request)
 
@@ -281,6 +282,7 @@ Base path: `/api/v1/devices`
 | `port` | integer | no | `502` | Modbus TCP port |
 | `name_prefix` | string\|null | no | `null` | Name prefix; defaults to template name |
 | `description` | string\|null | no | `null` | Description for all created devices |
+| `profile_id` | UUID\|null | no | `null` | Simulation profile to apply. Absent = auto-apply default; explicit `null` = skip |
 
 > Batch limit: 50 devices per call. Naming: `"{prefix} {N}"` if prefix given, else `"{template_name} - Slave {N}"`.
 
@@ -466,6 +468,144 @@ When a template has associated devices, `DELETE /api/v1/templates/{template_id}`
 ```
 
 Delete all associated devices first, then delete the template
+
+---
+
+## Simulation Profiles
+
+Base path: `/api/v1/simulation-profiles`
+
+Simulation profiles are reusable sets of simulation parameters bound to a device template. Built-in profiles are loaded from seed data and cannot have their configs modified or be deleted.
+
+### Schemas
+
+#### `SimulationProfileCreate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `template_id` | UUID | yes | — | Template this profile belongs to |
+| `name` | string | yes | — | Profile name (max 200 chars, unique per template) |
+| `description` | string\|null | no | `null` | Description |
+| `is_default` | boolean | no | `false` | Auto-apply on device creation (at most one default per template) |
+| `configs` | ProfileConfigEntry[] | yes | — | Array of register simulation configs |
+
+#### `SimulationProfileUpdate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string\|null | no | `null` | New name |
+| `description` | string\|null | no | `null` | New description |
+| `is_default` | boolean\|null | no | `null` | Change default status |
+| `configs` | ProfileConfigEntry[]\|null | no | `null` | Replace configs (rejected for built-in profiles) |
+
+#### `ProfileConfigEntry`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_name` | string | yes | — | Target register name |
+| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator` |
+| `mode_params` | object | no | `{}` | Mode-specific parameters |
+| `is_enabled` | boolean | no | `true` | Whether this config is active |
+| `update_interval_ms` | integer | no | `1000` | Update interval (100–60000 ms) |
+
+#### `SimulationProfileResponse` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Profile ID |
+| `template_id` | UUID | Template ID |
+| `name` | string | Profile name |
+| `description` | string\|null | Description |
+| `is_builtin` | boolean | `true` for seed-loaded profiles |
+| `is_default` | boolean | Auto-applied on device creation |
+| `configs` | object[] | Array of register simulation configs |
+| `created_at` | datetime | ISO 8601 UTC |
+| `updated_at` | datetime | ISO 8601 UTC |
+
+### Endpoints
+
+#### `GET /api/v1/simulation-profiles?template_id={uuid}`
+
+List all profiles for a template.
+
+**Query param:** `template_id` (UUID, required)
+
+**Response** `200 OK` — `ApiResponse[SimulationProfileResponse[]]`
+
+---
+
+#### `GET /api/v1/simulation-profiles/{profile_id}`
+
+Get a single profile.
+
+**Path param:** `profile_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `404` — profile not found
+
+---
+
+#### `POST /api/v1/simulation-profiles`
+
+Create a new simulation profile.
+
+**Request body:** `SimulationProfileCreate`
+
+**Response** `201 Created` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `404` — template not found
+- `409` — duplicate name for this template
+
+---
+
+#### `PUT /api/v1/simulation-profiles/{profile_id}`
+
+Update a simulation profile.
+
+**Path param:** `profile_id` (UUID)
+
+**Request body:** `SimulationProfileUpdate`
+
+**Response** `200 OK` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `404` — profile not found
+- `403` — cannot modify configs of a built-in profile
+- `409` — duplicate name
+
+---
+
+#### `DELETE /api/v1/simulation-profiles/{profile_id}`
+
+Delete a simulation profile.
+
+**Path param:** `profile_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Profile deleted successfully" }
+```
+
+**Error cases:**
+- `404` — profile not found
+- `403` — cannot delete a built-in profile
+
+---
+
+### Profile Apply Behavior on Device Creation
+
+When creating a device (`POST /devices` or `POST /devices/batch`), the `profile_id` field controls which profile is applied:
+
+| `profile_id` in request | Behavior |
+|------------------------|----------|
+| Absent (not in JSON) | Auto-apply the template's default profile (if one exists) |
+| Explicit UUID | Apply that specific profile (404 if not found) |
+| Explicit `null` | Skip — no profile applied, all registers start at 0 |
+
+Profile configs are **copied** into `simulation_configs` at apply time. There is no ongoing link — subsequent changes to the profile do not affect already-created devices.
 
 ---
 

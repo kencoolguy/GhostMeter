@@ -89,6 +89,31 @@ A virtual device instance created from a template. Devices bind to a Modbus slav
 
 ---
 
+### `simulation_profiles`
+
+Reusable sets of simulation parameters bound to a device template. Built-in profiles are loaded from seed data at startup.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `template_id` | UUID | NOT NULL | — | FK → `device_templates.id` (CASCADE DELETE) |
+| `name` | VARCHAR(200) | NOT NULL | — | Profile name (unique per template) |
+| `description` | TEXT | NULL | — | Human-readable description |
+| `is_builtin` | BOOLEAN | NOT NULL | `false` | `true` for seed-loaded profiles; configs are immutable |
+| `is_default` | BOOLEAN | NOT NULL | `false` | Auto-applied on device creation |
+| `configs` | JSONB | NOT NULL | — | Array of register simulation config entries |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `now()` | Creation time (UTC) |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `now()` | Last update time (UTC) |
+
+**Constraints:**
+- `UNIQUE (template_id, name)` — profile names must be unique within a template
+- `UNIQUE (template_id) WHERE is_default = true` — at most one default profile per template (partial unique index)
+
+**Relations:**
+- Belongs to `device_templates` (CASCADE — deleting a template deletes its profiles)
+
+---
+
 ## Register Address Notes
 
 - Addresses are **0-based** (following the pymodbus convention, not the legacy 1-based Modbus PDU convention)
@@ -106,3 +131,6 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 |----------|-------------|
 | `448f2e5c6613` | Create device_templates and register_definitions tables |
 | `d013e48e688a` | Add device_instances table with FK RESTRICT and unique (slave_id, port) |
+| `4e3e82ebbef8` | Add simulation_configs table |
+| `d3e65808cf1d` | Add anomaly_schedules table |
+| `8c0da865d279` | Add simulation_profiles table |

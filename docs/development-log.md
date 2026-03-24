@@ -1,5 +1,27 @@
 # Development Log
 
+## 2026-03-25 — Simulation Profiles
+
+### What was done
+- **New `simulation_profiles` table**: ORM model, Alembic migration, JSONB configs column storing reusable simulation parameter sets
+- **Profile CRUD API**: Full REST endpoints at `/api/v1/simulation-profiles` with list, get, create, update, delete operations
+- **Profile auto-apply on device creation**: `profile_id` field added to `DeviceCreate`/`DeviceBatchCreate`. Absent = auto-apply default profile; explicit `null` = skip; UUID = apply specific profile
+- **Built-in profiles**: Three seed JSON files (three-phase meter, single-phase meter, solar inverter) loaded at startup with physically consistent simulation parameters
+- **Seed loader**: `seed_builtin_profiles()` function added to loader, called from app startup after template seeding
+- **Comprehensive tests**: 22 new tests covering CRUD, auto-apply, batch apply, seed loading, idempotency, and built-in protection
+
+### Decisions
+- Profile configs are **copied** into `simulation_configs` at apply time — no ongoing reference. This allows users to customize per-device without affecting the profile
+- At most one `is_default=true` per template, enforced via PostgreSQL partial unique index
+- Built-in profiles: configs are immutable (403 on update), cannot be deleted (403), but name/description can be changed
+- `profile_id` absent vs explicit `null` distinguished via `model_fields_set` in Pydantic
+
+### Issues encountered
+- Alembic autogenerate produced empty migration when run inside Docker container without volume mount — solved by rebuilding the image after code changes
+- Test ordering issue: `seed_builtin_profiles` uses global `async_session_factory` which gets stale connections across event loops — solved by patching with a fresh session factory in tests
+
+---
+
 ## 2026-03-22 — Template & Device UX Improvements
 
 ### What was done

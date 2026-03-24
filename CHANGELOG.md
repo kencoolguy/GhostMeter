@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Simulation profiles: reusable sets of simulation parameters for device templates
+- Built-in "Normal Operation" profiles for all three templates (three-phase meter, single-phase meter, solar inverter)
+- Automatic profile apply on device creation (default profile auto-applied unless explicitly skipped)
+- CRUD API for simulation profiles (`/api/v1/simulation-profiles`)
+- `profile_id` field on device creation to control which profile is applied
 - Device edit UI: edit modal accessible from both device list (edit icon) and device detail page (Edit button)
 - Editable fields: name, description, slave ID, port
 - Slave ID and port fields are disabled when device is running (with tooltip explanation)

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.routes.anomaly import router as anomaly_router
+from app.api.routes.simulation_profiles import router as profiles_router
 from app.api.routes.system import router as system_router
 from app.api.websocket import router as ws_router, start_broadcast, stop_broadcast
 from app.api.routes.health import router as health_router
@@ -16,7 +17,7 @@ from app.config import get_settings
 from app.database import engine
 from app.protocols import protocol_manager
 from app.protocols.modbus_tcp import ModbusTcpAdapter
-from app.seed.loader import seed_builtin_templates
+from app.seed.loader import seed_builtin_profiles, seed_builtin_templates
 from app.simulation import simulation_engine
 from app.exceptions import (
     AppException,
@@ -47,9 +48,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.error("Database connection failed", exc_info=True)
 
-    # Seed built-in templates
+    # Seed built-in templates and profiles
     await seed_builtin_templates()
-    logger.info("Seed data check complete")
+    logger.info("Template seed data check complete")
+    await seed_builtin_profiles()
+    logger.info("Profile seed data check complete")
 
     # Start Modbus TCP protocol adapter
     modbus_adapter = ModbusTcpAdapter(
@@ -110,6 +113,7 @@ api_v1_router.include_router(templates_router, prefix="/templates", tags=["templ
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
 api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simulation"])
 api_v1_router.include_router(anomaly_router, prefix="/devices", tags=["anomaly"])
+api_v1_router.include_router(profiles_router, prefix="/simulation-profiles", tags=["simulation-profiles"])
 api_v1_router.include_router(system_router, prefix="/system", tags=["system"])
 app.include_router(api_v1_router)
 
