@@ -14,6 +14,7 @@ class DeviceCreate(BaseModel):
     slave_id: int
     port: int = 502
     description: str | None = None
+    profile_id: UUID | None = None  # See model_fields_set for absent vs null
 
     @field_validator("slave_id")
     @classmethod
@@ -32,6 +33,7 @@ class DeviceBatchCreate(BaseModel):
     port: int = 502
     name_prefix: str | None = None
     description: str | None = None
+    profile_id: UUID | None = None  # See model_fields_set for absent vs null
 
     @field_validator("slave_id_start", "slave_id_end")
     @classmethod
