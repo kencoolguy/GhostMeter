@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.protocols import protocol_manager
 from app.protocols.base import RegisterInfo
+from app.services import simulation_profile_service
 from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
 from app.models.template import DeviceTemplate
@@ -90,6 +91,38 @@ def _device_to_summary(device: DeviceInstance, template_name: str) -> dict:
     }
 
 
+async def _resolve_and_apply_profile(
+    session: AsyncSession,
+    device_id: uuid.UUID,
+    template_id: uuid.UUID,
+    data: DeviceCreate | DeviceBatchCreate,
+) -> None:
+    """Resolve the profile to apply and expand into simulation_configs."""
+    profile = None
+
+    if "profile_id" in data.model_fields_set:
+        # Explicitly provided
+        if data.profile_id is not None:
+            profile = await simulation_profile_service.get_profile(
+                session, data.profile_id,
+            )
+            if profile.template_id != template_id:
+                raise ValidationException(
+                    "Profile does not belong to the device's template"
+                )
+        # else: explicit null → skip
+    else:
+        # Absent → auto-apply default
+        profile = await simulation_profile_service.get_default_profile(
+            session, template_id,
+        )
+
+    if profile is not None:
+        await simulation_profile_service.apply_profile_to_device(
+            session, profile, device_id,
+        )
+
+
 async def list_devices(session: AsyncSession) -> list[dict]:
     """List all devices with template name."""
     stmt = (
@@ -166,6 +199,9 @@ async def create_device(
         raise ValidationException(f"Database constraint violation: {e}") from e
     await session.refresh(device)
 
+    await _resolve_and_apply_profile(session, device.id, data.template_id, data)
+    await session.commit()
+
     return await get_device(session, device.id)
 
 
@@ -217,10 +253,14 @@ async def batch_create_devices(
         await session.rollback()
         raise ValidationException(f"Database constraint violation: {e}") from e
 
-    # Refresh and get summaries
+    # Refresh and apply profiles
     result = []
     for device in devices:
         await session.refresh(device)
+        await _resolve_and_apply_profile(session, device.id, data.template_id, data)
+    await session.commit()
+
+    for device in devices:
         result.append(await get_device(session, device.id))
     return result
 
