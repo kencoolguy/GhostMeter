@@ -25,6 +25,7 @@ export function DeviceList() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceSummary | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const {
     devices,
     loading,
@@ -32,6 +33,9 @@ export function DeviceList() {
     deleteDevice,
     startDevice,
     stopDevice,
+    batchStartDevices,
+    batchStopDevices,
+    batchDeleteDevices,
   } = useDeviceStore();
 
   useEffect(() => {
@@ -61,6 +65,35 @@ export function DeviceList() {
       await fetchDevices();
     }
   };
+
+  // --- Batch operations ---
+
+  const handleBatchStart = async (deviceIds: string[]) => {
+    const success = await batchStartDevices(deviceIds);
+    if (success) {
+      setSelectedRowKeys([]);
+      await fetchDevices();
+    }
+  };
+
+  const handleBatchStop = async (deviceIds: string[]) => {
+    const success = await batchStopDevices(deviceIds);
+    if (success) {
+      setSelectedRowKeys([]);
+      await fetchDevices();
+    }
+  };
+
+  const handleBatchDelete = async (deviceIds: string[]) => {
+    const success = await batchDeleteDevices(deviceIds);
+    if (success) {
+      setSelectedRowKeys([]);
+      await fetchDevices();
+    }
+  };
+
+  const selectedIds = selectedRowKeys as string[];
+  const hasSelection = selectedIds.length > 0;
 
   const columns: ColumnsType<DeviceSummary> = [
     {
@@ -154,10 +187,56 @@ export function DeviceList() {
       <div
         style={{
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
+          alignItems: "center",
           marginBottom: 16,
+          flexWrap: "wrap",
+          gap: 8,
         }}
       >
+        <Space>
+          <Button
+            icon={<PlayCircleOutlined />}
+            onClick={() => handleBatchStart([])}
+            disabled={loading}
+          >
+            Start All
+          </Button>
+          <Button
+            icon={<PauseCircleOutlined />}
+            onClick={() => handleBatchStop([])}
+            disabled={loading}
+          >
+            Stop All
+          </Button>
+          {hasSelection && (
+            <>
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                onClick={() => handleBatchStart(selectedIds)}
+                disabled={loading}
+              >
+                Start Selected ({selectedIds.length})
+              </Button>
+              <Button
+                icon={<PauseCircleOutlined />}
+                onClick={() => handleBatchStop(selectedIds)}
+                disabled={loading}
+              >
+                Stop Selected ({selectedIds.length})
+              </Button>
+              <Popconfirm
+                title={`Delete ${selectedIds.length} device(s)? Running devices will be skipped.`}
+                onConfirm={() => handleBatchDelete(selectedIds)}
+              >
+                <Button danger disabled={loading}>
+                  Delete Selected ({selectedIds.length})
+                </Button>
+              </Popconfirm>
+            </>
+          )}
+        </Space>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -172,6 +251,10 @@ export function DeviceList() {
         rowKey="id"
         loading={loading}
         pagination={false}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+        }}
       />
       <CreateDeviceModal
         open={createModalOpen}

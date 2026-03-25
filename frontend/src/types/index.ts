@@ -10,6 +10,7 @@ export interface ApiErrorResponse {
 }
 
 export type {
+  BatchActionResult,
   BatchCreateDevice,
   CreateDevice,
   DeviceDetail,
