@@ -61,3 +61,11 @@ export type {
   MqttPublishConfigWrite,
   MqttTestResult,
 } from "./mqtt";
+
+export type {
+  CreateProfile,
+  DataMode,
+  ProfileConfigEntry,
+  SimulationProfile,
+  UpdateProfile,
+} from "./profile";
