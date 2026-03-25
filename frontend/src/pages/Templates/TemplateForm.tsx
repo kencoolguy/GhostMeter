@@ -1,8 +1,9 @@
-import { Button, Card, Form, Input, Select, Space, Tag, Typography } from "antd";
+import { Button, Card, Form, Input, Select, Space, Tabs, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { RegisterDefinition } from "../../types";
 import { useTemplateStore } from "../../stores/templateStore";
+import { ProfilesTab } from "./ProfilesTab";
 import { RegisterTable } from "./RegisterTable";
 
 const PROTOCOL_OPTIONS = [{ value: "modbus_tcp", label: "Modbus TCP" }];
@@ -109,13 +110,45 @@ export default function TemplateForm() {
         </Form>
       </Card>
 
-      <Card title="Register Map" style={{ marginBottom: 16 }}>
-        <RegisterTable
-          registers={registers}
-          onChange={setRegisters}
-          disabled={isReadOnly}
-        />
-      </Card>
+      {isEdit ? (
+        <Card style={{ marginBottom: 16 }}>
+          <Tabs
+            defaultActiveKey="registers"
+            items={[
+              {
+                key: "registers",
+                label: "Register Map",
+                children: (
+                  <RegisterTable
+                    registers={registers}
+                    onChange={setRegisters}
+                    disabled={isReadOnly}
+                  />
+                ),
+              },
+              {
+                key: "profiles",
+                label: "Profiles",
+                children: id ? (
+                  <ProfilesTab
+                    templateId={id}
+                    registers={registers}
+                    readOnly={isReadOnly}
+                  />
+                ) : null,
+              },
+            ]}
+          />
+        </Card>
+      ) : (
+        <Card title="Register Map" style={{ marginBottom: 16 }}>
+          <RegisterTable
+            registers={registers}
+            onChange={setRegisters}
+            disabled={isReadOnly}
+          />
+        </Card>
+      )}
 
       {isReadOnly ? (
         <Button onClick={() => navigate("/templates")}>Back</Button>
