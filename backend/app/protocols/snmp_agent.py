@@ -1,77 +1,23 @@
 """SNMPv2c agent adapter using pysnmp v7."""
 
-import asyncio
+import bisect
 import logging
 from uuid import UUID
 
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdrsp, context
-from pysnmp.proto.rfc1902 import Gauge32, Integer32, ObjectName, OctetString
-from pysnmp.smi import instrum
+from pysnmp.proto.rfc1902 import Gauge32, Integer32, OctetString
 
-from app.protocols.base import DeviceStats, ProtocolAdapter, RegisterInfo
+from app.exceptions import ConflictException
+from app.protocols.base import ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 
 
-class _GhostMeterMibInstrum(instrum.MibInstrumController):
-    """Custom MIB instrumentation that resolves OIDs from SimulationEngine."""
-
-    def __init__(self, adapter: "SnmpAdapter") -> None:
-        super().__init__(engine.SnmpEngine().getMibBuilder())
-        self._adapter = adapter
-
-    def readVars(self, varBinds, acInfo=None):
-        """Handle SNMP GET requests."""
-        result = []
-        for oid, val in varBinds:
-            oid_str = str(oid)
-            # Strip leading dot if present
-            if oid_str.startswith("."):
-                oid_str = oid_str[1:]
-            value, data_type = self._adapter.resolve_oid(oid_str)
-            if value is not None:
-                snmp_val = self._adapter.to_snmp_value(value, data_type)
-                result.append((oid, snmp_val))
-            else:
-                # Return noSuchObject
-                from pysnmp.proto import rfc1905
-                result.append((oid, rfc1905.noSuchObject))
-        return result
-
-    def readNextVars(self, varBinds, acInfo=None):
-        """Handle SNMP GETNEXT requests (used by WALK)."""
-        result = []
-        sorted_oids = self._adapter.get_sorted_oids()
-
-        for oid, val in varBinds:
-            oid_str = str(oid)
-            if oid_str.startswith("."):
-                oid_str = oid_str[1:]
-
-            # Find next OID after the requested one
-            next_oid = None
-            for candidate in sorted_oids:
-                oid_tuple = tuple(int(x) for x in candidate.split("."))
-                req_tuple = tuple(int(x) for x in oid_str.split(".")) if oid_str else ()
-                if oid_tuple > req_tuple:
-                    next_oid = candidate
-                    break
-
-            if next_oid:
-                value, data_type = self._adapter.resolve_oid(next_oid)
-                if value is not None:
-                    snmp_val = self._adapter.to_snmp_value(value, data_type)
-                    next_oid_obj = ObjectName(next_oid)
-                    result.append((next_oid_obj, snmp_val))
-                    continue
-
-            # End of MIB
-            from pysnmp.proto import rfc1905
-            result.append((oid, rfc1905.endOfMibView))
-
-        return result
+def _oid_sort_key(oid_str: str) -> tuple[int, ...]:
+    """Parse OID string into a tuple of ints for sorting/comparison."""
+    return tuple(int(x) for x in oid_str.split("."))
 
 
 class SnmpAdapter(ProtocolAdapter):
@@ -84,10 +30,13 @@ class SnmpAdapter(ProtocolAdapter):
         self._running = False
         # OID string → (device_id, register_name) mapping
         self._oid_map: dict[str, tuple[UUID, str]] = {}
+        # OID string → data_type for O(1) lookup in resolve_oid
+        self._oid_data_types: dict[str, str] = {}
         # device_id → list of OID strings (for cleanup)
         self._device_oids: dict[UUID, list[str]] = {}
-        # device_id → list of RegisterInfo (for data type lookup)
-        self._device_registers: dict[UUID, list[RegisterInfo]] = {}
+        # Cached sorted OID list (invalidated on add/remove device)
+        self._sorted_oids: list[str] = []
+        self._sorted_oid_keys: list[tuple[int, ...]] = []
         self._snmp_engine: engine.SnmpEngine | None = None
 
     async def start(self) -> None:
@@ -95,21 +44,18 @@ class SnmpAdapter(ProtocolAdapter):
         try:
             self._snmp_engine = engine.SnmpEngine()
 
-            # Configure transport (UDP/IPv4)
             config.addTransport(
                 self._snmp_engine,
                 udp.domainName,
                 udp.UdpTransport().openServerMode(("0.0.0.0", self._port)),
             )
 
-            # Configure SNMPv2c community
             config.addV1System(
                 self._snmp_engine,
                 "ghostmeter-area",
                 self._community,
             )
 
-            # Allow full read access
             config.addVacmUser(
                 self._snmp_engine,
                 2,  # securityModel: SNMPv2c
@@ -118,10 +64,7 @@ class SnmpAdapter(ProtocolAdapter):
                 readSubTree=(1, 3, 6),
             )
 
-            # Set up SNMP context with our custom instrumentation
             snmp_context = context.SnmpContext(self._snmp_engine)
-
-            # Register command responders
             cmdrsp.GetCommandResponder(self._snmp_engine, snmp_context)
             cmdrsp.NextCommandResponder(self._snmp_engine, snmp_context)
             cmdrsp.BulkCommandResponder(self._snmp_engine, snmp_context)
@@ -142,11 +85,13 @@ class SnmpAdapter(ProtocolAdapter):
             try:
                 self._snmp_engine.transportDispatcher.closeDispatcher()
             except Exception:
-                pass
+                logger.debug("Error closing SNMP transport dispatcher", exc_info=True)
             self._snmp_engine = None
         self._oid_map.clear()
+        self._oid_data_types.clear()
         self._device_oids.clear()
-        self._device_registers.clear()
+        self._sorted_oids.clear()
+        self._sorted_oid_keys.clear()
         self._device_stats.clear()
         self._running = False
         logger.info("SNMP agent stopped")
@@ -162,26 +107,24 @@ class SnmpAdapter(ProtocolAdapter):
         for reg in registers:
             if not reg.oid:
                 continue
-            # Check conflict
             if reg.oid in self._oid_map:
                 existing_device_id, _ = self._oid_map[reg.oid]
                 if existing_device_id != device_id:
-                    from app.exceptions import ConflictException
-
                     raise ConflictException(
                         detail=f"OID {reg.oid} is already registered by another device",
                         error_code="OID_CONFLICT",
                     )
             oids_to_add.append(reg)
 
-        # Register all OIDs — use OID as initial name key (set_register_names fixes this)
         device_oid_list: list[str] = []
         for reg in oids_to_add:
-            self._oid_map[reg.oid] = (device_id, reg.oid)  # type: ignore[arg-type]
-            device_oid_list.append(reg.oid)  # type: ignore[arg-type]
+            oid = reg.oid  # already checked non-None above
+            self._oid_map[oid] = (device_id, oid)  # type: ignore[arg-type]
+            self._oid_data_types[oid] = reg.data_type  # type: ignore[arg-type]
+            device_oid_list.append(oid)  # type: ignore[arg-type]
 
         self._device_oids[device_id] = device_oid_list
-        self._device_registers[device_id] = registers
+        self._invalidate_sorted_oids()
         logger.info(
             "SNMP: registered %d OIDs for device %s",
             len(device_oid_list),
@@ -193,7 +136,8 @@ class SnmpAdapter(ProtocolAdapter):
         oids = self._device_oids.pop(device_id, [])
         for oid in oids:
             self._oid_map.pop(oid, None)
-        self._device_registers.pop(device_id, None)
+            self._oid_data_types.pop(oid, None)
+        self._invalidate_sorted_oids()
         logger.info(
             "SNMP: unregistered %d OIDs for device %s", len(oids), device_id
         )
@@ -207,7 +151,7 @@ class SnmpAdapter(ProtocolAdapter):
         data_type: str,
         byte_order: str,
     ) -> None:
-        """No-op. SNMP reads from SimulationEngine at query time."""
+        """No-op. SNMP reads values from SimulationEngine at query time."""
 
     def get_status(self) -> dict:
         """Return adapter status."""
@@ -252,29 +196,36 @@ class SnmpAdapter(ProtocolAdapter):
         if value is None:
             return None, ""
 
-        # Find data type from register info
-        data_type = "float32"
-        for reg in self._device_registers.get(device_id, []):
-            if reg.oid == oid_str:
-                data_type = reg.data_type
-                break
-
+        data_type = self._oid_data_types.get(oid_str, "float32")
         return value, data_type
 
     def get_sorted_oids(self) -> list[str]:
-        """Get all registered OIDs sorted by numeric components."""
-        return sorted(
-            self._oid_map.keys(),
-            key=lambda o: tuple(int(x) for x in o.split(".")),
+        """Get all registered OIDs sorted by numeric components (cached)."""
+        return self._sorted_oids
+
+    def get_next_oid(self, oid_str: str) -> str | None:
+        """Find the next OID after the given one using binary search."""
+        if not self._sorted_oid_keys:
+            return None
+        req_key = _oid_sort_key(oid_str) if oid_str else ()
+        idx = bisect.bisect_right(self._sorted_oid_keys, req_key)
+        if idx < len(self._sorted_oids):
+            return self._sorted_oids[idx]
+        return None
+
+    def _invalidate_sorted_oids(self) -> None:
+        """Rebuild the cached sorted OID list."""
+        self._sorted_oids = sorted(
+            self._oid_map.keys(), key=_oid_sort_key,
         )
+        self._sorted_oid_keys = [_oid_sort_key(o) for o in self._sorted_oids]
 
     @staticmethod
-    def to_snmp_value(value: float, data_type: str) -> Integer32 | Gauge32 | OctetString:
+    def to_snmp_value(value: float, data_type: str) -> Integer32 | Gauge32 | str:
         """Convert a register value to the appropriate SNMP type."""
         if data_type in ("int16", "int32"):
             return Integer32(int(value))
         elif data_type in ("uint16", "uint32"):
             return Gauge32(int(value))
         else:
-            # float32, float64 → string representation
-            return OctetString(str(round(value, 4)))
+            return str(round(value, 4))

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.exceptions import ValidationException
 from app.schemas.common import ApiResponse
 from app.schemas.device import (
     BatchActionResult,
@@ -87,7 +88,6 @@ async def batch_delete_devices(
 ) -> ApiResponse[BatchActionResult]:
     """Batch delete devices. Skips running devices. device_ids required."""
     if not data.device_ids:
-        from app.exceptions import ValidationException
         raise ValidationException(detail="device_ids is required for batch delete")
     result = await device_service.batch_delete_devices(session, data.device_ids)
     return ApiResponse(

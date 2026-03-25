@@ -225,13 +225,11 @@ class TestSnmpAdapterUnit:
         assert int(val) == 1000
 
     async def test_to_snmp_value_float(self):
-        """Float types convert to OctetString."""
-        from pysnmp.proto.rfc1902 import OctetString
+        """Float types convert to string representation."""
         from app.protocols.snmp_agent import SnmpAdapter
 
         val = SnmpAdapter.to_snmp_value(230.5678, "float32")
-        assert isinstance(val, OctetString)
-        assert str(val) == "230.5678"
+        assert val == "230.5678"
 
     async def test_update_register_is_noop(self):
         from app.protocols.snmp_agent import SnmpAdapter

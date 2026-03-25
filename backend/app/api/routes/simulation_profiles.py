@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.exceptions import ValidationException
 from app.schemas.common import ApiResponse
 from app.schemas.simulation_profile import (
     SimulationProfileCreate,
@@ -68,7 +69,6 @@ async def import_profile(
         content = await file.read()
         data = json.loads(content)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        from app.exceptions import ValidationException
         raise ValidationException(detail=f"Invalid JSON file: {e}")
 
     profile = await simulation_profile_service.import_profile(session, template_id, data)

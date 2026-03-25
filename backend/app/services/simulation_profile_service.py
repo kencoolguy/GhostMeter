@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.exceptions import (
     ConflictException,
@@ -193,11 +194,8 @@ async def export_profile(
     session: AsyncSession, profile_id: uuid.UUID,
 ) -> dict:
     """Export a profile as a standalone JSON-serializable dict."""
-    from sqlalchemy.orm import selectinload
-
     profile = await _get_profile_or_404(session, profile_id)
 
-    # Get template name for reference
     stmt = select(DeviceTemplate).where(DeviceTemplate.id == profile.template_id)
     result = await session.execute(stmt)
     template = result.scalar_one_or_none()
@@ -215,8 +213,6 @@ async def generate_blank_profile(
     session: AsyncSession, template_id: uuid.UUID,
 ) -> dict:
     """Generate a blank profile template JSON from a template's registers."""
-    from sqlalchemy.orm import selectinload
-
     stmt = (
         select(DeviceTemplate)
         .where(DeviceTemplate.id == template_id)
