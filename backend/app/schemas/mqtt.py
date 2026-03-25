@@ -80,15 +80,3 @@ class MqttTestResult(BaseModel):
 
     success: bool
     message: str
-
-
-class MqttPublishConfigExport(BaseModel):
-    """MQTT publish config in export format."""
-
-    device_name: str
-    topic_template: str
-    payload_mode: str
-    publish_interval_seconds: int
-    qos: int
-    retain: bool
-    enabled: bool

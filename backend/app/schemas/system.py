@@ -62,6 +62,29 @@ class AnomalyScheduleExport(BaseModel):
     is_enabled: bool = True
 
 
+class MqttBrokerSettingsExport(BaseModel):
+    """MQTT broker settings in export format."""
+
+    host: str = "localhost"
+    port: int = 1883
+    username: str = ""
+    password: str = ""
+    client_id: str = "ghostmeter"
+    use_tls: bool = False
+
+
+class MqttPublishConfigExport(BaseModel):
+    """Per-device MQTT publish config in export format."""
+
+    device_name: str
+    topic_template: str
+    payload_mode: str
+    publish_interval_seconds: int
+    qos: int
+    retain: bool
+    enabled: bool
+
+
 class SystemExport(BaseModel):
     """Full system snapshot for export."""
 
@@ -71,6 +94,8 @@ class SystemExport(BaseModel):
     devices: list[DeviceExport]
     simulation_configs: list[SimulationConfigExport]
     anomaly_schedules: list[AnomalyScheduleExport]
+    mqtt_broker_settings: MqttBrokerSettingsExport | None = None
+    mqtt_publish_configs: list[MqttPublishConfigExport] = []
 
 
 class SystemImport(BaseModel):
@@ -81,6 +106,8 @@ class SystemImport(BaseModel):
     devices: list[DeviceExport] = []
     simulation_configs: list[SimulationConfigExport] = []
     anomaly_schedules: list[AnomalyScheduleExport] = []
+    mqtt_broker_settings: MqttBrokerSettingsExport | None = None
+    mqtt_publish_configs: list[MqttPublishConfigExport] = []
 
     @field_validator("version")
     @classmethod
@@ -100,3 +127,5 @@ class ImportResult(BaseModel):
     devices_updated: int = 0
     simulation_configs_set: int = 0
     anomaly_schedules_set: int = 0
+    mqtt_broker_settings_set: bool = False
+    mqtt_publish_configs_set: int = 0
