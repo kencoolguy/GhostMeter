@@ -188,9 +188,11 @@
 - [x] Docker Compose mosquitto service (dev-only, `--profile mqtt`)
 - [x] 30 integration tests (MQTT CRUD, adapter, export/import)
 
-### Milestone 8.3：Frontend Profile Selector (#13)
-- [ ] Profile selector dropdown in device creation UI
-- [ ] Profile management page
+### Milestone 8.3：Frontend Profile Selector (#13) ✅
+- [x] Profile selector dropdown in device creation UI (single + batch)
+- [x] Profile management page (Profiles tab in template detail)
+- [x] ProfileFormModal with per-register config editor
+- [x] Profile Zustand store + API client
 
 ---
 

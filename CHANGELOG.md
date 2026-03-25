@@ -27,6 +27,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Frontend MQTT broker settings form in Settings page
 - Frontend per-device MQTT publish config card in Device Detail page
 - Optional mosquitto service in Docker Compose (dev-only, `docker compose --profile mqtt up`)
+- Profile management UI: Profiles tab in template detail with full CRUD
+- Profile config editor: per-register data mode, params, interval, enabled toggle
+- Profile selector dropdown in device creation (single + batch), auto-selects default profile
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)

@@ -1,5 +1,22 @@
 # Development Log
 
+## 2026-03-25 — Frontend Profile Selector (Phase 8.3)
+
+### What was done
+- **Profile types, API client, store**: New `profile.ts` types, `profileApi.ts`, `profileStore.ts` following existing patterns
+- **ProfilesTab**: Profile list table in template detail with edit/delete/set-default actions, built-in protection
+- **ProfileFormModal**: Create/edit modal with per-register config table (reuses DataModeTab pattern)
+- **TemplateForm Tabs**: Wrapped Register Map + Profiles in Tabs for edit/view mode
+- **CreateDeviceModal profile dropdown**: Fetches profiles on template change, pre-selects default, shared between single/batch tabs
+- **Device types**: Added `profile_id` to `CreateDevice` and `BatchCreateDevice`
+
+### Decisions
+- Profile dropdown hidden when template has zero profiles (clean UX)
+- Shared profile state between single/batch tabs (not per-form)
+- Built-in profile configs are read-only in modal; name/description still editable
+
+---
+
 ## 2026-03-25 — MQTT Adapter (Phase 8.2)
 
 ### What was done
