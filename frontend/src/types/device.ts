@@ -20,6 +20,7 @@ export interface RegisterValue {
   scale_factor: number;
   unit: string | null;
   description: string | null;
+  oid: string | null;
   value: number | null;
 }
 

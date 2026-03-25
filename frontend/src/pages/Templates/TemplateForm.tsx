@@ -6,7 +6,10 @@ import { useTemplateStore } from "../../stores/templateStore";
 import { ProfilesTab } from "./ProfilesTab";
 import { RegisterTable } from "./RegisterTable";
 
-const PROTOCOL_OPTIONS = [{ value: "modbus_tcp", label: "Modbus TCP" }];
+const PROTOCOL_OPTIONS = [
+  { value: "modbus_tcp", label: "Modbus TCP" },
+  { value: "snmp", label: "SNMP" },
+];
 
 export default function TemplateForm() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +26,7 @@ export default function TemplateForm() {
 
   const isEdit = Boolean(id);
   const isReadOnly = Boolean(currentTemplate?.is_builtin);
+  const protocol = Form.useWatch("protocol", form) ?? "modbus_tcp";
   const [registers, setRegisters] = useState<Omit<RegisterDefinition, "id">[]>(
     []
   );
@@ -123,6 +127,7 @@ export default function TemplateForm() {
                     registers={registers}
                     onChange={setRegisters}
                     disabled={isReadOnly}
+                    protocol={protocol}
                   />
                 ),
               },

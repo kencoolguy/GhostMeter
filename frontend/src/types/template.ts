@@ -20,6 +20,7 @@ export interface RegisterDefinition {
   unit: string | null;
   description: string | null;
   sort_order: number;
+  oid?: string | null;
 }
 
 export interface TemplateDetail
