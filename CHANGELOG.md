@@ -32,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Profile selector dropdown in device creation (single + batch), auto-selects default profile
 - Batch device operations: Start All, Stop All, Start/Stop/Delete Selected with checkbox row selection
 - Batch API endpoints: `POST /devices/batch/start`, `POST /devices/batch/stop`, `POST /devices/batch/delete`
+- Profile export: download individual profiles as standalone JSON files
+- Profile import: upload JSON file to create a new profile on a template
+- Blank profile template download: pre-populated with all template registers as static defaults
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)
