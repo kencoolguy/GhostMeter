@@ -33,4 +33,28 @@ export const profileApi = {
     api
       .delete<ApiResponse<null>>(`/simulation-profiles/${id}`)
       .then((r) => r.data),
+
+  exportProfile: (id: string) =>
+    api
+      .get(`/simulation-profiles/${id}/export`, { responseType: "blob" })
+      .then((r) => r.data),
+
+  downloadBlankTemplate: (templateId: string) =>
+    api
+      .get(`/simulation-profiles/template/${templateId}`, {
+        responseType: "blob",
+      })
+      .then((r) => r.data),
+
+  importProfile: (templateId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api
+      .post<ApiResponse<SimulationProfile>>(
+        `/simulation-profiles/import?template_id=${templateId}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      )
+      .then((r) => r.data);
+  },
 };
