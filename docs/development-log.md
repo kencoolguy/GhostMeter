@@ -1,5 +1,35 @@
 # Development Log
 
+## 2026-03-25 — MQTT Adapter (Phase 8.2)
+
+### What was done
+- **MQTT protocol adapter**: `MqttAdapter` class extending `ProtocolAdapter` base, using `aiomqtt` for async MQTT publish
+- **DB models + migration**: `mqtt_broker_settings` (global, single-row) and `mqtt_publish_configs` (per-device, one-to-one)
+- **MQTT service layer**: CRUD functions for broker settings and per-device publish configs with upsert semantics
+- **API routes**: `GET/PUT /system/mqtt` (broker), `GET/PUT/DELETE /system/devices/{id}/mqtt` (publish config), `POST /system/mqtt/test` (connection test), `POST /system/devices/{id}/mqtt/start|stop` (publish control)
+- **Frontend UI**: Broker settings form in Settings page, per-device MQTT publish config card in Device Detail page
+- **System export/import integration**: Broker settings and publish configs included in export JSON, imported with upsert
+- **Docker Compose**: Optional mosquitto service behind `profiles: ["mqtt"]` for dev testing
+- **Tests**: 30 new tests (22 MQTT CRUD/adapter + 8 export/import integration)
+- **Rebase onto dev**: Resolved conflicts with simulation profiles branch (5 conflict files)
+
+### Decisions
+- MQTT adapter reads values from SimulationEngine at publish time (no register sync needed)
+- Broker connection is lazy — adapter starts inactive if no settings configured, does not block other adapters
+- Password masking: API responses show `****`, PUT with `****` preserves existing password
+- Mosquitto in docker-compose is dev-only (profiles flag), production uses external broker
+- Export includes unmasked password for portability; import preserves existing password on `****`
+
+### Issues encountered
+- MQTT branch diverged from dev before simulation profiles were added — required rebase with 5 conflict resolutions
+- Template creation tests initially failed due to wrong `byte_order` value (`"big"` vs `"big_endian"`)
+
+### Test results
+- 229 backend tests passing (30 new for MQTT)
+- All existing tests unaffected by rebase
+
+---
+
 ## 2026-03-25 — Simulation Profiles
 
 ### What was done

@@ -114,6 +114,43 @@ Reusable sets of simulation parameters bound to a device template. Built-in prof
 
 ---
 
+### `mqtt_broker_settings`
+
+Global MQTT broker connection settings. At most one row exists.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `host` | VARCHAR(255) | NOT NULL | `'localhost'` | Broker hostname |
+| `port` | INTEGER | NOT NULL | `1883` | Broker port |
+| `username` | VARCHAR(255) | NOT NULL | `''` | Auth username |
+| `password` | VARCHAR(255) | NOT NULL | `''` | Auth password |
+| `client_id` | VARCHAR(255) | NOT NULL | `'ghostmeter'` | MQTT client identifier |
+| `use_tls` | BOOLEAN | NOT NULL | `false` | Use TLS connection |
+
+---
+
+### `mqtt_publish_configs`
+
+Per-device MQTT publish configuration. One config per device.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `device_id` | UUID | NOT NULL | — | FK → `device_instances.id` (CASCADE DELETE) |
+| `topic_template` | VARCHAR(500) | NOT NULL | `'telemetry/{device_name}'` | MQTT topic template with variables |
+| `payload_mode` | VARCHAR(20) | NOT NULL | `'batch'` | `batch` or `per_register` |
+| `publish_interval_seconds` | INTEGER | NOT NULL | `5` | Publish interval in seconds |
+| `qos` | INTEGER | NOT NULL | `0` | MQTT QoS level (0, 1, or 2) |
+| `retain` | BOOLEAN | NOT NULL | `false` | MQTT retain flag |
+| `enabled` | BOOLEAN | NOT NULL | `false` | Whether publishing is active |
+
+**Constraints:**
+- `UNIQUE (device_id)` — one publish config per device
+- `FK device_id → device_instances.id ON DELETE CASCADE` — config is deleted when device is deleted
+
+---
+
 ## Register Address Notes
 
 - Addresses are **0-based** (following the pymodbus convention, not the legacy 1-based Modbus PDU convention)
@@ -134,3 +171,4 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 | `4e3e82ebbef8` | Add simulation_configs table |
 | `d3e65808cf1d` | Add anomaly_schedules table |
 | `8c0da865d279` | Add simulation_profiles table |
+| `eda1e6420ebd` | Add mqtt_broker_settings and mqtt_publish_configs tables |

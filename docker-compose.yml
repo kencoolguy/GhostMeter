@@ -53,6 +53,8 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Dev-only MQTT broker for testing. Start with: docker compose --profile mqtt up
+  # In production, configure an external MQTT broker via Settings > MQTT.
   mosquitto:
     image: eclipse-mosquitto:2
     container_name: ghostmeter-mosquitto

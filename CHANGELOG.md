@@ -18,6 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Built-in template read-only view: View button (eye icon) on template list, read-only form with "Built-in" tag
 - Template import error feedback: import failure now shows detailed error with expected JSON format reference
 - Demo startup script (`scripts/start-demo.sh`): one-command setup with auto device creation, simulation config, and Modbus verification
+- MQTT protocol adapter: publish simulated device data to external MQTT broker via `aiomqtt`
+- MQTT broker settings API (`GET/PUT /api/v1/system/mqtt`) with connection test endpoint
+- Per-device MQTT publish config (`GET/PUT/DELETE /api/v1/system/devices/{id}/mqtt`) with start/stop control
+- MQTT topic templates with variable substitution (`{device_name}`, `{slave_id}`, `{template_name}`, `{register_name}`)
+- Two payload modes: `batch` (all registers in one message) and `per_register` (one message per register)
+- MQTT settings included in system export/import for cross-machine portability
+- Frontend MQTT broker settings form in Settings page
+- Frontend per-device MQTT publish config card in Device Detail page
+- Optional mosquitto service in Docker Compose (dev-only, `docker compose --profile mqtt up`)
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)
