@@ -47,6 +47,7 @@ A single Modbus register entry within a device template. Stores address, data ty
 | `unit` | VARCHAR(20) | NULL | — | Physical unit (e.g. `V`, `A`, `kWh`) |
 | `description` | TEXT | NULL | — | Human-readable description of the register |
 | `sort_order` | INTEGER | NOT NULL | `0` | Display/iteration order |
+| `oid` | VARCHAR(200) | NULL | — | SNMP OID string (e.g. `1.3.6.1.2.1.33.1.2.1.0`). Null for Modbus registers. |
 
 **Constraints:**
 - `UNIQUE (template_id, name)` — register names must be unique within a template
@@ -172,3 +173,5 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 | `d3e65808cf1d` | Add anomaly_schedules table |
 | `8c0da865d279` | Add simulation_profiles table |
 | `eda1e6420ebd` | Add mqtt_broker_settings and mqtt_publish_configs tables |
+| `b2a1062d8287` | Merge simulation_profiles and mqtt migrations |
+| `884c7934de25` | Add oid column to register_definitions |
