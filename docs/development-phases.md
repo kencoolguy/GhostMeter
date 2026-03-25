@@ -194,6 +194,14 @@
 - [x] ProfileFormModal with per-register config editor
 - [x] Profile Zustand store + API client
 
+### Milestone 8.4：SNMP Agent Adapter ✅
+- [x] SnmpAdapter extending ProtocolAdapter (SNMPv2c agent, pysnmp v7)
+- [x] OID column on register_definitions + migration
+- [x] UPS (SNMP) seed template (RFC 1628 UPS-MIB) + Normal Operation profile
+- [x] Frontend OID column and SNMP protocol option in template creation
+- [x] OID conflict detection for same-template devices
+- [x] 16 integration tests (template CRUD, adapter unit, seed validation)
+
 ---
 
 ## 時程總覽

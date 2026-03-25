@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     MODBUS_HOST: str = "0.0.0.0"
     MODBUS_PORT: int = 502
 
+    # SNMP
+    SNMP_PORT: int = 10161
+    SNMP_COMMUNITY: str = "public"
+
     # Direct override (takes precedence if set)
     DATABASE_URL: str | None = None
 

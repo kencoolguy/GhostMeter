@@ -166,6 +166,7 @@ async def get_device_detail(session: AsyncSession, device_id: uuid.UUID) -> dict
             scale_factor=reg.scale_factor,
             unit=reg.unit,
             description=reg.description,
+            oid=reg.oid,
             value=None,
         ).model_dump()
         for reg in template.registers
@@ -328,6 +329,7 @@ async def start_device(
             function_code=reg.function_code,
             data_type=reg.data_type,
             byte_order=reg.byte_order,
+            oid=reg.oid,
         )
         for reg in template.registers
     ]
@@ -352,6 +354,19 @@ async def start_device(
             await simulation_engine.start_device(device.id)
         except Exception as e:
             logger.error("Failed to start simulation for device %s: %s", device_id, e)
+
+    # Set SNMP register names if applicable
+    if template.protocol == "snmp":
+        try:
+            snmp_adapter = protocol_manager.get_adapter("snmp")
+            oid_to_name = {
+                reg.oid: reg.name
+                for reg in template.registers
+                if reg.oid
+            }
+            snmp_adapter.set_register_names(device.id, oid_to_name)  # type: ignore[attr-defined]
+        except (KeyError, Exception) as e:
+            logger.warning("Failed to set SNMP register names: %s", e)
 
     # Auto-start MQTT publishing if configured and enabled
     try:
@@ -545,6 +560,7 @@ async def get_device_registers(
             scale_factor=reg.scale_factor,
             unit=reg.unit,
             description=reg.description,
+            oid=reg.oid,
             value=None,
         ).model_dump()
         for reg in template.registers

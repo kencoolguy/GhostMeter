@@ -67,6 +67,7 @@ def _build_registers(
             unit=reg.unit,
             description=reg.description,
             sort_order=reg.sort_order,
+            oid=reg.oid,
         )
         for reg in data_registers
     ]
@@ -120,7 +121,9 @@ async def create_template(
     is_builtin: bool = False,
 ) -> DeviceTemplate:
     """Create a new template with registers."""
-    _validate_no_address_overlap(data.registers)
+    # Skip address overlap validation for non-Modbus protocols (e.g. SNMP uses address as index)
+    if data.protocol == "modbus_tcp":
+        _validate_no_address_overlap(data.registers)
 
     # Check for duplicate name before hitting DB constraint
     existing = await session.execute(
@@ -164,7 +167,8 @@ async def update_template(
             error_code="BUILTIN_TEMPLATE_IMMUTABLE",
         )
 
-    _validate_no_address_overlap(data.registers)
+    if data.protocol == "modbus_tcp":
+        _validate_no_address_overlap(data.registers)
 
     template.name = data.name
     template.protocol = data.protocol

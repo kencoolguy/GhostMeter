@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Profile export: download individual profiles as standalone JSON files
 - Profile import: upload JSON file to create a new profile on a template
 - Blank profile template download: pre-populated with all template registers as static defaults
+- SNMP agent adapter: SNMPv2c command responder for simulated devices (GET/GETNEXT/WALK)
+- Built-in UPS (SNMP) template with RFC 1628 UPS-MIB OIDs (10 registers)
+- Built-in UPS simulation profile (Normal Operation)
+- OID field on register definitions for SNMP templates
+- OID column in frontend register table for SNMP protocol templates
+- SNMP protocol option in template creation
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)

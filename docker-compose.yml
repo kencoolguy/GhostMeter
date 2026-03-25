@@ -28,6 +28,7 @@ services:
     ports:
       - "8000:8000"
       - "502:502"
+      - "161:10161/udp"
     depends_on:
       postgres:
         condition: service_healthy
