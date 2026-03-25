@@ -355,6 +355,19 @@ async def start_device(
         except Exception as e:
             logger.error("Failed to start simulation for device %s: %s", device_id, e)
 
+    # Set SNMP register names if applicable
+    if template.protocol == "snmp":
+        try:
+            snmp_adapter = protocol_manager.get_adapter("snmp")
+            oid_to_name = {
+                reg.oid: reg.name
+                for reg in template.registers
+                if reg.oid
+            }
+            snmp_adapter.set_register_names(device.id, oid_to_name)  # type: ignore[attr-defined]
+        except (KeyError, Exception) as e:
+            logger.warning("Failed to set SNMP register names: %s", e)
+
     # Auto-start MQTT publishing if configured and enabled
     try:
         mqtt_config = await mqtt_service.get_publish_config(session, device.id)
