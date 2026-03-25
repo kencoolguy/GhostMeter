@@ -21,6 +21,9 @@ interface DeviceState {
   deleteDevice: (id: string) => Promise<boolean>;
   startDevice: (id: string) => Promise<boolean>;
   stopDevice: (id: string) => Promise<boolean>;
+  batchStartDevices: (deviceIds: string[]) => Promise<boolean>;
+  batchStopDevices: (deviceIds: string[]) => Promise<boolean>;
+  batchDeleteDevices: (deviceIds: string[]) => Promise<boolean>;
   clearCurrentDevice: () => void;
 }
 
@@ -116,6 +119,63 @@ export const useDeviceStore = create<DeviceState>((set) => ({
       return true;
     } catch {
       return false;
+    }
+  },
+
+  batchStartDevices: async (deviceIds: string[]) => {
+    set({ loading: true });
+    try {
+      const response = await deviceApi.batchStart(deviceIds);
+      const r = response.data;
+      if (r) {
+        message.success(
+          `Started ${r.success_count} device(s)` +
+            (r.skipped_count ? `, ${r.skipped_count} skipped` : ""),
+        );
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  batchStopDevices: async (deviceIds: string[]) => {
+    set({ loading: true });
+    try {
+      const response = await deviceApi.batchStop(deviceIds);
+      const r = response.data;
+      if (r) {
+        message.success(
+          `Stopped ${r.success_count} device(s)` +
+            (r.skipped_count ? `, ${r.skipped_count} skipped` : ""),
+        );
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  batchDeleteDevices: async (deviceIds: string[]) => {
+    set({ loading: true });
+    try {
+      const response = await deviceApi.batchDelete(deviceIds);
+      const r = response.data;
+      if (r) {
+        message.success(
+          `Deleted ${r.success_count} device(s)` +
+            (r.skipped_count ? `, ${r.skipped_count} skipped (running)` : ""),
+        );
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      set({ loading: false });
     }
   },
 

@@ -46,6 +46,12 @@ export interface BatchCreateDevice {
   profile_id?: string | null;
 }
 
+export interface BatchActionResult {
+  success_count: number;
+  skipped_count: number;
+  error_count: number;
+}
+
 export interface UpdateDevice {
   name: string;
   slave_id: number;
