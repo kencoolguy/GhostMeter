@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Profile management UI: Profiles tab in template detail with full CRUD
 - Profile config editor: per-register data mode, params, interval, enabled toggle
 - Profile selector dropdown in device creation (single + batch), auto-selects default profile
+- Batch device operations: Start All, Stop All, Start/Stop/Delete Selected with checkbox row selection
+- Batch API endpoints: `POST /devices/batch/start`, `POST /devices/batch/stop`, `POST /devices/batch/delete`
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)
