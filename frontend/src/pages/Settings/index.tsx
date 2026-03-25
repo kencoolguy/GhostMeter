@@ -4,6 +4,7 @@ import type { UploadProps } from "antd";
 import { useState } from "react";
 import { systemApi } from "../../services/systemApi";
 import type { ImportResult } from "../../types/system";
+import { MqttBrokerSettings } from "./MqttBrokerSettings";
 
 export default function SettingsPage() {
   const [importing, setImporting] = useState(false);
@@ -99,6 +100,7 @@ export default function SettingsPage() {
           </Upload>
         </Space>
       </Card>
+      <MqttBrokerSettings />
     </div>
   );
 }

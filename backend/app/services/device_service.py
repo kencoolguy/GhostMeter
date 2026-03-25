@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.protocols import protocol_manager
 from app.protocols.base import RegisterInfo
-from app.services import simulation_profile_service
+from app.services import mqtt_service, simulation_profile_service
 from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
 from app.models.template import DeviceTemplate
@@ -353,6 +353,19 @@ async def start_device(
         except Exception as e:
             logger.error("Failed to start simulation for device %s: %s", device_id, e)
 
+    # Auto-start MQTT publishing if configured and enabled
+    try:
+        mqtt_config = await mqtt_service.get_publish_config(session, device.id)
+        if mqtt_config and mqtt_config.enabled:
+            mqtt_adapter = protocol_manager.get_adapter("mqtt")
+            mqtt_adapter.set_device_meta(  # type: ignore[attr-defined]
+                device.id, device.name, device.slave_id,
+                template.name,
+            )
+            await mqtt_adapter.start_publishing(device.id, mqtt_config)  # type: ignore[attr-defined]
+    except Exception as e:
+        logger.warning("Failed to start MQTT publishing for device %s: %s", device_id, e)
+
     device.status = "running"
     await session.commit()
 
@@ -375,6 +388,13 @@ async def stop_device(
             detail="Device is already stopped",
             error_code="INVALID_STATE_TRANSITION",
         )
+
+    # Stop MQTT publishing (best-effort)
+    try:
+        mqtt_adapter = protocol_manager.get_adapter("mqtt")
+        await mqtt_adapter.stop_publishing(device.id)  # type: ignore[attr-defined]
+    except (KeyError, Exception):
+        pass
 
     # Stop simulation engine for this device
     try:

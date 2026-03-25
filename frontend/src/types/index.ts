@@ -54,3 +54,10 @@ export type {
 } from "./monitor";
 
 export type { ImportResult, SystemExport } from "./system";
+
+export type {
+  MqttBrokerSettings,
+  MqttPublishConfig,
+  MqttPublishConfigWrite,
+  MqttTestResult,
+} from "./mqtt";

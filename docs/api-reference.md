@@ -609,13 +609,150 @@ Profile configs are **copied** into `simulation_configs` at apply time. There is
 
 ---
 
+## MQTT
+
+Base path: `/api/v1/system` (broker) and `/api/v1/system/devices/{device_id}` (publish config)
+
+GhostMeter can publish simulated device data to an external MQTT broker. Configuration is split into global broker settings and per-device publish configs.
+
+### Schemas
+
+#### `MqttBrokerSettingsWrite` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `host` | string | no | `"localhost"` | Broker hostname |
+| `port` | integer | no | `1883` | Broker port (1–65535) |
+| `username` | string | no | `""` | Auth username |
+| `password` | string | no | `""` | Auth password (`"****"` to keep existing) |
+| `client_id` | string | no | `"ghostmeter"` | MQTT client identifier |
+| `use_tls` | boolean | no | `false` | Use TLS connection |
+
+#### `MqttBrokerSettingsRead` (response)
+
+Same fields as write, but `password` is masked as `"****"` when non-empty.
+
+#### `MqttPublishConfigWrite` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `topic_template` | string | no | `"telemetry/{device_name}"` | MQTT topic template |
+| `payload_mode` | string | no | `"batch"` | `"batch"` or `"per_register"` |
+| `publish_interval_seconds` | integer | no | `5` | Publish interval (≥ 1 second) |
+| `qos` | integer | no | `0` | MQTT QoS level (0, 1, or 2) |
+| `retain` | boolean | no | `false` | MQTT retain flag |
+
+**Topic template variables:** `{device_name}`, `{slave_id}`, `{template_name}`, `{register_name}` (per_register mode only)
+
+#### `MqttPublishConfigRead` (response)
+
+Same fields as write plus `device_id` (string) and `enabled` (boolean).
+
+#### `MqttTestResult` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Whether connection succeeded |
+| `message` | string | Success or error message |
+
+### Endpoints
+
+#### `GET /api/v1/system/mqtt`
+
+Get global MQTT broker settings. Returns defaults if never configured.
+
+**Response** `200 OK` — `ApiResponse[MqttBrokerSettingsRead]`
+
+---
+
+#### `PUT /api/v1/system/mqtt`
+
+Create or update global MQTT broker settings.
+
+**Request body:** `MqttBrokerSettingsWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttBrokerSettingsRead]`
+
+---
+
+#### `POST /api/v1/system/mqtt/test`
+
+Test MQTT broker connection with provided settings (does not save).
+
+**Request body:** `MqttBrokerSettingsWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttTestResult]`
+
+---
+
+#### `GET /api/v1/system/devices/{device_id}/mqtt`
+
+Get MQTT publish config for a device. Returns `null` data if not configured.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead | null]`
+
+---
+
+#### `PUT /api/v1/system/devices/{device_id}/mqtt`
+
+Create or update MQTT publish config for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `MqttPublishConfigWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+
+---
+
+#### `DELETE /api/v1/system/devices/{device_id}/mqtt`
+
+Delete MQTT publish config for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+
+**Error cases:**
+- `404` — config not found
+
+---
+
+#### `POST /api/v1/system/devices/{device_id}/mqtt/start`
+
+Start MQTT publishing for a device. Requires existing publish config.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+
+**Error cases:**
+- `404` — config not found or MQTT adapter not connected
+
+---
+
+#### `POST /api/v1/system/devices/{device_id}/mqtt/stop`
+
+Stop MQTT publishing for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+
+**Error cases:**
+- `404` — config not found
+
+---
+
 ## System
 
 ### Export Configuration
 
 #### `GET /api/v1/system/export`
 
-Exports the full system configuration (templates, devices, simulation configs, anomaly schedules) as a JSON file download.
+Exports the full system configuration (templates, devices, simulation configs, anomaly schedules, MQTT settings) as a JSON file download.
 
 **Response** `200 OK` — JSON file with `Content-Disposition: attachment`
 
@@ -623,59 +760,33 @@ Exports the full system configuration (templates, devices, simulation configs, a
 {
   "version": "1.0",
   "exported_at": "2026-03-19T12:00:00+00:00",
-  "templates": [
-    {
-      "name": "SDM630 Three-Phase Meter",
-      "protocol": "modbus_tcp",
-      "description": "...",
-      "is_builtin": true,
-      "registers": [
-        {
-          "name": "voltage_l1",
-          "address": 0,
-          "function_code": 4,
-          "data_type": "float32",
-          "byte_order": "big_endian",
-          "scale_factor": 1.0,
-          "unit": "V",
-          "description": "Phase 1 Voltage",
-          "sort_order": 0
-        }
-      ]
-    }
-  ],
-  "devices": [
-    {
-      "name": "Meter-01",
-      "template_name": "SDM630 Three-Phase Meter",
-      "slave_id": 1,
-      "port": 502,
-      "description": "..."
-    }
-  ],
-  "simulation_configs": [
+  "templates": [ "..." ],
+  "devices": [ "..." ],
+  "simulation_configs": [ "..." ],
+  "anomaly_schedules": [ "..." ],
+  "mqtt_broker_settings": {
+    "host": "broker.example.com",
+    "port": 1883,
+    "username": "admin",
+    "password": "secret",
+    "client_id": "ghostmeter",
+    "use_tls": false
+  },
+  "mqtt_publish_configs": [
     {
       "device_name": "Meter-01",
-      "register_name": "voltage_l1",
-      "data_mode": "daily_curve",
-      "mode_params": {"base": 230, "amplitude": 10, "peak_hour": 14},
-      "is_enabled": true,
-      "update_interval_ms": 1000
-    }
-  ],
-  "anomaly_schedules": [
-    {
-      "device_name": "Meter-01",
-      "register_name": "voltage_l1",
-      "anomaly_type": "spike",
-      "anomaly_params": {"multiplier": 3.0, "probability": 0.1},
-      "trigger_after_seconds": 300,
-      "duration_seconds": 60,
-      "is_enabled": true
+      "topic_template": "telemetry/{device_name}",
+      "payload_mode": "batch",
+      "publish_interval_seconds": 5,
+      "qos": 0,
+      "retain": false,
+      "enabled": false
     }
   ]
 }
 ```
+
+> `mqtt_broker_settings` is `null` if never configured. `mqtt_publish_configs` is `[]` if no devices have MQTT configs. Both fields are optional in the import payload for backward compatibility.
 
 ---
 
@@ -683,7 +794,7 @@ Exports the full system configuration (templates, devices, simulation configs, a
 
 #### `POST /api/v1/system/import`
 
-Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port). Built-in templates are skipped.
+Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port). Built-in templates are skipped. MQTT settings are upserted if present.
 
 **Request Body** — Same JSON format as export
 
@@ -698,7 +809,9 @@ Imports a system configuration snapshot. Upserts templates by name, devices by (
     "devices_created": 5,
     "devices_updated": 0,
     "simulation_configs_set": 15,
-    "anomaly_schedules_set": 3
+    "anomaly_schedules_set": 3,
+    "mqtt_broker_settings_set": true,
+    "mqtt_publish_configs_set": 2
   },
   "message": "Import completed successfully"
 }

@@ -179,9 +179,14 @@
 - [x] Seed loader: `seed_builtin_profiles()` called at app startup
 - [x] 22 integration tests (CRUD, auto-apply, seed, protection)
 
-### Milestone 8.2：MQTT Adapter（In Progress）
-- [ ] MQTT protocol adapter + broker settings
-- [ ] MQTT publish for device data
+### Milestone 8.2：MQTT Adapter ✅
+- [x] MQTT protocol adapter (`MqttAdapter` extending `ProtocolAdapter`)
+- [x] DB models + migration: `mqtt_broker_settings`, `mqtt_publish_configs`
+- [x] MQTT service layer + API routes (broker CRUD, publish config CRUD, start/stop, test)
+- [x] Frontend UI: broker settings in Settings page, publish config in Device Detail
+- [x] System export/import integration (broker settings + publish configs)
+- [x] Docker Compose mosquitto service (dev-only, `--profile mqtt`)
+- [x] 30 integration tests (MQTT CRUD, adapter, export/import)
 
 ### Milestone 8.3：Frontend Profile Selector (#13)
 - [ ] Profile selector dropdown in device creation UI

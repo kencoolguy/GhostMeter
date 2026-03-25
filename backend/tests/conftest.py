@@ -40,7 +40,8 @@ async def setup_database():
     async with engine.begin() as conn:
         await conn.execute(text(
             "TRUNCATE device_templates, register_definitions, device_instances, "
-            "simulation_configs, anomaly_schedules, simulation_profiles CASCADE"
+            "simulation_configs, anomaly_schedules, simulation_profiles, "
+            "mqtt_broker_settings, mqtt_publish_configs CASCADE"
         ))
 
     await engine.dispose()
