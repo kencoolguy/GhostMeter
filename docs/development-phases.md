@@ -69,20 +69,20 @@
 ## Phase 4：Modbus TCP 協議引擎（Week 4–5）
 
 ### Milestone 4.1：Protocol Adapter 架構
-- [ ] `protocols/base.py`：定義 ProtocolAdapter 抽象類
+- [x] `protocols/base.py`：定義 ProtocolAdapter 抽象類
   - `async start()`
   - `async stop()`
   - `async update_register(device_id, register_name, value)`
   - `get_status() -> dict`
-- [ ] Protocol manager：管理所有 adapter 的生命週期
+- [x] Protocol manager：管理所有 adapter 的生命週期
 
 ### Milestone 4.2：Modbus TCP 實作
-- [ ] `protocols/modbus_tcp.py`：基於 pymodbus async server
-- [ ] 支援多 slave ID（single TCP port, multiple unit IDs）
-- [ ] Datastore 與設備實例的 register 值同步
-- [ ] 支援 FC03 (Read Holding Registers) + FC04 (Read Input Registers)
-- [ ] Modbus server 在 FastAPI startup event 中啟動
-- [ ] 整合測試：用 pymodbus client 驗證讀取值正確
+- [x] `protocols/modbus_tcp.py`：基於 pymodbus async server
+- [x] 支援多 slave ID（single TCP port, multiple unit IDs）
+- [x] Datastore 與設備實例的 register 值同步
+- [x] 支援 FC03 (Read Holding Registers) + FC04 (Read Input Registers)
+- [x] Modbus server 在 FastAPI startup event 中啟動
+- [x] 整合測試：用 pymodbus client 驗證讀取值正確
 
 ---
 
@@ -154,7 +154,7 @@
 - [x] .env.example 檔案
 
 ### Milestone 7.2：測試與文件
-- [x] 後端測試覆蓋率 > 70%（177 tests, 71% coverage）
+- [x] 後端測試覆蓋率 > 70%（229 tests）
 - [x] 前端關鍵流程 E2E 測試（Playwright smoke tests）
 - [x] README.md：專案介紹、快速開始、截圖
 - [ ] MkDocs 文件：安裝指南、使用教學、API 參考、開發指南（deferred）
