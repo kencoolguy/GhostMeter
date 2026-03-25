@@ -1,6 +1,13 @@
-import { Button, Modal, Space, Table, Tag, Tooltip } from "antd";
+import {
+  DownloadOutlined,
+  ExportOutlined,
+  ImportOutlined,
+} from "@ant-design/icons";
+import { Button, Modal, Space, Table, Tag, Tooltip, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { UploadFile } from "antd/es/upload";
 import { useEffect, useState } from "react";
+import { profileApi } from "../../services/profileApi";
 import { useProfileStore } from "../../stores/profileStore";
 import type { RegisterDefinition, SimulationProfile } from "../../types";
 import { ProfileFormModal } from "./ProfileFormModal";
@@ -9,6 +16,15 @@ interface ProfilesTabProps {
   templateId: string;
   registers: Omit<RegisterDefinition, "id">[];
   readOnly?: boolean;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function ProfilesTab({
@@ -58,6 +74,36 @@ export function ProfilesTab({
     }
   };
 
+  const handleExport = async (profile: SimulationProfile) => {
+    try {
+      const blob = await profileApi.exportProfile(profile.id);
+      const filename = `${profile.name.replace(/\s+/g, "_").toLowerCase()}.json`;
+      downloadBlob(blob, filename);
+    } catch {
+      message.error("Failed to export profile");
+    }
+  };
+
+  const handleDownloadBlank = async () => {
+    try {
+      const blob = await profileApi.downloadBlankTemplate(templateId);
+      downloadBlob(blob, "blank_profile.json");
+    } catch {
+      message.error("Failed to download blank template");
+    }
+  };
+
+  const handleImport = async (file: UploadFile) => {
+    try {
+      await profileApi.importProfile(templateId, file as unknown as File);
+      message.success("Profile imported successfully");
+      await fetchProfiles(templateId);
+    } catch {
+      // Error interceptor already shows message
+    }
+    return false; // Prevent default upload behavior
+  };
+
   const columns: ColumnsType<SimulationProfile> = [
     {
       title: "Name",
@@ -86,12 +132,19 @@ export function ProfilesTab({
     {
       title: "Actions",
       key: "actions",
-      width: 240,
+      width: 300,
       render: (_: unknown, record) => (
         <Space>
           <Button size="small" onClick={() => handleEdit(record)}>
             Edit
           </Button>
+          <Tooltip title="Export as JSON">
+            <Button
+              size="small"
+              icon={<ExportOutlined />}
+              onClick={() => handleExport(record)}
+            />
+          </Tooltip>
           {!record.is_default && (
             <Button size="small" onClick={() => handleSetDefault(record)}>
               Set Default
@@ -116,11 +169,21 @@ export function ProfilesTab({
   return (
     <div>
       {!readOnly && (
-        <div style={{ marginBottom: 16 }}>
+        <Space style={{ marginBottom: 16 }}>
           <Button type="primary" onClick={handleCreate}>
             New Profile
           </Button>
-        </div>
+          <Upload
+            accept=".json"
+            showUploadList={false}
+            beforeUpload={handleImport}
+          >
+            <Button icon={<ImportOutlined />}>Import Profile</Button>
+          </Upload>
+          <Button icon={<DownloadOutlined />} onClick={handleDownloadBlank}>
+            Download Blank Template
+          </Button>
+        </Space>
       )}
       <Table
         columns={columns}

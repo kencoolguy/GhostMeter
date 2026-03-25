@@ -52,6 +52,15 @@ class SimulationProfileUpdate(BaseModel):
         return v
 
 
+class SimulationProfileExport(BaseModel):
+    """Schema for profile export/import as standalone JSON file."""
+
+    name: str
+    description: str | None = None
+    template_name: str = ""
+    configs: list[dict[str, Any]]
+
+
 class SimulationProfileResponse(BaseModel):
     """Schema for profile in API responses."""
 
