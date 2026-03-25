@@ -69,20 +69,20 @@
 ## Phase 4：Modbus TCP 協議引擎（Week 4–5）
 
 ### Milestone 4.1：Protocol Adapter 架構
-- [ ] `protocols/base.py`：定義 ProtocolAdapter 抽象類
+- [x] `protocols/base.py`：定義 ProtocolAdapter 抽象類
   - `async start()`
   - `async stop()`
   - `async update_register(device_id, register_name, value)`
   - `get_status() -> dict`
-- [ ] Protocol manager：管理所有 adapter 的生命週期
+- [x] Protocol manager：管理所有 adapter 的生命週期
 
 ### Milestone 4.2：Modbus TCP 實作
-- [ ] `protocols/modbus_tcp.py`：基於 pymodbus async server
-- [ ] 支援多 slave ID（single TCP port, multiple unit IDs）
-- [ ] Datastore 與設備實例的 register 值同步
-- [ ] 支援 FC03 (Read Holding Registers) + FC04 (Read Input Registers)
-- [ ] Modbus server 在 FastAPI startup event 中啟動
-- [ ] 整合測試：用 pymodbus client 驗證讀取值正確
+- [x] `protocols/modbus_tcp.py`：基於 pymodbus async server
+- [x] 支援多 slave ID（single TCP port, multiple unit IDs）
+- [x] Datastore 與設備實例的 register 值同步
+- [x] 支援 FC03 (Read Holding Registers) + FC04 (Read Input Registers)
+- [x] Modbus server 在 FastAPI startup event 中啟動
+- [x] 整合測試：用 pymodbus client 驗證讀取值正確
 
 ---
 
@@ -154,7 +154,7 @@
 - [x] .env.example 檔案
 
 ### Milestone 7.2：測試與文件
-- [x] 後端測試覆蓋率 > 70%（177 tests, 71% coverage）
+- [x] 後端測試覆蓋率 > 70%（229 tests）
 - [x] 前端關鍵流程 E2E 測試（Playwright smoke tests）
 - [x] README.md：專案介紹、快速開始、截圖
 - [ ] MkDocs 文件：安裝指南、使用教學、API 參考、開發指南（deferred）
@@ -165,6 +165,34 @@
 - [ ] GitHub Release v0.1.0（待 PR merge 後 tag）
 - [ ] Docker Hub image publish（deferred）
 - [ ] 在相關社群宣傳（deferred）
+
+---
+
+## Phase 8：Post-MVP 功能擴充
+
+### Milestone 8.1：Simulation Profiles
+- [x] `simulation_profiles` DB table + ORM model + migration
+- [x] Pydantic schemas（Create / Update / Response / ProfileConfigEntry）
+- [x] Profile CRUD service + API routes (`/api/v1/simulation-profiles`)
+- [x] Device creation auto-apply: `profile_id` field in DeviceCreate / DeviceBatchCreate
+- [x] Built-in seed profiles for all 3 templates (physically consistent data)
+- [x] Seed loader: `seed_builtin_profiles()` called at app startup
+- [x] 22 integration tests (CRUD, auto-apply, seed, protection)
+
+### Milestone 8.2：MQTT Adapter ✅
+- [x] MQTT protocol adapter (`MqttAdapter` extending `ProtocolAdapter`)
+- [x] DB models + migration: `mqtt_broker_settings`, `mqtt_publish_configs`
+- [x] MQTT service layer + API routes (broker CRUD, publish config CRUD, start/stop, test)
+- [x] Frontend UI: broker settings in Settings page, publish config in Device Detail
+- [x] System export/import integration (broker settings + publish configs)
+- [x] Docker Compose mosquitto service (dev-only, `--profile mqtt`)
+- [x] 30 integration tests (MQTT CRUD, adapter, export/import)
+
+### Milestone 8.3：Frontend Profile Selector (#13) ✅
+- [x] Profile selector dropdown in device creation UI (single + batch)
+- [x] Profile management page (Profiles tab in template detail)
+- [x] ProfileFormModal with per-register config editor
+- [x] Profile Zustand store + API client
 
 ---
 
@@ -179,6 +207,7 @@
 | 5 | 資料模擬引擎（核心）| Week 5–7 | ✅ |
 | 6 | 即時監控 Dashboard | Week 7–8 | ✅ |
 | 7 | 系統完善與發布 | Week 8–9 | ✅ |
+| 8 | Post-MVP 功能擴充 | Week 9+ | 🔄 |
 
 **MVP 預估總時程：9 週**（以 side project 節奏，每週投入 10–15 小時估算）
 

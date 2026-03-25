@@ -33,6 +33,7 @@ export interface CreateDevice {
   slave_id: number;
   port?: number;
   description?: string | null;
+  profile_id?: string | null;
 }
 
 export interface BatchCreateDevice {
@@ -42,6 +43,7 @@ export interface BatchCreateDevice {
   port?: number;
   name_prefix?: string | null;
   description?: string | null;
+  profile_id?: string | null;
 }
 
 export interface UpdateDevice {

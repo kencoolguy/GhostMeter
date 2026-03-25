@@ -270,6 +270,7 @@ Base path: `/api/v1/devices`
 | `slave_id` | integer | yes | — | Modbus Slave ID (1–247) |
 | `port` | integer | no | `502` | Modbus TCP port |
 | `description` | string\|null | no | `null` | Description |
+| `profile_id` | UUID\|null | no | `null` | Simulation profile to apply. Absent = auto-apply default; explicit `null` = skip |
 
 #### `DeviceBatchCreate` (request)
 
@@ -281,6 +282,7 @@ Base path: `/api/v1/devices`
 | `port` | integer | no | `502` | Modbus TCP port |
 | `name_prefix` | string\|null | no | `null` | Name prefix; defaults to template name |
 | `description` | string\|null | no | `null` | Description for all created devices |
+| `profile_id` | UUID\|null | no | `null` | Simulation profile to apply. Absent = auto-apply default; explicit `null` = skip |
 
 > Batch limit: 50 devices per call. Naming: `"{prefix} {N}"` if prefix given, else `"{template_name} - Slave {N}"`.
 
@@ -469,13 +471,288 @@ Delete all associated devices first, then delete the template
 
 ---
 
+## Simulation Profiles
+
+Base path: `/api/v1/simulation-profiles`
+
+Simulation profiles are reusable sets of simulation parameters bound to a device template. Built-in profiles are loaded from seed data and cannot have their configs modified or be deleted.
+
+### Schemas
+
+#### `SimulationProfileCreate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `template_id` | UUID | yes | — | Template this profile belongs to |
+| `name` | string | yes | — | Profile name (max 200 chars, unique per template) |
+| `description` | string\|null | no | `null` | Description |
+| `is_default` | boolean | no | `false` | Auto-apply on device creation (at most one default per template) |
+| `configs` | ProfileConfigEntry[] | yes | — | Array of register simulation configs |
+
+#### `SimulationProfileUpdate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string\|null | no | `null` | New name |
+| `description` | string\|null | no | `null` | New description |
+| `is_default` | boolean\|null | no | `null` | Change default status |
+| `configs` | ProfileConfigEntry[]\|null | no | `null` | Replace configs (rejected for built-in profiles) |
+
+#### `ProfileConfigEntry`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_name` | string | yes | — | Target register name |
+| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator` |
+| `mode_params` | object | no | `{}` | Mode-specific parameters |
+| `is_enabled` | boolean | no | `true` | Whether this config is active |
+| `update_interval_ms` | integer | no | `1000` | Update interval (100–60000 ms) |
+
+#### `SimulationProfileResponse` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Profile ID |
+| `template_id` | UUID | Template ID |
+| `name` | string | Profile name |
+| `description` | string\|null | Description |
+| `is_builtin` | boolean | `true` for seed-loaded profiles |
+| `is_default` | boolean | Auto-applied on device creation |
+| `configs` | object[] | Array of register simulation configs |
+| `created_at` | datetime | ISO 8601 UTC |
+| `updated_at` | datetime | ISO 8601 UTC |
+
+### Endpoints
+
+#### `GET /api/v1/simulation-profiles?template_id={uuid}`
+
+List all profiles for a template.
+
+**Query param:** `template_id` (UUID, required)
+
+**Response** `200 OK` — `ApiResponse[SimulationProfileResponse[]]`
+
+---
+
+#### `GET /api/v1/simulation-profiles/{profile_id}`
+
+Get a single profile.
+
+**Path param:** `profile_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `404` — profile not found
+
+---
+
+#### `POST /api/v1/simulation-profiles`
+
+Create a new simulation profile.
+
+**Request body:** `SimulationProfileCreate`
+
+**Response** `201 Created` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `404` — template not found
+- `409` — duplicate name for this template
+
+---
+
+#### `PUT /api/v1/simulation-profiles/{profile_id}`
+
+Update a simulation profile.
+
+**Path param:** `profile_id` (UUID)
+
+**Request body:** `SimulationProfileUpdate`
+
+**Response** `200 OK` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `404` — profile not found
+- `403` — cannot modify configs of a built-in profile
+- `409` — duplicate name
+
+---
+
+#### `DELETE /api/v1/simulation-profiles/{profile_id}`
+
+Delete a simulation profile.
+
+**Path param:** `profile_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Profile deleted successfully" }
+```
+
+**Error cases:**
+- `404` — profile not found
+- `403` — cannot delete a built-in profile
+
+---
+
+### Profile Apply Behavior on Device Creation
+
+When creating a device (`POST /devices` or `POST /devices/batch`), the `profile_id` field controls which profile is applied:
+
+| `profile_id` in request | Behavior |
+|------------------------|----------|
+| Absent (not in JSON) | Auto-apply the template's default profile (if one exists) |
+| Explicit UUID | Apply that specific profile (404 if not found) |
+| Explicit `null` | Skip — no profile applied, all registers start at 0 |
+
+Profile configs are **copied** into `simulation_configs` at apply time. There is no ongoing link — subsequent changes to the profile do not affect already-created devices.
+
+---
+
+## MQTT
+
+Base path: `/api/v1/system` (broker) and `/api/v1/system/devices/{device_id}` (publish config)
+
+GhostMeter can publish simulated device data to an external MQTT broker. Configuration is split into global broker settings and per-device publish configs.
+
+### Schemas
+
+#### `MqttBrokerSettingsWrite` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `host` | string | no | `"localhost"` | Broker hostname |
+| `port` | integer | no | `1883` | Broker port (1–65535) |
+| `username` | string | no | `""` | Auth username |
+| `password` | string | no | `""` | Auth password (`"****"` to keep existing) |
+| `client_id` | string | no | `"ghostmeter"` | MQTT client identifier |
+| `use_tls` | boolean | no | `false` | Use TLS connection |
+
+#### `MqttBrokerSettingsRead` (response)
+
+Same fields as write, but `password` is masked as `"****"` when non-empty.
+
+#### `MqttPublishConfigWrite` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `topic_template` | string | no | `"telemetry/{device_name}"` | MQTT topic template |
+| `payload_mode` | string | no | `"batch"` | `"batch"` or `"per_register"` |
+| `publish_interval_seconds` | integer | no | `5` | Publish interval (≥ 1 second) |
+| `qos` | integer | no | `0` | MQTT QoS level (0, 1, or 2) |
+| `retain` | boolean | no | `false` | MQTT retain flag |
+
+**Topic template variables:** `{device_name}`, `{slave_id}`, `{template_name}`, `{register_name}` (per_register mode only)
+
+#### `MqttPublishConfigRead` (response)
+
+Same fields as write plus `device_id` (string) and `enabled` (boolean).
+
+#### `MqttTestResult` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Whether connection succeeded |
+| `message` | string | Success or error message |
+
+### Endpoints
+
+#### `GET /api/v1/system/mqtt`
+
+Get global MQTT broker settings. Returns defaults if never configured.
+
+**Response** `200 OK` — `ApiResponse[MqttBrokerSettingsRead]`
+
+---
+
+#### `PUT /api/v1/system/mqtt`
+
+Create or update global MQTT broker settings.
+
+**Request body:** `MqttBrokerSettingsWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttBrokerSettingsRead]`
+
+---
+
+#### `POST /api/v1/system/mqtt/test`
+
+Test MQTT broker connection with provided settings (does not save).
+
+**Request body:** `MqttBrokerSettingsWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttTestResult]`
+
+---
+
+#### `GET /api/v1/system/devices/{device_id}/mqtt`
+
+Get MQTT publish config for a device. Returns `null` data if not configured.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead | null]`
+
+---
+
+#### `PUT /api/v1/system/devices/{device_id}/mqtt`
+
+Create or update MQTT publish config for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `MqttPublishConfigWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+
+---
+
+#### `DELETE /api/v1/system/devices/{device_id}/mqtt`
+
+Delete MQTT publish config for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+
+**Error cases:**
+- `404` — config not found
+
+---
+
+#### `POST /api/v1/system/devices/{device_id}/mqtt/start`
+
+Start MQTT publishing for a device. Requires existing publish config.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+
+**Error cases:**
+- `404` — config not found or MQTT adapter not connected
+
+---
+
+#### `POST /api/v1/system/devices/{device_id}/mqtt/stop`
+
+Stop MQTT publishing for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+
+**Error cases:**
+- `404` — config not found
+
+---
+
 ## System
 
 ### Export Configuration
 
 #### `GET /api/v1/system/export`
 
-Exports the full system configuration (templates, devices, simulation configs, anomaly schedules) as a JSON file download.
+Exports the full system configuration (templates, devices, simulation configs, anomaly schedules, MQTT settings) as a JSON file download.
 
 **Response** `200 OK` — JSON file with `Content-Disposition: attachment`
 
@@ -483,59 +760,33 @@ Exports the full system configuration (templates, devices, simulation configs, a
 {
   "version": "1.0",
   "exported_at": "2026-03-19T12:00:00+00:00",
-  "templates": [
-    {
-      "name": "SDM630 Three-Phase Meter",
-      "protocol": "modbus_tcp",
-      "description": "...",
-      "is_builtin": true,
-      "registers": [
-        {
-          "name": "voltage_l1",
-          "address": 0,
-          "function_code": 4,
-          "data_type": "float32",
-          "byte_order": "big_endian",
-          "scale_factor": 1.0,
-          "unit": "V",
-          "description": "Phase 1 Voltage",
-          "sort_order": 0
-        }
-      ]
-    }
-  ],
-  "devices": [
-    {
-      "name": "Meter-01",
-      "template_name": "SDM630 Three-Phase Meter",
-      "slave_id": 1,
-      "port": 502,
-      "description": "..."
-    }
-  ],
-  "simulation_configs": [
+  "templates": [ "..." ],
+  "devices": [ "..." ],
+  "simulation_configs": [ "..." ],
+  "anomaly_schedules": [ "..." ],
+  "mqtt_broker_settings": {
+    "host": "broker.example.com",
+    "port": 1883,
+    "username": "admin",
+    "password": "secret",
+    "client_id": "ghostmeter",
+    "use_tls": false
+  },
+  "mqtt_publish_configs": [
     {
       "device_name": "Meter-01",
-      "register_name": "voltage_l1",
-      "data_mode": "daily_curve",
-      "mode_params": {"base": 230, "amplitude": 10, "peak_hour": 14},
-      "is_enabled": true,
-      "update_interval_ms": 1000
-    }
-  ],
-  "anomaly_schedules": [
-    {
-      "device_name": "Meter-01",
-      "register_name": "voltage_l1",
-      "anomaly_type": "spike",
-      "anomaly_params": {"multiplier": 3.0, "probability": 0.1},
-      "trigger_after_seconds": 300,
-      "duration_seconds": 60,
-      "is_enabled": true
+      "topic_template": "telemetry/{device_name}",
+      "payload_mode": "batch",
+      "publish_interval_seconds": 5,
+      "qos": 0,
+      "retain": false,
+      "enabled": false
     }
   ]
 }
 ```
+
+> `mqtt_broker_settings` is `null` if never configured. `mqtt_publish_configs` is `[]` if no devices have MQTT configs. Both fields are optional in the import payload for backward compatibility.
 
 ---
 
@@ -543,7 +794,7 @@ Exports the full system configuration (templates, devices, simulation configs, a
 
 #### `POST /api/v1/system/import`
 
-Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port). Built-in templates are skipped.
+Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port). Built-in templates are skipped. MQTT settings are upserted if present.
 
 **Request Body** — Same JSON format as export
 
@@ -558,7 +809,9 @@ Imports a system configuration snapshot. Upserts templates by name, devices by (
     "devices_created": 5,
     "devices_updated": 0,
     "simulation_configs_set": 15,
-    "anomaly_schedules_set": 3
+    "anomaly_schedules_set": 3,
+    "mqtt_broker_settings_set": true,
+    "mqtt_publish_configs_set": 2
   },
   "message": "Import completed successfully"
 }

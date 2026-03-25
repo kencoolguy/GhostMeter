@@ -1,5 +1,74 @@
 # Development Log
 
+## 2026-03-25 — Frontend Profile Selector (Phase 8.3)
+
+### What was done
+- **Profile types, API client, store**: New `profile.ts` types, `profileApi.ts`, `profileStore.ts` following existing patterns
+- **ProfilesTab**: Profile list table in template detail with edit/delete/set-default actions, built-in protection
+- **ProfileFormModal**: Create/edit modal with per-register config table (reuses DataModeTab pattern)
+- **TemplateForm Tabs**: Wrapped Register Map + Profiles in Tabs for edit/view mode
+- **CreateDeviceModal profile dropdown**: Fetches profiles on template change, pre-selects default, shared between single/batch tabs
+- **Device types**: Added `profile_id` to `CreateDevice` and `BatchCreateDevice`
+
+### Decisions
+- Profile dropdown hidden when template has zero profiles (clean UX)
+- Shared profile state between single/batch tabs (not per-form)
+- Built-in profile configs are read-only in modal; name/description still editable
+
+---
+
+## 2026-03-25 — MQTT Adapter (Phase 8.2)
+
+### What was done
+- **MQTT protocol adapter**: `MqttAdapter` class extending `ProtocolAdapter` base, using `aiomqtt` for async MQTT publish
+- **DB models + migration**: `mqtt_broker_settings` (global, single-row) and `mqtt_publish_configs` (per-device, one-to-one)
+- **MQTT service layer**: CRUD functions for broker settings and per-device publish configs with upsert semantics
+- **API routes**: `GET/PUT /system/mqtt` (broker), `GET/PUT/DELETE /system/devices/{id}/mqtt` (publish config), `POST /system/mqtt/test` (connection test), `POST /system/devices/{id}/mqtt/start|stop` (publish control)
+- **Frontend UI**: Broker settings form in Settings page, per-device MQTT publish config card in Device Detail page
+- **System export/import integration**: Broker settings and publish configs included in export JSON, imported with upsert
+- **Docker Compose**: Optional mosquitto service behind `profiles: ["mqtt"]` for dev testing
+- **Tests**: 30 new tests (22 MQTT CRUD/adapter + 8 export/import integration)
+- **Rebase onto dev**: Resolved conflicts with simulation profiles branch (5 conflict files)
+
+### Decisions
+- MQTT adapter reads values from SimulationEngine at publish time (no register sync needed)
+- Broker connection is lazy — adapter starts inactive if no settings configured, does not block other adapters
+- Password masking: API responses show `****`, PUT with `****` preserves existing password
+- Mosquitto in docker-compose is dev-only (profiles flag), production uses external broker
+- Export includes unmasked password for portability; import preserves existing password on `****`
+
+### Issues encountered
+- MQTT branch diverged from dev before simulation profiles were added — required rebase with 5 conflict resolutions
+- Template creation tests initially failed due to wrong `byte_order` value (`"big"` vs `"big_endian"`)
+
+### Test results
+- 229 backend tests passing (30 new for MQTT)
+- All existing tests unaffected by rebase
+
+---
+
+## 2026-03-25 — Simulation Profiles
+
+### What was done
+- **New `simulation_profiles` table**: ORM model, Alembic migration, JSONB configs column storing reusable simulation parameter sets
+- **Profile CRUD API**: Full REST endpoints at `/api/v1/simulation-profiles` with list, get, create, update, delete operations
+- **Profile auto-apply on device creation**: `profile_id` field added to `DeviceCreate`/`DeviceBatchCreate`. Absent = auto-apply default profile; explicit `null` = skip; UUID = apply specific profile
+- **Built-in profiles**: Three seed JSON files (three-phase meter, single-phase meter, solar inverter) loaded at startup with physically consistent simulation parameters
+- **Seed loader**: `seed_builtin_profiles()` function added to loader, called from app startup after template seeding
+- **Comprehensive tests**: 22 new tests covering CRUD, auto-apply, batch apply, seed loading, idempotency, and built-in protection
+
+### Decisions
+- Profile configs are **copied** into `simulation_configs` at apply time — no ongoing reference. This allows users to customize per-device without affecting the profile
+- At most one `is_default=true` per template, enforced via PostgreSQL partial unique index
+- Built-in profiles: configs are immutable (403 on update), cannot be deleted (403), but name/description can be changed
+- `profile_id` absent vs explicit `null` distinguished via `model_fields_set` in Pydantic
+
+### Issues encountered
+- Alembic autogenerate produced empty migration when run inside Docker container without volume mount — solved by rebuilding the image after code changes
+- Test ordering issue: `seed_builtin_profiles` uses global `async_session_factory` which gets stale connections across event loops — solved by patching with a fresh session factory in tests
+
+---
+
 ## 2026-03-22 — Template & Device UX Improvements
 
 ### What was done

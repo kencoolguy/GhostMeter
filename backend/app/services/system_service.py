@@ -10,12 +10,15 @@ from sqlalchemy.orm import selectinload
 from app.exceptions import ValidationException
 from app.models.anomaly import AnomalySchedule
 from app.models.device import DeviceInstance
+from app.models.mqtt import MqttBrokerSettings, MqttPublishConfig
 from app.models.simulation import SimulationConfig
 from app.models.template import DeviceTemplate, RegisterDefinition
 from app.schemas.system import (
     AnomalyScheduleExport,
     DeviceExport,
     ImportResult,
+    MqttBrokerSettingsExport,
+    MqttPublishConfigExport,
     RegisterExport,
     SimulationConfigExport,
     SystemExport,
@@ -121,6 +124,43 @@ async def export_system(session: AsyncSession) -> SystemExport:
             )
         )
 
+    # MQTT broker settings
+    mqtt_broker_export = None
+    stmt = select(MqttBrokerSettings).limit(1)
+    result = await session.execute(stmt)
+    broker = result.scalar_one_or_none()
+    if broker is not None:
+        mqtt_broker_export = MqttBrokerSettingsExport(
+            host=broker.host,
+            port=broker.port,
+            username=broker.username,
+            password=broker.password,
+            client_id=broker.client_id,
+            use_tls=broker.use_tls,
+        )
+
+    # MQTT publish configs
+    stmt = select(MqttPublishConfig)
+    result = await session.execute(stmt)
+    mqtt_configs = result.scalars().all()
+
+    mqtt_config_exports = []
+    for mc in mqtt_configs:
+        device_name = device_id_to_name.get(mc.device_id)
+        if device_name is None:
+            continue
+        mqtt_config_exports.append(
+            MqttPublishConfigExport(
+                device_name=device_name,
+                topic_template=mc.topic_template,
+                payload_mode=mc.payload_mode,
+                publish_interval_seconds=mc.publish_interval_seconds,
+                qos=mc.qos,
+                retain=mc.retain,
+                enabled=mc.enabled,
+            )
+        )
+
     return SystemExport(
         version="1.0",
         exported_at=datetime.now(UTC).isoformat(),
@@ -128,6 +168,8 @@ async def export_system(session: AsyncSession) -> SystemExport:
         devices=device_exports,
         simulation_configs=sim_exports,
         anomaly_schedules=schedule_exports,
+        mqtt_broker_settings=mqtt_broker_export,
+        mqtt_publish_configs=mqtt_config_exports,
     )
 
 
@@ -315,6 +357,53 @@ async def import_system(session: AsyncSession, data: SystemImport) -> ImportResu
             )
         )
         result.anomaly_schedules_set += 1
+
+    # Step 5: Import MQTT broker settings
+    if data.mqtt_broker_settings is not None:
+        bs = data.mqtt_broker_settings
+        stmt = select(MqttBrokerSettings).limit(1)
+        existing_broker = (await session.execute(stmt)).scalar_one_or_none()
+        if existing_broker is None:
+            session.add(MqttBrokerSettings(
+                host=bs.host, port=bs.port, username=bs.username,
+                password=bs.password, client_id=bs.client_id, use_tls=bs.use_tls,
+            ))
+        else:
+            existing_broker.host = bs.host
+            existing_broker.port = bs.port
+            existing_broker.username = bs.username
+            if bs.password != "****":
+                existing_broker.password = bs.password
+            existing_broker.client_id = bs.client_id
+            existing_broker.use_tls = bs.use_tls
+        result.mqtt_broker_settings_set = True
+
+    # Step 6: Import MQTT publish configs
+    for mc_export in data.mqtt_publish_configs:
+        device_id = device_name_to_id.get(mc_export.device_name)
+        if device_id is None:
+            continue
+
+        stmt = select(MqttPublishConfig).where(MqttPublishConfig.device_id == device_id)
+        existing_mc = (await session.execute(stmt)).scalar_one_or_none()
+        if existing_mc is None:
+            session.add(MqttPublishConfig(
+                device_id=device_id,
+                topic_template=mc_export.topic_template,
+                payload_mode=mc_export.payload_mode,
+                publish_interval_seconds=mc_export.publish_interval_seconds,
+                qos=mc_export.qos,
+                retain=mc_export.retain,
+                enabled=mc_export.enabled,
+            ))
+        else:
+            existing_mc.topic_template = mc_export.topic_template
+            existing_mc.payload_mode = mc_export.payload_mode
+            existing_mc.publish_interval_seconds = mc_export.publish_interval_seconds
+            existing_mc.qos = mc_export.qos
+            existing_mc.retain = mc_export.retain
+            existing_mc.enabled = mc_export.enabled
+        result.mqtt_publish_configs_set += 1
 
     await session.commit()
     return result

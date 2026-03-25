@@ -89,6 +89,68 @@ A virtual device instance created from a template. Devices bind to a Modbus slav
 
 ---
 
+### `simulation_profiles`
+
+Reusable sets of simulation parameters bound to a device template. Built-in profiles are loaded from seed data at startup.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `template_id` | UUID | NOT NULL | — | FK → `device_templates.id` (CASCADE DELETE) |
+| `name` | VARCHAR(200) | NOT NULL | — | Profile name (unique per template) |
+| `description` | TEXT | NULL | — | Human-readable description |
+| `is_builtin` | BOOLEAN | NOT NULL | `false` | `true` for seed-loaded profiles; configs are immutable |
+| `is_default` | BOOLEAN | NOT NULL | `false` | Auto-applied on device creation |
+| `configs` | JSONB | NOT NULL | — | Array of register simulation config entries |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `now()` | Creation time (UTC) |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `now()` | Last update time (UTC) |
+
+**Constraints:**
+- `UNIQUE (template_id, name)` — profile names must be unique within a template
+- `UNIQUE (template_id) WHERE is_default = true` — at most one default profile per template (partial unique index)
+
+**Relations:**
+- Belongs to `device_templates` (CASCADE — deleting a template deletes its profiles)
+
+---
+
+### `mqtt_broker_settings`
+
+Global MQTT broker connection settings. At most one row exists.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `host` | VARCHAR(255) | NOT NULL | `'localhost'` | Broker hostname |
+| `port` | INTEGER | NOT NULL | `1883` | Broker port |
+| `username` | VARCHAR(255) | NOT NULL | `''` | Auth username |
+| `password` | VARCHAR(255) | NOT NULL | `''` | Auth password |
+| `client_id` | VARCHAR(255) | NOT NULL | `'ghostmeter'` | MQTT client identifier |
+| `use_tls` | BOOLEAN | NOT NULL | `false` | Use TLS connection |
+
+---
+
+### `mqtt_publish_configs`
+
+Per-device MQTT publish configuration. One config per device.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `device_id` | UUID | NOT NULL | — | FK → `device_instances.id` (CASCADE DELETE) |
+| `topic_template` | VARCHAR(500) | NOT NULL | `'telemetry/{device_name}'` | MQTT topic template with variables |
+| `payload_mode` | VARCHAR(20) | NOT NULL | `'batch'` | `batch` or `per_register` |
+| `publish_interval_seconds` | INTEGER | NOT NULL | `5` | Publish interval in seconds |
+| `qos` | INTEGER | NOT NULL | `0` | MQTT QoS level (0, 1, or 2) |
+| `retain` | BOOLEAN | NOT NULL | `false` | MQTT retain flag |
+| `enabled` | BOOLEAN | NOT NULL | `false` | Whether publishing is active |
+
+**Constraints:**
+- `UNIQUE (device_id)` — one publish config per device
+- `FK device_id → device_instances.id ON DELETE CASCADE` — config is deleted when device is deleted
+
+---
+
 ## Register Address Notes
 
 - Addresses are **0-based** (following the pymodbus convention, not the legacy 1-based Modbus PDU convention)
@@ -106,3 +168,7 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 |----------|-------------|
 | `448f2e5c6613` | Create device_templates and register_definitions tables |
 | `d013e48e688a` | Add device_instances table with FK RESTRICT and unique (slave_id, port) |
+| `4e3e82ebbef8` | Add simulation_configs table |
+| `d3e65808cf1d` | Add anomaly_schedules table |
+| `8c0da865d279` | Add simulation_profiles table |
+| `eda1e6420ebd` | Add mqtt_broker_settings and mqtt_publish_configs tables |

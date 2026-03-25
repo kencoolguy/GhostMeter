@@ -7,12 +7,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Simulation profiles: reusable sets of simulation parameters for device templates
+- Built-in "Normal Operation" profiles for all three templates (three-phase meter, single-phase meter, solar inverter)
+- Automatic profile apply on device creation (default profile auto-applied unless explicitly skipped)
+- CRUD API for simulation profiles (`/api/v1/simulation-profiles`)
+- `profile_id` field on device creation to control which profile is applied
 - Device edit UI: edit modal accessible from both device list (edit icon) and device detail page (Edit button)
 - Editable fields: name, description, slave ID, port
 - Slave ID and port fields are disabled when device is running (with tooltip explanation)
 - Built-in template read-only view: View button (eye icon) on template list, read-only form with "Built-in" tag
 - Template import error feedback: import failure now shows detailed error with expected JSON format reference
 - Demo startup script (`scripts/start-demo.sh`): one-command setup with auto device creation, simulation config, and Modbus verification
+- MQTT protocol adapter: publish simulated device data to external MQTT broker via `aiomqtt`
+- MQTT broker settings API (`GET/PUT /api/v1/system/mqtt`) with connection test endpoint
+- Per-device MQTT publish config (`GET/PUT/DELETE /api/v1/system/devices/{id}/mqtt`) with start/stop control
+- MQTT topic templates with variable substitution (`{device_name}`, `{slave_id}`, `{template_name}`, `{register_name}`)
+- Two payload modes: `batch` (all registers in one message) and `per_register` (one message per register)
+- MQTT settings included in system export/import for cross-machine portability
+- Frontend MQTT broker settings form in Settings page
+- Frontend per-device MQTT publish config card in Device Detail page
+- Optional mosquitto service in Docker Compose (dev-only, `docker compose --profile mqtt up`)
+- Profile management UI: Profiles tab in template detail with full CRUD
+- Profile config editor: per-register data mode, params, interval, enabled toggle
+- Profile selector dropdown in device creation (single + batch), auto-selects default profile
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)

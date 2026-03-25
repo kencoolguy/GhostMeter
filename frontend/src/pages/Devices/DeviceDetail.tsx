@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { DeviceSummary, RegisterValue } from "../../types";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { EditDeviceModal } from "./EditDeviceModal";
+import { MqttPublishConfig } from "./MqttPublishConfig";
 
 const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; text: string }> = {
   running: { status: "success", text: "Running" },
@@ -144,6 +145,8 @@ export default function DeviceDetail() {
           size="small"
         />
       </Card>
+
+      {id && <MqttPublishConfig deviceId={id} />}
 
       <EditDeviceModal
         open={editModalOpen}
