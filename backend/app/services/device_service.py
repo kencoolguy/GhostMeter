@@ -166,6 +166,7 @@ async def get_device_detail(session: AsyncSession, device_id: uuid.UUID) -> dict
             scale_factor=reg.scale_factor,
             unit=reg.unit,
             description=reg.description,
+            oid=reg.oid,
             value=None,
         ).model_dump()
         for reg in template.registers
@@ -328,6 +329,7 @@ async def start_device(
             function_code=reg.function_code,
             data_type=reg.data_type,
             byte_order=reg.byte_order,
+            oid=reg.oid,
         )
         for reg in template.registers
     ]
@@ -545,6 +547,7 @@ async def get_device_registers(
             scale_factor=reg.scale_factor,
             unit=reg.unit,
             description=reg.description,
+            oid=reg.oid,
             value=None,
         ).model_dump()
         for reg in template.registers

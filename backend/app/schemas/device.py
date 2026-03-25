@@ -103,6 +103,7 @@ class RegisterValue(BaseModel):
     scale_factor: float
     unit: str | None
     description: str | None
+    oid: str | None = None
     value: float | None = None
 
 

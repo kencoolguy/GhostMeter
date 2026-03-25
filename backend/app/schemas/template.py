@@ -41,6 +41,7 @@ class RegisterDefinitionCreate(BaseModel):
     unit: str | None = None
     description: str | None = None
     sort_order: int = 0
+    oid: str | None = None
 
     @field_validator("data_type")
     @classmethod
@@ -136,6 +137,7 @@ class RegisterDefinitionResponse(BaseModel):
     unit: str | None
     description: str | None
     sort_order: int
+    oid: str | None = None
 
 
 class TemplateSummary(BaseModel):
