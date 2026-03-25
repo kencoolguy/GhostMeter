@@ -421,6 +421,114 @@ async def stop_device(
     return await get_device(session, device.id)
 
 
+async def batch_start_devices(
+    session: AsyncSession, device_ids: list[uuid.UUID] | None = None,
+) -> dict:
+    """Start multiple devices. Skips already-running devices.
+
+    If device_ids is empty, starts ALL stopped devices.
+    Returns counts: success, skipped, error.
+    """
+    if device_ids:
+        stmt = select(DeviceInstance).where(DeviceInstance.id.in_(device_ids))
+    else:
+        stmt = select(DeviceInstance).where(DeviceInstance.status == "stopped")
+    result = await session.execute(stmt)
+    devices = list(result.scalars().all())
+
+    success_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    for device in devices:
+        if device.status != "stopped":
+            skipped_count += 1
+            continue
+        try:
+            await start_device(session, device.id)
+            success_count += 1
+        except Exception as e:
+            logger.warning("Batch start failed for device %s: %s", device.id, e)
+            error_count += 1
+
+    return {
+        "success_count": success_count,
+        "skipped_count": skipped_count,
+        "error_count": error_count,
+    }
+
+
+async def batch_stop_devices(
+    session: AsyncSession, device_ids: list[uuid.UUID] | None = None,
+) -> dict:
+    """Stop multiple devices. Skips already-stopped devices.
+
+    If device_ids is empty, stops ALL running/error devices.
+    Returns counts: success, skipped, error.
+    """
+    if device_ids:
+        stmt = select(DeviceInstance).where(DeviceInstance.id.in_(device_ids))
+    else:
+        stmt = select(DeviceInstance).where(DeviceInstance.status != "stopped")
+    result = await session.execute(stmt)
+    devices = list(result.scalars().all())
+
+    success_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    for device in devices:
+        if device.status == "stopped":
+            skipped_count += 1
+            continue
+        try:
+            await stop_device(session, device.id)
+            success_count += 1
+        except Exception as e:
+            logger.warning("Batch stop failed for device %s: %s", device.id, e)
+            error_count += 1
+
+    return {
+        "success_count": success_count,
+        "skipped_count": skipped_count,
+        "error_count": error_count,
+    }
+
+
+async def batch_delete_devices(
+    session: AsyncSession, device_ids: list[uuid.UUID],
+) -> dict:
+    """Delete multiple devices. Skips running devices.
+
+    device_ids is required (no "delete all" support for safety).
+    Returns counts: success, skipped, error.
+    """
+    stmt = select(DeviceInstance).where(DeviceInstance.id.in_(device_ids))
+    result = await session.execute(stmt)
+    devices = list(result.scalars().all())
+
+    success_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    for device in devices:
+        if device.status == "running":
+            skipped_count += 1
+            continue
+        try:
+            await delete_device(session, device.id)
+            success_count += 1
+        except Exception as e:
+            logger.warning("Batch delete failed for device %s: %s", device.id, e)
+            error_count += 1
+
+    return {
+        "success_count": success_count,
+        "skipped_count": skipped_count,
+        "error_count": error_count,
+    }
+
+
 async def get_device_registers(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> list[dict]:
