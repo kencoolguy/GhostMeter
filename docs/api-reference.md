@@ -309,6 +309,7 @@ Base path: `/api/v1/devices`
 | `status` | string | `stopped`, `running`, or `error` |
 | `port` | integer | Modbus TCP port |
 | `description` | string\|null | Description |
+| `mqtt_publishing` | boolean | Whether MQTT publishing is enabled for this device |
 | `created_at` | datetime | ISO 8601 UTC |
 | `updated_at` | datetime | ISO 8601 UTC |
 

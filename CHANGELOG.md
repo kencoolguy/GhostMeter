@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- MQTT publish config card: edit/publish mode separation — fields locked during publishing, "Stop publishing to edit settings" hint
+- MQTT publishing status indicator (green `MQTT` tag) in device list and device detail pages
+- `mqtt_publishing` boolean field added to device list API response
+- Unified button styles: Start Publishing uses green primary, Stop Publishing uses danger
+
 ## [0.3.0] - 2026-03-27
 
 ### Added

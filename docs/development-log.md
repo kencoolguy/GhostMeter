@@ -1,5 +1,24 @@
 # Development Log
 
+## 2026-03-27 — Publish/Stop UX Unification (#11)
+
+### What was done
+- MQTT card redesigned with edit/publish mode separation
+  - All form fields disabled during publishing
+  - Info alert: "Stop publishing to edit settings"
+  - Auto-save on Start Publishing
+- Device list: added `mqtt_publishing` boolean to API response (LEFT JOIN mqtt_publish_configs)
+- Device list: green MQTT tag shown for devices actively publishing
+- Device detail: MQTT Publishing tag shown in status area
+- Button style unification (green primary for start, danger for stop)
+
+### Decisions
+- Kept Modbus and MQTT architecturally separated (no state machine changes)
+- Used LEFT JOIN + boolean field instead of N+1 frontend queries for MQTT status
+- MQTT tag only shown when device is running AND mqtt_publishing is true
+
+---
+
 ## 2026-03-25 — Frontend Profile Selector (Phase 8.3)
 
 ### What was done
