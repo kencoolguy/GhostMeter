@@ -19,6 +19,7 @@ from app.database import engine
 from app.protocols import protocol_manager
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.mqtt_adapter import MqttAdapter
+from app.protocols.snmp_agent import SnmpAdapter
 from app.seed.loader import seed_builtin_profiles, seed_builtin_templates
 from app.simulation import simulation_engine
 from app.exceptions import (
@@ -66,6 +67,13 @@ async def lifespan(app: FastAPI):
     # Register MQTT adapter
     mqtt_adapter = MqttAdapter()
     protocol_manager.register_adapter("mqtt", mqtt_adapter)
+
+    # Register SNMP adapter
+    snmp_adapter = SnmpAdapter(
+        port=settings.SNMP_PORT,
+        community=settings.SNMP_COMMUNITY,
+    )
+    protocol_manager.register_adapter("snmp", snmp_adapter)
 
     await protocol_manager.start_all()
     logger.info("Protocol manager started")

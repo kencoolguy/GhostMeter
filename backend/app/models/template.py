@@ -84,6 +84,7 @@ class RegisterDefinition(Base):
     unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    oid: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     template: Mapped["DeviceTemplate"] = relationship(
         back_populates="registers"

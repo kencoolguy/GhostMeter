@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-27
 
 ### Added
 - Simulation profiles: reusable sets of simulation parameters for device templates
@@ -30,6 +30,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Profile management UI: Profiles tab in template detail with full CRUD
 - Profile config editor: per-register data mode, params, interval, enabled toggle
 - Profile selector dropdown in device creation (single + batch), auto-selects default profile
+- Batch device operations: Start All, Stop All, Start/Stop/Delete Selected with checkbox row selection
+- Batch API endpoints: `POST /devices/batch/start`, `POST /devices/batch/stop`, `POST /devices/batch/delete`
+- Profile export: download individual profiles as standalone JSON files
+- Profile import: upload JSON file to create a new profile on a template
+- Blank profile template download: pre-populated with all template registers as static defaults
+- SNMP agent adapter: SNMPv2c command responder for simulated devices (GET/GETNEXT/WALK)
+- Built-in UPS (SNMP) template with RFC 1628 UPS-MIB OIDs (10 registers)
+- Built-in UPS simulation profile (Normal Operation)
+- OID field on register definitions for SNMP templates
+- OID column in frontend register table for SNMP protocol templates
+- SNMP protocol option in template creation
 
 ### Changed
 - Frontend Docker port changed from 3000 to 3002 (avoid port conflicts)

@@ -166,6 +166,7 @@ async def get_device_detail(session: AsyncSession, device_id: uuid.UUID) -> dict
             scale_factor=reg.scale_factor,
             unit=reg.unit,
             description=reg.description,
+            oid=reg.oid,
             value=None,
         ).model_dump()
         for reg in template.registers
@@ -328,6 +329,7 @@ async def start_device(
             function_code=reg.function_code,
             data_type=reg.data_type,
             byte_order=reg.byte_order,
+            oid=reg.oid,
         )
         for reg in template.registers
     ]
@@ -352,6 +354,19 @@ async def start_device(
             await simulation_engine.start_device(device.id)
         except Exception as e:
             logger.error("Failed to start simulation for device %s: %s", device_id, e)
+
+    # Set SNMP register names if applicable
+    if template.protocol == "snmp":
+        try:
+            snmp_adapter = protocol_manager.get_adapter("snmp")
+            oid_to_name = {
+                reg.oid: reg.name
+                for reg in template.registers
+                if reg.oid
+            }
+            snmp_adapter.set_register_names(device.id, oid_to_name)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.warning("Failed to set SNMP register names: %s", e)
 
     # Auto-start MQTT publishing if configured and enabled
     try:
@@ -393,7 +408,7 @@ async def stop_device(
     try:
         mqtt_adapter = protocol_manager.get_adapter("mqtt")
         await mqtt_adapter.stop_publishing(device.id)  # type: ignore[attr-defined]
-    except (KeyError, Exception):
+    except Exception:
         pass
 
     # Stop simulation engine for this device
@@ -421,6 +436,84 @@ async def stop_device(
     return await get_device(session, device.id)
 
 
+async def _batch_device_action(
+    session: AsyncSession,
+    device_ids: list[uuid.UUID] | None,
+    skip_status: str,
+    action_fn,
+    default_filter=None,
+    action_name: str = "action",
+) -> dict:
+    """Generic batch device operation. Skips devices with skip_status."""
+    if device_ids:
+        stmt = select(DeviceInstance).where(DeviceInstance.id.in_(device_ids))
+    elif default_filter is not None:
+        stmt = select(DeviceInstance).where(default_filter)
+    else:
+        stmt = select(DeviceInstance)
+    result = await session.execute(stmt)
+    devices = list(result.scalars().all())
+
+    success_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    for device in devices:
+        if device.status == skip_status:
+            skipped_count += 1
+            continue
+        try:
+            await action_fn(session, device.id)
+            success_count += 1
+        except Exception as e:
+            logger.warning("Batch %s failed for device %s: %s", action_name, device.id, e)
+            error_count += 1
+
+    return {
+        "success_count": success_count,
+        "skipped_count": skipped_count,
+        "error_count": error_count,
+    }
+
+
+async def batch_start_devices(
+    session: AsyncSession, device_ids: list[uuid.UUID] | None = None,
+) -> dict:
+    """Start multiple devices. Skips non-stopped devices."""
+    return await _batch_device_action(
+        session, device_ids,
+        skip_status="running",
+        action_fn=start_device,
+        default_filter=DeviceInstance.status == "stopped",
+        action_name="start",
+    )
+
+
+async def batch_stop_devices(
+    session: AsyncSession, device_ids: list[uuid.UUID] | None = None,
+) -> dict:
+    """Stop multiple devices. Skips already-stopped devices."""
+    return await _batch_device_action(
+        session, device_ids,
+        skip_status="stopped",
+        action_fn=stop_device,
+        default_filter=DeviceInstance.status != "stopped",
+        action_name="stop",
+    )
+
+
+async def batch_delete_devices(
+    session: AsyncSession, device_ids: list[uuid.UUID],
+) -> dict:
+    """Delete multiple devices. Skips running devices."""
+    return await _batch_device_action(
+        session, device_ids,
+        skip_status="running",
+        action_fn=delete_device,
+        action_name="delete",
+    )
+
+
 async def get_device_registers(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> list[dict]:
@@ -437,6 +530,7 @@ async def get_device_registers(
             scale_factor=reg.scale_factor,
             unit=reg.unit,
             description=reg.description,
+            oid=reg.oid,
             value=None,
         ).model_dump()
         for reg in template.registers

@@ -1,6 +1,7 @@
 import { api } from "./api";
 import type {
   ApiResponse,
+  BatchActionResult,
   BatchCreateDevice,
   CreateDevice,
   DeviceDetail,
@@ -45,5 +46,26 @@ export const deviceApi = {
   getRegisters: (id: string) =>
     api
       .get<ApiResponse<RegisterValue[]>>(`/devices/${id}/registers`)
+      .then((r) => r.data),
+
+  batchStart: (deviceIds: string[]) =>
+    api
+      .post<ApiResponse<BatchActionResult>>("/devices/batch/start", {
+        device_ids: deviceIds,
+      })
+      .then((r) => r.data),
+
+  batchStop: (deviceIds: string[]) =>
+    api
+      .post<ApiResponse<BatchActionResult>>("/devices/batch/stop", {
+        device_ids: deviceIds,
+      })
+      .then((r) => r.data),
+
+  batchDelete: (deviceIds: string[]) =>
+    api
+      .post<ApiResponse<BatchActionResult>>("/devices/batch/delete", {
+        device_ids: deviceIds,
+      })
       .then((r) => r.data),
 };

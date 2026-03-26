@@ -20,6 +20,7 @@ export interface RegisterValue {
   scale_factor: number;
   unit: string | null;
   description: string | null;
+  oid: string | null;
   value: number | null;
 }
 
@@ -44,6 +45,12 @@ export interface BatchCreateDevice {
   name_prefix?: string | null;
   description?: string | null;
   profile_id?: string | null;
+}
+
+export interface BatchActionResult {
+  success_count: number;
+  skipped_count: number;
+  error_count: number;
 }
 
 export interface UpdateDevice {

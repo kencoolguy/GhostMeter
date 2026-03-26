@@ -59,6 +59,20 @@ class DeviceUpdate(BaseModel):
         return v
 
 
+class DeviceBatchAction(BaseModel):
+    """Schema for batch start/stop/delete operations."""
+
+    device_ids: list[UUID] = []
+
+
+class BatchActionResult(BaseModel):
+    """Result of a batch operation."""
+
+    success_count: int = 0
+    skipped_count: int = 0
+    error_count: int = 0
+
+
 # --- Response Schemas ---
 
 class DeviceSummary(BaseModel):
@@ -89,6 +103,7 @@ class RegisterValue(BaseModel):
     scale_factor: float
     unit: str | None
     description: str | None
+    oid: str | None = None
     value: float | None = None
 
 

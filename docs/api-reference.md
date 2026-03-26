@@ -370,6 +370,54 @@ Batch create device instances. Atomic — all or nothing.
 
 ---
 
+#### `POST /api/v1/devices/batch/start`
+
+Batch start devices. Skips already-running devices.
+
+**Request body:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `device_ids` | UUID[] | no | `[]` | Device IDs to start. Empty = start all stopped devices |
+
+**Response** `200 OK`
+```json
+{
+  "success": true,
+  "data": { "success_count": 5, "skipped_count": 2, "error_count": 0 },
+  "message": "Started 5, skipped 2, errors 0"
+}
+```
+
+---
+
+#### `POST /api/v1/devices/batch/stop`
+
+Batch stop devices. Skips already-stopped devices.
+
+**Request body:** Same as batch start. Empty `device_ids` = stop all running devices.
+
+**Response** `200 OK` — same `BatchActionResult` format.
+
+---
+
+#### `POST /api/v1/devices/batch/delete`
+
+Batch delete devices. Skips running devices. `device_ids` is required (no "delete all").
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `device_ids` | UUID[] | yes | Device IDs to delete (must not be empty) |
+
+**Response** `200 OK` — same `BatchActionResult` format.
+
+**Error cases:**
+- `422` — empty `device_ids`
+
+---
+
 #### `GET /api/v1/devices/{device_id}`
 
 Get device detail with register definitions.

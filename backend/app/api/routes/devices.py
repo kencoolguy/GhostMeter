@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.exceptions import ValidationException
 from app.schemas.common import ApiResponse
 from app.schemas.device import (
+    BatchActionResult,
+    DeviceBatchAction,
     DeviceBatchCreate,
     DeviceCreate,
     DeviceDetail,
@@ -46,6 +49,51 @@ async def batch_create_devices(
     """Batch create device instances."""
     devices = await device_service.batch_create_devices(session, data)
     return ApiResponse(data=[DeviceSummary(**d) for d in devices])
+
+
+@router.post("/batch/start", response_model=ApiResponse[BatchActionResult])
+async def batch_start_devices(
+    data: DeviceBatchAction,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[BatchActionResult]:
+    """Batch start devices. Empty device_ids = start all stopped devices."""
+    result = await device_service.batch_start_devices(
+        session, data.device_ids if data.device_ids else None,
+    )
+    return ApiResponse(
+        data=BatchActionResult(**result),
+        message=f"Started {result['success_count']}, skipped {result['skipped_count']}, errors {result['error_count']}",
+    )
+
+
+@router.post("/batch/stop", response_model=ApiResponse[BatchActionResult])
+async def batch_stop_devices(
+    data: DeviceBatchAction,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[BatchActionResult]:
+    """Batch stop devices. Empty device_ids = stop all running devices."""
+    result = await device_service.batch_stop_devices(
+        session, data.device_ids if data.device_ids else None,
+    )
+    return ApiResponse(
+        data=BatchActionResult(**result),
+        message=f"Stopped {result['success_count']}, skipped {result['skipped_count']}, errors {result['error_count']}",
+    )
+
+
+@router.post("/batch/delete", response_model=ApiResponse[BatchActionResult])
+async def batch_delete_devices(
+    data: DeviceBatchAction,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[BatchActionResult]:
+    """Batch delete devices. Skips running devices. device_ids required."""
+    if not data.device_ids:
+        raise ValidationException(detail="device_ids is required for batch delete")
+    result = await device_service.batch_delete_devices(session, data.device_ids)
+    return ApiResponse(
+        data=BatchActionResult(**result),
+        message=f"Deleted {result['success_count']}, skipped {result['skipped_count']}, errors {result['error_count']}",
+    )
 
 
 @router.get("/{device_id}", response_model=ApiResponse[DeviceDetail])

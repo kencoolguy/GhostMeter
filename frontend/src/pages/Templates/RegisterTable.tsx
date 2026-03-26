@@ -27,13 +27,17 @@ interface RegisterTableProps {
   registers: Omit<RegisterDefinition, "id">[];
   onChange: (registers: Omit<RegisterDefinition, "id">[]) => void;
   disabled?: boolean;
+  protocol?: string;
 }
 
 export function RegisterTable({
   registers,
   onChange,
   disabled = false,
+  protocol = "modbus_tcp",
 }: RegisterTableProps) {
+  const isSnmp = protocol === "snmp";
+
   const updateRow = (index: number, field: string, value: unknown) => {
     const updated = [...registers];
     updated[index] = { ...updated[index], [field]: value };
@@ -45,21 +49,22 @@ export function RegisterTable({
       ...registers,
       {
         name: "",
-        address: 0,
-        function_code: 3,
+        address: registers.length,
+        function_code: isSnmp ? 4 : 3,
         data_type: "float32",
         byte_order: "big_endian",
         scale_factor: 1.0,
         unit: null,
         description: null,
         sort_order: registers.length,
+        ...(isSnmp ? { oid: "" } : {}),
       },
     ]);
   };
 
   const deleteRow = (index: number) => {
     const updated = registers.filter((_, i) => i !== index);
-    onChange(updated.map((r, i) => ({ ...r, sort_order: i })));
+    onChange(updated.map((r, i) => ({ ...r, sort_order: i, address: isSnmp ? i : r.address })));
   };
 
   const columns = [
@@ -76,36 +81,56 @@ export function RegisterTable({
         />
       ),
     },
-    {
-      title: "Address",
-      dataIndex: "address",
-      width: 90,
-      render: (_: number, __: unknown, index: number) => (
-        <InputNumber
-          value={registers[index].address}
-          onChange={(val) => updateRow(index, "address", val ?? 0)}
-          disabled={disabled}
-          size="small"
-          min={0}
-          style={{ width: "100%" }}
-        />
-      ),
-    },
-    {
-      title: "FC",
-      dataIndex: "function_code",
-      width: 130,
-      render: (_: number, __: unknown, index: number) => (
-        <Select
-          value={registers[index].function_code}
-          onChange={(val) => updateRow(index, "function_code", val)}
-          options={FC_OPTIONS}
-          disabled={disabled}
-          size="small"
-          style={{ width: "100%" }}
-        />
-      ),
-    },
+    ...(isSnmp
+      ? [
+          {
+            title: "OID",
+            dataIndex: "oid",
+            width: 260,
+            render: (_: string | null | undefined, __: unknown, index: number) => (
+              <Input
+                value={registers[index].oid ?? ""}
+                placeholder="1.3.6.1.2.1.33..."
+                onChange={(e) => updateRow(index, "oid", e.target.value)}
+                disabled={disabled}
+                size="small"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+            ),
+          },
+        ]
+      : [
+          {
+            title: "Address",
+            dataIndex: "address",
+            width: 90,
+            render: (_: number, __: unknown, index: number) => (
+              <InputNumber
+                value={registers[index].address}
+                onChange={(val) => updateRow(index, "address", val ?? 0)}
+                disabled={disabled}
+                size="small"
+                min={0}
+                style={{ width: "100%" }}
+              />
+            ),
+          },
+          {
+            title: "FC",
+            dataIndex: "function_code",
+            width: 130,
+            render: (_: number, __: unknown, index: number) => (
+              <Select
+                value={registers[index].function_code}
+                onChange={(val) => updateRow(index, "function_code", val)}
+                options={FC_OPTIONS}
+                disabled={disabled}
+                size="small"
+                style={{ width: "100%" }}
+              />
+            ),
+          },
+        ]),
     {
       title: "Data Type",
       dataIndex: "data_type",
@@ -121,21 +146,25 @@ export function RegisterTable({
         />
       ),
     },
-    {
-      title: "Byte Order",
-      dataIndex: "byte_order",
-      width: 170,
-      render: (_: string, __: unknown, index: number) => (
-        <Select
-          value={registers[index].byte_order}
-          onChange={(val) => updateRow(index, "byte_order", val)}
-          options={BYTE_ORDER_OPTIONS}
-          disabled={disabled}
-          size="small"
-          style={{ width: "100%" }}
-        />
-      ),
-    },
+    ...(!isSnmp
+      ? [
+          {
+            title: "Byte Order",
+            dataIndex: "byte_order",
+            width: 170,
+            render: (_: string, __: unknown, index: number) => (
+              <Select
+                value={registers[index].byte_order}
+                onChange={(val) => updateRow(index, "byte_order", val)}
+                options={BYTE_ORDER_OPTIONS}
+                disabled={disabled}
+                size="small"
+                style={{ width: "100%" }}
+              />
+            ),
+          },
+        ]
+      : []),
     {
       title: "Scale",
       dataIndex: "scale_factor",

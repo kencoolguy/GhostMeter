@@ -1,14 +1,18 @@
-"""API routes for simulation profile CRUD."""
+"""API routes for simulation profile CRUD + import/export."""
 
+import json
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.exceptions import ValidationException
 from app.schemas.common import ApiResponse
 from app.schemas.simulation_profile import (
     SimulationProfileCreate,
+    SimulationProfileExport,
     SimulationProfileResponse,
     SimulationProfileUpdate,
 )
@@ -29,6 +33,65 @@ async def list_profiles(
     profiles = await simulation_profile_service.list_profiles(session, template_id)
     return ApiResponse(
         data=[SimulationProfileResponse.model_validate(p) for p in profiles]
+    )
+
+
+@router.get("/template/{template_id}")
+async def download_blank_profile(
+    template_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Download a blank profile template JSON for a given device template."""
+    data = await simulation_profile_service.generate_blank_profile(session, template_id)
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    filename = data.get("template_name", "profile").replace(" ", "_").lower()
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}_blank_profile.json"'
+        },
+    )
+
+
+@router.post(
+    "/import",
+    response_model=ApiResponse[SimulationProfileResponse],
+    status_code=201,
+)
+async def import_profile(
+    template_id: uuid.UUID,
+    file: UploadFile,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[SimulationProfileResponse]:
+    """Import a profile from a JSON file upload."""
+    try:
+        content = await file.read()
+        data = json.loads(content)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ValidationException(detail=f"Invalid JSON file: {e}")
+
+    profile = await simulation_profile_service.import_profile(session, template_id, data)
+    return ApiResponse(data=SimulationProfileResponse.model_validate(profile))
+
+
+@router.get(
+    "/{profile_id}/export",
+)
+async def export_profile(
+    profile_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Export a profile as a JSON file download."""
+    data = await simulation_profile_service.export_profile(session, profile_id)
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    filename = data.get("name", "profile").replace(" ", "_").lower()
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}.json"'
+        },
     )
 
 

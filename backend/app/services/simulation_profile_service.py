@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.exceptions import (
     ConflictException,
@@ -187,6 +188,82 @@ async def apply_profile_to_device(
         )
         session.add(sim_config)
     await session.flush()
+
+
+async def export_profile(
+    session: AsyncSession, profile_id: uuid.UUID,
+) -> dict:
+    """Export a profile as a standalone JSON-serializable dict."""
+    profile = await _get_profile_or_404(session, profile_id)
+
+    stmt = select(DeviceTemplate).where(DeviceTemplate.id == profile.template_id)
+    result = await session.execute(stmt)
+    template = result.scalar_one_or_none()
+    template_name = template.name if template else ""
+
+    return {
+        "name": profile.name,
+        "description": profile.description,
+        "template_name": template_name,
+        "configs": profile.configs,
+    }
+
+
+async def generate_blank_profile(
+    session: AsyncSession, template_id: uuid.UUID,
+) -> dict:
+    """Generate a blank profile template JSON from a template's registers."""
+    stmt = (
+        select(DeviceTemplate)
+        .where(DeviceTemplate.id == template_id)
+        .options(selectinload(DeviceTemplate.registers))
+    )
+    result = await session.execute(stmt)
+    template = result.scalar_one_or_none()
+    if template is None:
+        raise NotFoundException(
+            detail="Template not found", error_code="TEMPLATE_NOT_FOUND",
+        )
+
+    configs = []
+    for reg in sorted(template.registers, key=lambda r: r.sort_order):
+        configs.append({
+            "register_name": reg.name,
+            "data_mode": "static",
+            "mode_params": {},
+            "is_enabled": True,
+            "update_interval_ms": 1000,
+        })
+
+    return {
+        "name": "My Profile",
+        "description": None,
+        "template_name": template.name,
+        "configs": configs,
+    }
+
+
+async def import_profile(
+    session: AsyncSession, template_id: uuid.UUID, data: dict,
+) -> SimulationProfile:
+    """Import a profile from an exported JSON dict."""
+    name = data.get("name", "").strip()
+    if not name:
+        raise ValidationException(detail="Profile name is required")
+
+    description = data.get("description")
+    configs = data.get("configs", [])
+    if not configs:
+        raise ValidationException(detail="Profile must have at least one config entry")
+
+    create_data = SimulationProfileCreate(
+        template_id=template_id,
+        name=name,
+        description=description,
+        is_default=False,
+        configs=configs,
+    )
+    return await create_profile(session, create_data)
 
 
 async def get_default_profile(
