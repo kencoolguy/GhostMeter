@@ -1,0 +1,10 @@
+{
+  "template_name": "Solar Inverter (Fronius Symo)",
+  "name": "Fault Disconnect",
+  "description": "Simulates inverter fault: AC power drops, DC voltage drifts, efficiency zeroes",
+  "steps": [
+    {"register_name": "ac_power", "anomaly_type": "flatline", "anomaly_params": {"value": 0}, "trigger_at_seconds": 0, "duration_seconds": 30, "sort_order": 0},
+    {"register_name": "dc_voltage", "anomaly_type": "drift", "anomaly_params": {"drift_per_second": -5, "max_drift": -50}, "trigger_at_seconds": 2, "duration_seconds": 28, "sort_order": 1},
+    {"register_name": "efficiency", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 5, "duration_seconds": 25, "sort_order": 2}
+  ]
+}

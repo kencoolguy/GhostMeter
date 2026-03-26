@@ -1,0 +1,14 @@
+{
+  "template_name": "Three-Phase Power Meter (SDM630)",
+  "name": "Power Outage",
+  "description": "Simulates complete power loss: voltages drop to zero, followed by currents and power",
+  "steps": [
+    {"register_name": "voltage_l1", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 0, "duration_seconds": 30, "sort_order": 0},
+    {"register_name": "voltage_l2", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 0, "duration_seconds": 30, "sort_order": 1},
+    {"register_name": "voltage_l3", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 0, "duration_seconds": 30, "sort_order": 2},
+    {"register_name": "current_l1", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 2, "duration_seconds": 28, "sort_order": 3},
+    {"register_name": "current_l2", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 2, "duration_seconds": 28, "sort_order": 4},
+    {"register_name": "current_l3", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 2, "duration_seconds": 28, "sort_order": 5},
+    {"register_name": "total_power", "anomaly_type": "out_of_range", "anomaly_params": {"value": 0}, "trigger_at_seconds": 3, "duration_seconds": 27, "sort_order": 6}
+  ]
+}

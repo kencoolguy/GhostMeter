@@ -1,0 +1,10 @@
+{
+  "template_name": "Three-Phase Power Meter (SDM630)",
+  "name": "Voltage Instability",
+  "description": "Simulates unstable voltage across three phases with spikes and drift",
+  "steps": [
+    {"register_name": "voltage_l1", "anomaly_type": "spike", "anomaly_params": {"probability": 0.8, "multiplier": 1.5}, "trigger_at_seconds": 0, "duration_seconds": 15, "sort_order": 0},
+    {"register_name": "voltage_l2", "anomaly_type": "drift", "anomaly_params": {"drift_per_second": 2, "max_drift": 30}, "trigger_at_seconds": 5, "duration_seconds": 20, "sort_order": 1},
+    {"register_name": "voltage_l3", "anomaly_type": "spike", "anomaly_params": {"probability": 0.6, "multiplier": 2.0}, "trigger_at_seconds": 10, "duration_seconds": 10, "sort_order": 2}
+  ]
+}

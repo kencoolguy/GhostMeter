@@ -22,7 +22,7 @@ from app.protocols import protocol_manager
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.mqtt_adapter import MqttAdapter
 from app.protocols.snmp_agent import SnmpAdapter
-from app.seed.loader import seed_builtin_profiles, seed_builtin_templates
+from app.seed.loader import seed_builtin_profiles, seed_builtin_scenarios, seed_builtin_templates
 from app.simulation import simulation_engine
 from app.exceptions import (
     AppException,
@@ -58,6 +58,8 @@ async def lifespan(app: FastAPI):
     logger.info("Template seed data check complete")
     await seed_builtin_profiles()
     logger.info("Profile seed data check complete")
+    await seed_builtin_scenarios()
+    logger.info("Scenario seed data check complete")
 
     # Start Modbus TCP protocol adapter
     modbus_adapter = ModbusTcpAdapter(

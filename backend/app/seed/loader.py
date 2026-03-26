@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 SEED_DIR = Path(__file__).parent
 PROFILES_DIR = SEED_DIR / "profiles"
+SCENARIOS_DIR = SEED_DIR / "scenarios"
 
 
 async def seed_builtin_templates() -> None:
@@ -128,3 +129,58 @@ async def seed_builtin_profiles() -> None:
                 logger.error(
                     "Failed to load profile seed %s", json_file.name, exc_info=True,
                 )
+
+
+async def seed_builtin_scenarios() -> None:
+    """Load scenario seed JSON files and create builtin scenarios if they don't exist."""
+    if not SCENARIOS_DIR.is_dir():
+        logger.info("No scenarios seed directory found at %s", SCENARIOS_DIR)
+        return
+
+    from app.models.scenario import Scenario
+    from app.schemas.scenario import ScenarioCreate, ScenarioStepCreate
+    from app.services import scenario_service
+
+    json_files = sorted(SCENARIOS_DIR.glob("*.json"))
+
+    async with async_session_factory() as session:
+        for json_file in json_files:
+            try:
+                raw = json.loads(json_file.read_text(encoding="utf-8"))
+                scenario_name = raw["name"]
+                template_name = raw["template_name"]
+
+                # Resolve template
+                stmt = select(DeviceTemplate).where(DeviceTemplate.name == template_name)
+                result = await session.execute(stmt)
+                template = result.scalar_one_or_none()
+                if template is None:
+                    logger.warning(
+                        "Template '%s' not found for scenario seed '%s', skipping",
+                        template_name, scenario_name,
+                    )
+                    continue
+
+                # Check if already exists
+                stmt2 = select(Scenario).where(
+                    Scenario.template_id == template.id,
+                    Scenario.name == scenario_name,
+                    Scenario.is_builtin.is_(True),
+                )
+                result2 = await session.execute(stmt2)
+                if result2.scalar_one_or_none() is not None:
+                    logger.debug("Builtin scenario '%s' already exists, skipping", scenario_name)
+                    continue
+
+                steps = [ScenarioStepCreate(**s) for s in raw["steps"]]
+                create_data = ScenarioCreate(
+                    template_id=template.id,
+                    name=scenario_name,
+                    description=raw.get("description"),
+                    steps=steps,
+                )
+                await scenario_service.create_scenario(session, create_data, is_builtin=True)
+                logger.info("Seeded builtin scenario: %s", scenario_name)
+
+            except Exception:
+                logger.error("Failed to load scenario seed %s", json_file.name, exc_info=True)
