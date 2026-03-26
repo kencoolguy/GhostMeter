@@ -8,6 +8,7 @@ import type { DeviceSummary, RegisterValue } from "../../types";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { EditDeviceModal } from "./EditDeviceModal";
 import { MqttPublishConfig } from "./MqttPublishConfig";
+import { ScenarioCard } from "./ScenarioCard";
 
 const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; text: string }> = {
   running: { status: "success", text: "Running" },
@@ -156,6 +157,14 @@ export default function DeviceDetail() {
         <MqttPublishConfig
           deviceId={id}
           onPublishStateChange={setMqttPublishing}
+        />
+      )}
+
+      {id && currentDevice && (
+        <ScenarioCard
+          deviceId={id}
+          templateId={currentDevice.template_id}
+          deviceStatus={currentDevice.status}
         />
       )}
 
