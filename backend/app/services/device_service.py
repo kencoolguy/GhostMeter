@@ -12,6 +12,7 @@ from app.protocols.base import RegisterInfo
 from app.services import mqtt_service, simulation_profile_service
 from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
+from app.models.mqtt import MqttPublishConfig
 from app.models.template import DeviceTemplate
 from app.schemas.device import (
     DeviceBatchCreate,
@@ -75,7 +76,11 @@ async def _get_template_or_404(
     return template
 
 
-def _device_to_summary(device: DeviceInstance, template_name: str) -> dict:
+def _device_to_summary(
+    device: DeviceInstance,
+    template_name: str,
+    mqtt_publishing: bool = False,
+) -> dict:
     """Convert device ORM to summary dict."""
     return {
         "id": device.id,
@@ -86,6 +91,7 @@ def _device_to_summary(device: DeviceInstance, template_name: str) -> dict:
         "status": device.status,
         "port": device.port,
         "description": device.description,
+        "mqtt_publishing": mqtt_publishing,
         "created_at": device.created_at,
         "updated_at": device.updated_at,
     }
@@ -121,15 +127,27 @@ async def _resolve_and_apply_profile(
 
 
 async def list_devices(session: AsyncSession) -> list[dict]:
-    """List all devices with template name."""
+    """List all devices with template name and MQTT publishing status."""
     stmt = (
-        select(DeviceInstance, DeviceTemplate.name.label("template_name"))
+        select(
+            DeviceInstance,
+            DeviceTemplate.name.label("template_name"),
+            MqttPublishConfig.enabled.label("mqtt_enabled"),
+        )
         .join(DeviceTemplate, DeviceInstance.template_id == DeviceTemplate.id)
+        .outerjoin(
+            MqttPublishConfig,
+            DeviceInstance.id == MqttPublishConfig.device_id,
+        )
         .order_by(DeviceInstance.created_at)
     )
     result = await session.execute(stmt)
     return [
-        _device_to_summary(row.DeviceInstance, row.template_name)
+        _device_to_summary(
+            row.DeviceInstance,
+            row.template_name,
+            mqtt_publishing=bool(row.mqtt_enabled),
+        )
         for row in result.all()
     ]
 
