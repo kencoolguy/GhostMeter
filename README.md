@@ -2,7 +2,7 @@
 
 > Multi-protocol device simulator for energy management systems.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)]()
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)]()
 [![Python](https://img.shields.io/badge/python-3.12+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
@@ -10,13 +10,16 @@
 
 - **Modbus TCP** protocol simulation (FC03 + FC04, multi slave ID)
 - **MQTT publish** to external broker (batch or per-register, configurable topic/QoS)
-- **Built-in templates**: Three-Phase Meter, Single-Phase Meter, Solar Inverter
+- **SNMP agent** (SNMPv2c GET/GETNEXT/WALK) with OID mapping for UPS and other devices
+- **Built-in templates**: Three-Phase Meter, Single-Phase Meter, Solar Inverter, UPS (SNMP)
 - **Simulation profiles**: Reusable parameter sets with per-register config, auto-applied on device creation
+- **Profile management**: Export, import, and blank template download for easy sharing
 - **5 data generation modes**: static, random, daily curve, computed, accumulator
 - **Anomaly injection**: spike, drift, flatline, out-of-range, data loss (real-time + scheduled)
 - **Fault simulation**: delay, timeout, exception, intermittent communication
 - **Real-time monitoring**: WebSocket dashboard with charts and event log
-- **Config export/import**: Full system snapshot including MQTT settings
+- **Batch operations**: Start, stop, and delete multiple devices at once
+- **Config export/import**: Full system snapshot including MQTT settings and simulation profiles
 - **Modern Web UI**: React + Ant Design management interface
 
 ## Quick Start
