@@ -868,3 +868,248 @@ Imports a system configuration snapshot. Upserts templates by name, devices by (
 
 **Errors:**
 - `422` — unsupported version, device references unknown template, invalid data
+
+---
+
+## Scenarios
+
+Base path: `/api/v1/scenarios`
+
+Scenarios are reusable anomaly injection timelines bound to a device template. Each scenario contains a sequence of steps that trigger anomalies on specific registers at defined times.
+
+### Schemas
+
+#### `ScenarioStepCreate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_name` | string | yes | — | Target register name (must match template register) |
+| `anomaly_type` | string | yes | — | One of: `spike`, `drift`, `flatline`, `out_of_range`, `data_loss` |
+| `anomaly_params` | object | no | `{}` | Anomaly-specific parameters |
+| `trigger_at_seconds` | integer | yes | — | Seconds from scenario start when this step triggers (>= 0) |
+| `duration_seconds` | integer | yes | — | How long the anomaly lasts in seconds (> 0) |
+| `sort_order` | integer | no | `0` | Display order |
+
+#### `ScenarioCreate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `template_id` | UUID | yes | — | Template this scenario belongs to |
+| `name` | string | yes | — | Scenario name (unique per template) |
+| `description` | string\|null | no | `null` | Description |
+| `steps` | ScenarioStepCreate[] | yes | — | Array of scenario steps |
+
+> `total_duration_seconds` is computed from steps automatically.
+
+#### `ScenarioUpdate` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | yes | — | Scenario name |
+| `description` | string\|null | no | `null` | Description |
+| `steps` | ScenarioStepCreate[] | yes | — | Full replacement of steps |
+
+#### `ScenarioSummary` (response -- list items)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Scenario ID |
+| `template_id` | UUID | Template ID |
+| `template_name` | string | Template name (joined) |
+| `name` | string | Scenario name |
+| `description` | string\|null | Description |
+| `is_builtin` | boolean | `true` for seed-loaded scenarios |
+| `total_duration_seconds` | integer | Total duration in seconds |
+| `created_at` | datetime | ISO 8601 UTC |
+| `updated_at` | datetime | ISO 8601 UTC |
+
+#### `ScenarioDetail` (response -- single item)
+
+Same as `ScenarioSummary` plus `steps: ScenarioStepResponse[]`.
+
+#### `ScenarioStepResponse` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Step ID |
+| `register_name` | string | Target register name |
+| `anomaly_type` | string | Anomaly type |
+| `anomaly_params` | object | Anomaly parameters |
+| `trigger_at_seconds` | integer | Trigger time offset (seconds) |
+| `duration_seconds` | integer | Duration (seconds) |
+| `sort_order` | integer | Display order |
+
+#### `ScenarioExport` (request/response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Scenario name |
+| `description` | string\|null | Description |
+| `template_name` | string | Template name (for matching on import) |
+| `steps` | ScenarioStepCreate[] | Array of steps |
+
+#### `ScenarioExecutionStatus` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `scenario_id` | UUID | Scenario ID |
+| `scenario_name` | string | Scenario name |
+| `status` | string | `running` or `completed` |
+| `elapsed_seconds` | integer | Seconds elapsed since start |
+| `total_duration_seconds` | integer | Total scenario duration |
+| `active_steps` | ActiveStepStatus[] | Currently active anomaly steps |
+
+#### `ActiveStepStatus`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `register_name` | string | Register with active anomaly |
+| `anomaly_type` | string | Anomaly type |
+| `remaining_seconds` | integer | Seconds until anomaly ends |
+
+---
+
+### Endpoints
+
+#### `GET /api/v1/scenarios`
+
+List all scenarios, optionally filtered by template.
+
+**Query param:** `template_id` (UUID, optional)
+
+**Response** `200 OK` -- `ApiResponse[ScenarioSummary[]]`
+
+---
+
+#### `POST /api/v1/scenarios`
+
+Create a new scenario with steps.
+
+**Request body:** `ScenarioCreate`
+
+**Response** `201 Created` -- `ApiResponse[ScenarioDetail]`
+
+**Error cases:**
+- `404` -- template not found
+- `409` -- duplicate name for this template
+
+---
+
+#### `GET /api/v1/scenarios/{scenario_id}`
+
+Get a scenario with all steps.
+
+**Path param:** `scenario_id` (UUID)
+
+**Response** `200 OK` -- `ApiResponse[ScenarioDetail]`
+
+**Error cases:**
+- `404` -- scenario not found
+
+---
+
+#### `PUT /api/v1/scenarios/{scenario_id}`
+
+Update a scenario (full replace of steps). Built-in scenarios cannot be updated.
+
+**Path param:** `scenario_id` (UUID)
+
+**Request body:** `ScenarioUpdate`
+
+**Response** `200 OK` -- `ApiResponse[ScenarioDetail]`
+
+**Error cases:**
+- `404` -- scenario not found
+- `403` -- cannot modify a built-in scenario
+
+---
+
+#### `DELETE /api/v1/scenarios/{scenario_id}`
+
+Delete a scenario. Built-in scenarios cannot be deleted.
+
+**Path param:** `scenario_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Scenario deleted" }
+```
+
+**Error cases:**
+- `404` -- scenario not found
+- `409` -- cannot delete a built-in scenario
+
+---
+
+#### `POST /api/v1/scenarios/{scenario_id}/export`
+
+Export a scenario as portable JSON (template referenced by name, not ID).
+
+**Path param:** `scenario_id` (UUID)
+
+**Response** `200 OK` -- `ApiResponse[ScenarioExport]`
+
+**Error cases:**
+- `404` -- scenario not found
+
+---
+
+#### `POST /api/v1/scenarios/import`
+
+Import a scenario from JSON. Template is matched by name.
+
+**Request body:** `ScenarioExport`
+
+**Response** `201 Created` -- `ApiResponse[ScenarioDetail]`
+
+**Error cases:**
+- `404` -- template not found by name
+- `409` -- duplicate scenario name for the template
+
+---
+
+### Scenario Execution
+
+Execution endpoints are mounted under `/api/v1/devices`.
+
+#### `POST /api/v1/devices/{device_id}/scenario/{scenario_id}/start`
+
+Start executing a scenario on a running device. The scenario template must match the device template.
+
+**Path params:** `device_id` (UUID), `scenario_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Scenario started" }
+```
+
+**Error cases:**
+- `409` -- device not running (`DEVICE_NOT_RUNNING`)
+- `409` -- scenario already running on device (`SCENARIO_ALREADY_RUNNING`)
+- `409` -- scenario template does not match device template (`TEMPLATE_MISMATCH`)
+
+---
+
+#### `POST /api/v1/devices/{device_id}/scenario/stop`
+
+Stop a running scenario on a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Scenario stopped" }
+```
+
+---
+
+#### `GET /api/v1/devices/{device_id}/scenario/status`
+
+Get real-time execution status of a running scenario.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` -- `ApiResponse[ScenarioExecutionStatus]`
+
+**Error cases:**
+- `404` -- no scenario running on this device (`NO_RUNNING_SCENARIO`)

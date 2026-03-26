@@ -202,6 +202,19 @@
 - [x] OID conflict detection for same-template devices
 - [x] 16 integration tests (template CRUD, adapter unit, seed validation)
 
+### Milestone 8.5：Scenario Mode ✅
+- [x] `scenarios` + `scenario_steps` DB tables + Alembic migration
+- [x] Pydantic schemas (Create / Update / Summary / Detail / StepCreate / Export / ExecutionStatus)
+- [x] Scenario CRUD service + API routes (`/api/v1/scenarios`)
+- [x] ScenarioRunner: async executor with timeline-based anomaly injection/clear
+- [x] Execution API: start/stop/status per device (`/api/v1/devices/{id}/scenario/...`)
+- [x] Built-in seed scenarios: Power Outage Recovery, Voltage Instability, Inverter Fault Sequence
+- [x] Frontend types, API client (`scenarioApi.ts`), Zustand store (`scenarioStore.ts`)
+- [x] ScenarioList page with template filter, CRUD actions, clone, export/import
+- [x] TimelineEditor: visual drag-and-drop anomaly blocks on register×time grid
+- [x] ScenarioExecutionCard on Device Detail: start/stop with real-time progress polling
+- [x] 19 integration tests (CRUD, seed, built-in protection, export/import)
+
 ---
 
 ## 時程總覽

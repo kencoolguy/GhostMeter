@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Scenario mode: reusable anomaly injection timelines bound to device templates
+- Scenario CRUD API (`/api/v1/scenarios`) with list, get, create, update, delete, export, import
+- Scenario execution API: start/stop/status per device (`/api/v1/devices/{id}/scenario/...`)
+- ScenarioRunner: async executor that triggers anomaly injections on a timeline
+- Built-in scenario seeds: Power Outage Recovery, Voltage Instability, Inverter Fault Sequence
+- `scenarios` and `scenario_steps` DB tables with Alembic migration
+- Frontend Scenarios page: list view with template filter, create/edit/delete/clone/export/import
+- Frontend timeline editor: drag-and-drop anomaly blocks on a register×time grid
+- Frontend scenario execution card on Device Detail page with start/stop and real-time progress
+- 19 integration tests for scenario CRUD, seed loading, built-in protection, and export/import
+
 ### Changed
 - MQTT publish config card: edit/publish mode separation — fields locked during publishing, "Stop publishing to edit settings" hint
 - MQTT publishing status indicator (green `MQTT` tag) in device list and device detail pages

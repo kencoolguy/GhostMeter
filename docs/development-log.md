@@ -1,5 +1,34 @@
 # Development Log
 
+## 2026-03-27 — Scenario Mode (Milestone 8.5)
+
+### What was done
+- **DB models + migration**: `scenarios` and `scenario_steps` tables with UUID PKs, JSONB anomaly_params, cascade delete from templates
+- **Pydantic schemas**: ScenarioCreate, ScenarioUpdate, ScenarioDetail, ScenarioSummary, ScenarioStepCreate, ScenarioExport, ScenarioExecutionStatus, ActiveStepStatus
+- **Scenario CRUD service**: Full REST API at `/api/v1/scenarios` — list (with template filter), get, create, update (full replace), delete, export, import
+- **ScenarioRunner**: Async executor that schedules anomaly injections on a timeline using asyncio tasks; tracks elapsed time, active steps, and auto-cleans up on completion
+- **Execution API**: `POST /devices/{id}/scenario/{id}/start`, `POST /devices/{id}/scenario/stop`, `GET /devices/{id}/scenario/status` — validates device running state, template match, and single-scenario-per-device constraint
+- **Built-in seed scenarios**: 3 scenarios for Three-Phase Meter template — Power Outage Recovery (60s), Voltage Instability (90s), Inverter Fault Sequence (120s)
+- **Frontend types, API client, store**: `scenario.ts` types, `scenarioApi.ts`, `scenarioStore.ts` following existing patterns
+- **ScenarioList page**: Table with template filter dropdown, create/edit/delete actions, clone, export (JSON download), import (JSON upload)
+- **TimelineEditor**: Visual drag-and-drop blocks on a register x time grid; StepPopover for editing anomaly params; auto-computes total_duration_seconds
+- **ScenarioExecutionCard**: Device Detail component with scenario selector, start/stop buttons, progress bar with real-time polling (1s interval)
+- **19 integration tests**: CRUD operations, seed loading, idempotency, built-in protection, export/import round-trip
+
+### Decisions
+- Scenarios are template-bound (not device-bound) — reusable across all devices of the same template
+- Steps use `register_name` (not register ID) for portability in export/import
+- `total_duration_seconds` is computed as `max(trigger_at + duration)` across all steps on create/update
+- Built-in scenarios: cannot be updated or deleted (403/409), but can be cloned and exported
+- ScenarioRunner is in-memory only — no execution history persisted to DB (sufficient for MVP)
+- Timeline editor uses CSS-based positioning (percentage of total duration) rather than a charting library
+
+### Test results
+- 278 backend tests passing (19 new for scenarios)
+- Frontend TypeScript check + Vite build pass
+
+---
+
 ## 2026-03-27 — Publish/Stop UX Unification (#11)
 
 ### What was done

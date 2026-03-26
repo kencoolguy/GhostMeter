@@ -152,6 +152,53 @@ Per-device MQTT publish configuration. One config per device.
 
 ---
 
+### `scenarios`
+
+Reusable anomaly injection timelines bound to a device template. Built-in scenarios are loaded from seed data at startup.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `template_id` | UUID | NOT NULL | — | FK → `device_templates.id` (CASCADE DELETE) |
+| `name` | VARCHAR(255) | NOT NULL | — | Scenario name (unique per template) |
+| `description` | TEXT | NULL | — | Human-readable description |
+| `is_builtin` | BOOLEAN | NOT NULL | `false` | `true` for seed-loaded scenarios; these cannot be deleted |
+| `total_duration_seconds` | INTEGER | NOT NULL | — | Total scenario duration in seconds |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `now()` | Creation time (UTC) |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `now()` | Last update time (UTC) |
+
+**Constraints:**
+- `UNIQUE (template_id, name)` — scenario names must be unique within a template
+
+**Relations:**
+- Belongs to `device_templates` (CASCADE — deleting a template deletes its scenarios)
+- Has many `scenario_steps` (cascade delete)
+
+---
+
+### `scenario_steps`
+
+A single anomaly injection step within a scenario. Defines which register gets what anomaly, when it triggers, and how long it lasts.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `scenario_id` | UUID | NOT NULL | — | FK → `scenarios.id` (CASCADE DELETE) |
+| `register_name` | VARCHAR(100) | NOT NULL | — | Target register name (must match template register) |
+| `anomaly_type` | VARCHAR(50) | NOT NULL | — | One of: `spike`, `drift`, `flatline`, `out_of_range`, `data_loss` |
+| `anomaly_params` | JSONB | NOT NULL | `{}` | Anomaly-specific parameters |
+| `trigger_at_seconds` | INTEGER | NOT NULL | — | Seconds from scenario start when this step triggers |
+| `duration_seconds` | INTEGER | NOT NULL | — | How long the anomaly lasts (seconds) |
+| `sort_order` | INTEGER | NOT NULL | `0` | Display/iteration order |
+
+**Constraints:**
+- `FK scenario_id → scenarios.id ON DELETE CASCADE`
+
+**Relations:**
+- Belongs to `scenarios`
+
+---
+
 ## Register Address Notes
 
 - Addresses are **0-based** (following the pymodbus convention, not the legacy 1-based Modbus PDU convention)
@@ -175,3 +222,4 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 | `eda1e6420ebd` | Add mqtt_broker_settings and mqtt_publish_configs tables |
 | `b2a1062d8287` | Merge simulation_profiles and mqtt migrations |
 | `884c7934de25` | Add oid column to register_definitions |
+| `6e6c8a4265de` | Add scenarios and scenario_steps tables |
