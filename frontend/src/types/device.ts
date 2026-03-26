@@ -7,6 +7,7 @@ export interface DeviceSummary {
   status: "stopped" | "running" | "error";
   port: number;
   description: string | null;
+  mqtt_publishing: boolean;
   created_at: string;
   updated_at: string;
 }
