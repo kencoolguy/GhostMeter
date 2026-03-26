@@ -1,5 +1,7 @@
 """Tests for scenario CRUD and execution."""
 
+import asyncio
+
 from httpx import AsyncClient
 
 TEMPLATE_PAYLOAD = {
@@ -219,3 +221,49 @@ class TestScenarioCRUD:
         data = resp.json()["data"]
         assert data["name"] == "Imported Scenario"
         assert data["template_id"] == template["id"]
+
+
+async def create_device(client: AsyncClient, template_id: str, name: str = "Test Device", slave_id: int = 1) -> dict:
+    resp = await client.post("/api/v1/devices", json={
+        "template_id": template_id,
+        "name": name,
+        "slave_id": slave_id,
+    })
+    assert resp.status_code == 201
+    return resp.json()["data"]
+
+
+class TestScenarioExecution:
+    async def test_start_scenario_requires_running_device(self, client: AsyncClient) -> None:
+        template = await create_template(client)
+        device = await create_device(client, template["id"])
+        payload = make_scenario_payload(template["id"])
+        create_resp = await client.post("/api/v1/scenarios", json=payload)
+        scenario_id = create_resp.json()["data"]["id"]
+
+        # Device is stopped — should fail
+        resp = await client.post(f"/api/v1/devices/{device['id']}/scenario/{scenario_id}/start")
+        assert resp.status_code == 409
+
+    async def test_start_scenario_template_mismatch_rejected(self, client: AsyncClient) -> None:
+        template = await create_template(client)
+        device = await create_device(client, template["id"])
+
+        # Create another template
+        other_template_payload = {**TEMPLATE_PAYLOAD, "name": "Other Meter"}
+        other_resp = await client.post("/api/v1/templates", json=other_template_payload)
+        other_template_id = other_resp.json()["data"]["id"]
+
+        # Scenario bound to other template
+        payload = make_scenario_payload(other_template_id)
+        create_resp = await client.post("/api/v1/scenarios", json=payload)
+        scenario_id = create_resp.json()["data"]["id"]
+
+        resp = await client.post(f"/api/v1/devices/{device['id']}/scenario/{scenario_id}/start")
+        assert resp.status_code == 409
+
+    async def test_get_status_no_scenario_returns_404(self, client: AsyncClient) -> None:
+        template = await create_template(client)
+        device = await create_device(client, template["id"])
+        resp = await client.get(f"/api/v1/devices/{device['id']}/scenario/status")
+        assert resp.status_code == 404

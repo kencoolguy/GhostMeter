@@ -10,13 +10,22 @@ from app.schemas.common import ApiResponse
 from app.schemas.scenario import (
     ScenarioCreate,
     ScenarioDetail,
+    ScenarioExecutionStatus,
     ScenarioExport,
     ScenarioSummary,
     ScenarioUpdate,
 )
 from app.services import scenario_service
+from app.services.scenario_runner import ScenarioRunner, StepInfo
+from app.simulation import anomaly_injector
 
 router = APIRouter()
+
+# Execution routes use a separate router mounted under /devices
+execution_router = APIRouter()
+
+# Singleton runner — initialized with the global anomaly_injector
+runner = ScenarioRunner(anomaly_injector)
 
 
 @router.get("", response_model=ApiResponse[list[ScenarioSummary]])
@@ -89,3 +98,78 @@ async def export_scenario(
     """Export scenario as portable JSON."""
     data = await scenario_service.export_scenario(session, scenario_id)
     return ApiResponse(data=ScenarioExport(**data))
+
+
+# --- Execution endpoints (mounted under /devices via execution_router) ---
+
+
+@execution_router.post("/{device_id}/scenario/{scenario_id}/start", response_model=ApiResponse[None])
+async def start_scenario(
+    device_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[None]:
+    """Start executing a scenario on a device."""
+    from app.exceptions import ConflictException
+    from app.services import device_service
+
+    # Verify device is running
+    device = await device_service.get_device(session, device_id)
+    if device["status"] != "running":
+        raise ConflictException(
+            detail="Device must be running to start a scenario",
+            error_code="DEVICE_NOT_RUNNING",
+        )
+
+    # Check no scenario already running
+    if runner.get_status(device_id) is not None:
+        raise ConflictException(
+            detail="A scenario is already running on this device",
+            error_code="SCENARIO_ALREADY_RUNNING",
+        )
+
+    # Get scenario and validate template match
+    scenario = await scenario_service.get_scenario(session, scenario_id)
+    if scenario["template_id"] != device["template_id"]:
+        raise ConflictException(
+            detail="Scenario template does not match device template",
+            error_code="TEMPLATE_MISMATCH",
+        )
+
+    steps = [
+        StepInfo(
+            register_name=s["register_name"],
+            anomaly_type=s["anomaly_type"],
+            anomaly_params=s["anomaly_params"],
+            trigger_at_seconds=s["trigger_at_seconds"],
+            duration_seconds=s["duration_seconds"],
+        )
+        for s in scenario["steps"]
+    ]
+
+    await runner.start(
+        device_id, scenario_id,
+        scenario["name"], scenario["total_duration_seconds"], steps,
+    )
+    return ApiResponse(data=None, message="Scenario started")
+
+
+@execution_router.post("/{device_id}/scenario/stop", response_model=ApiResponse[None])
+async def stop_scenario(device_id: uuid.UUID) -> ApiResponse[None]:
+    """Stop a running scenario on a device."""
+    await runner.stop(device_id)
+    return ApiResponse(data=None, message="Scenario stopped")
+
+
+@execution_router.get("/{device_id}/scenario/status", response_model=ApiResponse[ScenarioExecutionStatus])
+async def get_scenario_status(device_id: uuid.UUID) -> ApiResponse[ScenarioExecutionStatus]:
+    """Get scenario execution status for a device."""
+    from app.exceptions import NotFoundException
+
+    status = runner.get_status(device_id)
+    if status is None:
+        raise NotFoundException(
+            detail="No scenario running on this device",
+            error_code="NO_RUNNING_SCENARIO",
+        )
+    return ApiResponse(data=ScenarioExecutionStatus(**status))

@@ -429,6 +429,13 @@ async def stop_device(
     except Exception:
         pass
 
+    # Stop scenario if running (best-effort)
+    try:
+        from app.api.routes.scenarios import runner as scenario_runner
+        await scenario_runner.stop(device.id)
+    except Exception:
+        pass
+
     # Stop simulation engine for this device
     try:
         await simulation_engine.stop_device(device.id)
