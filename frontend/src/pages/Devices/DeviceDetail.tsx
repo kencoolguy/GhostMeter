@@ -1,5 +1,5 @@
 import { SettingOutlined } from "@ant-design/icons";
-import { Badge, Button, Card, Descriptions, Space, Table, Typography } from "antd";
+import { Badge, Button, Card, Descriptions, Space, Table, Tag, Typography } from "antd";
 import "./DeviceDetail.css";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
@@ -47,6 +47,7 @@ export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [mqttPublishing, setMqttPublishing] = useState(false);
   const { currentDevice, loading, fetchDevice, clearCurrentDevice, updateDevice } =
     useDeviceStore();
 
@@ -117,7 +118,12 @@ export default function DeviceDetail() {
             {currentDevice?.port}
           </Descriptions.Item>
           <Descriptions.Item label="Status">
-            <Badge status={statusConfig.status} text={statusConfig.text} />
+            <Space size={4}>
+              <Badge status={statusConfig.status} text={statusConfig.text} />
+              {currentDevice?.status === "running" && mqttPublishing && (
+                <Tag color="green">MQTT Publishing</Tag>
+              )}
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="Description" span={2}>
             <Typography.Paragraph
@@ -146,7 +152,12 @@ export default function DeviceDetail() {
         />
       </Card>
 
-      {id && <MqttPublishConfig deviceId={id} />}
+      {id && (
+        <MqttPublishConfig
+          deviceId={id}
+          onPublishStateChange={setMqttPublishing}
+        />
+      )}
 
       <EditDeviceModal
         open={editModalOpen}
