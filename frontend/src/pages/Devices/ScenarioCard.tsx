@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { scenarioApi } from "../../services/scenarioApi";
 import type { ScenarioExecutionStatus, ScenarioSummary } from "../../types/scenario";
 
+const ANOMALY_BADGE_COLORS: Record<string, string> = {
+  spike: "orange",
+  drift: "blue",
+  flatline: "default",
+  out_of_range: "red",
+  data_loss: "purple",
+};
+
 interface ScenarioCardProps {
   deviceId: string;
   templateId: string;
@@ -28,6 +36,9 @@ export function ScenarioCard({ deviceId, templateId, deviceStatus }: ScenarioCar
       const data = resp.data;
       if (data) {
         setStatus(data);
+        if (data.status === "running" && !pollRef.current) {
+          pollRef.current = setInterval(pollStatus, 1000);
+        }
         if (data.status === "completed") {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
@@ -112,7 +123,7 @@ export function ScenarioCard({ deviceId, templateId, deviceStatus }: ScenarioCar
               renderItem={(item) => (
                 <List.Item>
                   <span>{item.register_name}</span>
-                  <Badge color={item.anomaly_type === "spike" ? "orange" : "red"} text={item.anomaly_type} />
+                  <Badge color={ANOMALY_BADGE_COLORS[item.anomaly_type] ?? "default"} text={item.anomaly_type} />
                   <Typography.Text type="secondary">{item.remaining_seconds}s remaining</Typography.Text>
                 </List.Item>
               )}

@@ -24,6 +24,7 @@ interface TimelineBlockProps {
 export function TimelineBlock({ step, index, pxPerSecond, onUpdate, onDelete, readOnly }: TimelineBlockProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [dragging, setDragging] = useState<"move" | "resize-right" | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ left?: number; width?: number } | null>(null);
   const dragStartX = useRef(0);
   const dragStartTrigger = useRef(0);
   const dragStartDuration = useRef(0);
@@ -46,15 +47,25 @@ export function TimelineBlock({ step, index, pxPerSecond, onUpdate, onDelete, re
       const dSeconds = Math.round(dx / pxPerSecond);
       if (type === "move") {
         const newTrigger = Math.max(0, dragStartTrigger.current + dSeconds);
+        setDragOffset({ left: newTrigger * pxPerSecond });
+      } else {
+        const newDuration = Math.max(1, dragStartDuration.current + dSeconds);
+        setDragOffset({ width: newDuration * pxPerSecond });
+      }
+    };
+
+    const handleMouseUp = (ev: MouseEvent) => {
+      const dx = ev.clientX - dragStartX.current;
+      const dSeconds = Math.round(dx / pxPerSecond);
+      if (type === "move") {
+        const newTrigger = Math.max(0, dragStartTrigger.current + dSeconds);
         onUpdate(index, { ...step, trigger_at_seconds: newTrigger });
       } else {
         const newDuration = Math.max(1, dragStartDuration.current + dSeconds);
         onUpdate(index, { ...step, duration_seconds: newDuration });
       }
-    };
-
-    const handleMouseUp = () => {
       setDragging(null);
+      setDragOffset(null);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -82,8 +93,8 @@ export function TimelineBlock({ step, index, pxPerSecond, onUpdate, onDelete, re
         <div
           style={{
             position: "absolute",
-            left,
-            width: Math.max(width, 20),
+            left: dragOffset?.left ?? left,
+            width: Math.max(dragOffset?.width ?? width, 20),
             height: 28,
             top: 2,
             backgroundColor: color,

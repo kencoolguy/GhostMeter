@@ -1,13 +1,13 @@
 import { Button, Card, Form, Input, Select, Space, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { api } from "../../services/api";
 import { scenarioApi } from "../../services/scenarioApi";
 import { useScenarioStore } from "../../stores/scenarioStore";
 import type { ScenarioStepCreate } from "../../types/scenario";
 import type { TemplateSummary } from "../../types/template";
 import type { ApiResponse } from "../../types/template";
 import { TimelineEditor } from "./TimelineEditor";
-import axios from "axios";
 
 export default function ScenarioEditor() {
   const { id } = useParams<{ id: string }>();
@@ -25,7 +25,7 @@ export default function ScenarioEditor() {
 
   useEffect(() => {
     // Load templates for dropdown
-    axios.get<ApiResponse<TemplateSummary[]>>("/api/v1/templates").then((resp) => {
+    api.get<ApiResponse<TemplateSummary[]>>("/templates").then((resp) => {
       setTemplates(resp.data.data ?? []);
     });
     if (id) fetchScenario(id);
@@ -56,7 +56,7 @@ export default function ScenarioEditor() {
   useEffect(() => {
     if (selectedTemplateId) {
       // Fetch template detail to get register names
-      axios.get<ApiResponse<{ registers: { name: string }[] }>>(`/api/v1/templates/${selectedTemplateId}`).then((resp) => {
+      api.get<ApiResponse<{ registers: { name: string }[] }>>(`/templates/${selectedTemplateId}`).then((resp) => {
         const regs = resp.data.data?.registers ?? [];
         setRegisterNames(regs.map((r) => r.name));
       });
