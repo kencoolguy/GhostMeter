@@ -54,7 +54,7 @@ class ScenarioRunner:
         if device_id in self._running:
             raise RuntimeError(f"Device {device_id} already has a running scenario")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         running = RunningScenario(
             scenario_id=scenario_id,
             scenario_name=scenario_name,
@@ -93,7 +93,7 @@ class ScenarioRunner:
         if running is None:
             return None
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         elapsed = int(loop.time() - running.started_at)
 
         active_steps = []
@@ -117,7 +117,7 @@ class ScenarioRunner:
 
     async def _drive_timeline(self, device_id: UUID, running: RunningScenario) -> None:
         """Asyncio task that drives scenario execution."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         triggered: set[int] = set()  # indices of steps already triggered
 
         try:
@@ -152,3 +152,9 @@ class ScenarioRunner:
 
         except asyncio.CancelledError:
             pass  # Cleanup handled by stop()
+
+
+# Module-level singleton — importable from services layer
+from app.simulation import anomaly_injector as _anomaly_injector
+
+scenario_runner = ScenarioRunner(_anomaly_injector)

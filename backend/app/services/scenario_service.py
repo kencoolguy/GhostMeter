@@ -13,24 +13,19 @@ from app.exceptions import ConflictException, NotFoundException, ValidationExcep
 from app.models.scenario import Scenario, ScenarioStep
 from app.models.template import DeviceTemplate
 from app.schemas.scenario import ScenarioCreate, ScenarioExport, ScenarioStepCreate, ScenarioUpdate
+from app.services.template_service import get_template as get_template_with_registers
 
 logger = logging.getLogger(__name__)
 
 
-async def _get_template_or_404(
-    session: AsyncSession, template_id: uuid.UUID,
-) -> DeviceTemplate:
-    """Get template with registers or raise 404."""
-    stmt = (
-        select(DeviceTemplate)
-        .options(selectinload(DeviceTemplate.registers))
-        .where(DeviceTemplate.id == template_id)
-    )
+async def _get_template_name(session: AsyncSession, template_id: uuid.UUID) -> str:
+    """Get template name only (lightweight query, no register loading)."""
+    stmt = select(DeviceTemplate.name).where(DeviceTemplate.id == template_id)
     result = await session.execute(stmt)
-    template = result.scalar_one_or_none()
-    if template is None:
+    name = result.scalar_one_or_none()
+    if name is None:
         raise NotFoundException(detail="Template not found", error_code="TEMPLATE_NOT_FOUND")
-    return template
+    return name
 
 
 async def _get_scenario_or_404(
@@ -136,15 +131,15 @@ async def list_scenarios(
 async def get_scenario(session: AsyncSession, scenario_id: uuid.UUID) -> dict:
     """Get scenario detail with steps."""
     scenario = await _get_scenario_or_404(session, scenario_id)
-    template = await _get_template_or_404(session, scenario.template_id)
-    return _scenario_to_detail(scenario, template.name)
+    template_name = await _get_template_name(session, scenario.template_id)
+    return _scenario_to_detail(scenario, template_name)
 
 
 async def create_scenario(
     session: AsyncSession, data: ScenarioCreate, is_builtin: bool = False,
 ) -> dict:
     """Create a new scenario with steps."""
-    template = await _get_template_or_404(session, data.template_id)
+    template = await get_template_with_registers(session, data.template_id)
     register_names = {r.name for r in template.registers}
     _validate_steps(data.steps, register_names)
 
@@ -186,7 +181,7 @@ async def update_scenario(
             error_code="BUILTIN_PROTECTED",
         )
 
-    template = await _get_template_or_404(session, scenario.template_id)
+    template = await get_template_with_registers(session, scenario.template_id)
     register_names = {r.name for r in template.registers}
     _validate_steps(data.steps, register_names)
 
@@ -233,11 +228,11 @@ async def delete_scenario(session: AsyncSession, scenario_id: uuid.UUID) -> None
 async def export_scenario(session: AsyncSession, scenario_id: uuid.UUID) -> dict:
     """Export scenario as portable JSON."""
     scenario = await _get_scenario_or_404(session, scenario_id)
-    template = await _get_template_or_404(session, scenario.template_id)
+    template_name = await _get_template_name(session, scenario.template_id)
     return {
         "name": scenario.name,
         "description": scenario.description,
-        "template_name": template.name,
+        "template_name": template_name,
         "steps": [
             {
                 "register_name": step.register_name,

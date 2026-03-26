@@ -16,16 +16,12 @@ from app.schemas.scenario import (
     ScenarioUpdate,
 )
 from app.services import scenario_service
-from app.services.scenario_runner import ScenarioRunner, StepInfo
-from app.simulation import anomaly_injector
+from app.services.scenario_runner import StepInfo, scenario_runner as runner
 
 router = APIRouter()
 
 # Execution routes use a separate router mounted under /devices
 execution_router = APIRouter()
-
-# Singleton runner — initialized with the global anomaly_injector
-runner = ScenarioRunner(anomaly_injector)
 
 
 @router.get("", response_model=ApiResponse[list[ScenarioSummary]])

@@ -4,12 +4,12 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.protocols import protocol_manager
 from app.protocols.base import RegisterInfo
 from app.services import mqtt_service, simulation_profile_service
+from app.services.template_service import get_template as get_template_with_registers
 from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
 from app.models.mqtt import MqttPublishConfig
@@ -56,24 +56,6 @@ async def _check_slave_id_available(
         raise ValidationException(
             f"Slave ID {slave_id} is already in use on port {port}"
         )
-
-
-async def _get_template_or_404(
-    session: AsyncSession, template_id: uuid.UUID,
-) -> DeviceTemplate:
-    """Get template or raise 404."""
-    stmt = (
-        select(DeviceTemplate)
-        .options(selectinload(DeviceTemplate.registers))
-        .where(DeviceTemplate.id == template_id)
-    )
-    result = await session.execute(stmt)
-    template = result.scalar_one_or_none()
-    if template is None:
-        raise NotFoundException(
-            detail="Template not found", error_code="TEMPLATE_NOT_FOUND"
-        )
-    return template
 
 
 def _device_to_summary(
@@ -173,7 +155,7 @@ async def get_device_detail(session: AsyncSession, device_id: uuid.UUID) -> dict
     device_data = await get_device(session, device_id)
 
     # Get template registers
-    template = await _get_template_or_404(session, device_data["template_id"])
+    template = await get_template_with_registers(session, device_data["template_id"])
     registers = [
         RegisterValue(
             name=reg.name,
@@ -197,7 +179,7 @@ async def create_device(
     session: AsyncSession, data: DeviceCreate,
 ) -> dict:
     """Create a single device."""
-    await _get_template_or_404(session, data.template_id)
+    await get_template_with_registers(session, data.template_id)
     await _check_slave_id_available(session, data.slave_id, data.port)
 
     device = DeviceInstance(
@@ -232,7 +214,7 @@ async def batch_create_devices(
     if count > 50:
         raise ValidationException("Batch create limited to 50 devices")
 
-    template = await _get_template_or_404(session, data.template_id)
+    template = await get_template_with_registers(session, data.template_id)
 
     # Check all slave IDs are available
     for sid in range(data.slave_id_start, data.slave_id_end + 1):
@@ -340,7 +322,7 @@ async def start_device(
         )
 
     # Load template with registers for protocol adapter
-    template = await _get_template_or_404(session, device.template_id)
+    template = await get_template_with_registers(session, device.template_id)
     register_infos = [
         RegisterInfo(
             address=reg.address,
@@ -431,7 +413,7 @@ async def stop_device(
 
     # Stop scenario if running (best-effort)
     try:
-        from app.api.routes.scenarios import runner as scenario_runner
+        from app.services.scenario_runner import scenario_runner
         await scenario_runner.stop(device.id)
     except Exception:
         pass
@@ -444,7 +426,7 @@ async def stop_device(
 
     # Unregister device from protocol adapter (best-effort for error state)
     if protocol_manager.is_running:
-        template = await _get_template_or_404(session, device.template_id)
+        template = await get_template_with_registers(session, device.template_id)
         try:
             await protocol_manager.remove_device(template.protocol, device.id)
         except Exception:
@@ -544,7 +526,7 @@ async def get_device_registers(
 ) -> list[dict]:
     """Get register definitions for a device (value=None in Phase 3)."""
     device_data = await get_device(session, device_id)
-    template = await _get_template_or_404(session, device_data["template_id"])
+    template = await get_template_with_registers(session, device_data["template_id"])
     return [
         RegisterValue(
             name=reg.name,

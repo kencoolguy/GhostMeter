@@ -6,8 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
-VALID_ANOMALY_TYPES = {"spike", "drift", "flatline", "out_of_range", "data_loss"}
+from app.schemas.anomaly import VALID_ANOMALY_TYPES
 
 
 class ScenarioStepCreate(BaseModel):
