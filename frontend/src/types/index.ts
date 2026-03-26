@@ -70,3 +70,5 @@ export type {
   SimulationProfile,
   UpdateProfile,
 } from "./profile";
+
+export type { ScenarioDetail, ScenarioSummary } from "./scenario";
