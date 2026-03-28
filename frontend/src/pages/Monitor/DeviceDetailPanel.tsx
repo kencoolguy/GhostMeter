@@ -15,13 +15,13 @@ export function DeviceDetailPanel({
   device,
   registerHistory,
 }: DeviceDetailPanelProps) {
-  const [chartRegister, setChartRegister] = useState<string>(
-    device.registers[0]?.name ?? "",
-  );
+  const defaultRegisters = (() => {
+    const names = device.registers.map((r) => r.name);
+    const preferred = ["total_power", "total_energy"].filter((n) => names.includes(n));
+    return preferred.length > 0 ? preferred : names.slice(0, 1);
+  })();
 
-  const selectedReg = device.registers.find((r) => r.name === chartRegister);
-  const historyKey = `${device.device_id}:${chartRegister}`;
-  const history = registerHistory[historyKey] ?? [];
+  const [chartRegisters, setChartRegisters] = useState<string[]>(defaultRegisters);
 
   const columns = [
     {
@@ -69,24 +69,32 @@ export function DeviceDetailPanel({
         />
       </Card>
 
-      <Card title="Register Chart" size="small">
+      <Card title="Register Charts" size="small">
         <Space style={{ marginBottom: 12 }}>
-          <Text>Register:</Text>
+          <Text>Registers:</Text>
           <Select
-            value={chartRegister}
-            onChange={setChartRegister}
-            style={{ width: 200 }}
+            mode="multiple"
+            value={chartRegisters}
+            onChange={setChartRegisters}
+            style={{ minWidth: 300 }}
             options={device.registers.map((r) => ({
               label: `${r.name} (${r.unit})`,
               value: r.name,
             }))}
           />
         </Space>
-        <RegisterChart
-          history={history}
-          registerName={chartRegister}
-          unit={selectedReg?.unit ?? ""}
-        />
+        {chartRegisters.map((regName) => {
+          const reg = device.registers.find((r) => r.name === regName);
+          const key = `${device.device_id}:${regName}`;
+          return (
+            <RegisterChart
+              key={regName}
+              history={registerHistory[key] ?? []}
+              registerName={regName}
+              unit={reg?.unit ?? ""}
+            />
+          );
+        })}
       </Card>
 
       <Card title="Communication Stats" size="small">

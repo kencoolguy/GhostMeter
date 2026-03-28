@@ -17,7 +17,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function DeviceCard({ device, selected, onClick }: DeviceCardProps) {
   const statusColor = STATUS_COLORS[device.status] ?? "#d9d9d9";
-  const keyRegisters = device.registers.slice(0, 2);
+  const preferred = ["total_power", "total_energy"];
+  const keyRegisters = (() => {
+    const matched = preferred.flatMap((name) => {
+      const reg = device.registers.find((r) => r.name === name);
+      return reg ? [reg] : [];
+    });
+    return matched.length > 0 ? matched : device.registers.slice(0, 2);
+  })();
 
   return (
     <Card
