@@ -1,5 +1,24 @@
 # Development Log
 
+## 2026-03-29 — Auto-resume & Monitor UX Improvements
+
+### What was done
+- **Auto-resume on startup**: Backend lifespan now queries `device_instances` for `status=running`, registers each device in the protocol adapter (Modbus/SNMP), and restarts simulation engine. Previously, a backend restart left all devices in a "running" DB state but with no actual simulation running.
+- **Monitor card defaults**: DeviceCard preview changed from voltage_l1/l2 to total_power + total_energy (with fallback for templates without those registers)
+- **Monitor chart multi-select**: Chart section now supports multiple selected registers, defaults to total_power + total_energy
+- **Batch name prefix fix**: Removed extra space between prefix and slave ID — users control separators in the prefix itself
+- **.gitignore**: Added `.mcp.json`
+- **README.md**: Added Docker operations quick reference
+
+### Decisions
+- Auto-resume runs after protocol adapters are started but before WebSocket broadcast — ensures values start flowing immediately on first client connect
+- Monitor register preference uses a hardcoded `["total_power", "total_energy"]` list with fallback to first registers — simple and sufficient for current templates
+
+### Root cause of the "no values" bug
+After `docker compose down -v`, DB was wiped. User rebuilt devices and started them via UI (status=running in DB), but when backend later restarted, the lifespan only started protocol adapters — it never re-registered devices or restarted simulation tasks. The simulation engine's in-memory state was empty.
+
+---
+
 ## 2026-03-27 — Scenario Mode (Milestone 8.5)
 
 ### What was done

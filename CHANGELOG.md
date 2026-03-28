@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Auto-resume: backend now automatically resumes running devices on startup (registers in protocol adapters + restarts simulation engine)
+
+### Changed
+- Monitor DeviceCard preview: defaults to total_power + total_energy instead of voltage_l1/l2
+- Monitor chart selector: changed to multi-select, defaults to total_power + total_energy
+- Batch device name prefix: removed extra space between prefix and slave ID (e.g. "Meter1" instead of "Meter 1")
+
+### Fixed
+- Devices with status=running showed no register values after backend restart (simulation engine was not resumed)
+
+### Previously Added
 - Scenario mode: reusable anomaly injection timelines bound to device templates
 - Scenario CRUD API (`/api/v1/scenarios`) with list, get, create, update, delete, export, import
 - Scenario execution API: start/stop/status per device (`/api/v1/devices/{id}/scenario/...`)
