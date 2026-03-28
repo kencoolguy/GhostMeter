@@ -45,6 +45,42 @@ docker compose --profile mqtt up -d
 # Broker available at localhost:1883
 ```
 
+### Docker Operations
+
+```bash
+# 啟動所有服務
+docker compose up -d
+
+# 查看服務狀態
+docker compose ps
+
+# 查看 logs
+docker compose logs backend        # 單一服務
+docker compose logs -f              # 即時追蹤全部
+
+# 重啟單一服務（會重新載入 seed data）
+docker compose restart backend
+
+# 停止並移除所有 container（保留 DB 資料）
+docker compose down
+
+# 停止並移除所有 container + 刪除 DB 資料（⚠️ 不可逆）
+docker compose down -v
+
+# 強制重建 image（程式碼有改動時）
+docker compose up -d --build
+```
+
+> **注意**：`docker compose up -d` 不會重啟已在運行的 container。若需重啟請用 `docker compose restart`。
+
+> **資料庫被清空後恢復**：如果不小心跑了 `docker compose down -v`，需要手動重建 DB schema 再重啟：
+> ```bash
+> docker compose up -d
+> docker compose exec backend alembic upgrade head
+> docker compose restart backend
+> ```
+> Backend 啟動時會自動載入內建的 seed data（templates、profiles、scenarios）。
+
 ### Development Setup (without Docker)
 
 ```bash
