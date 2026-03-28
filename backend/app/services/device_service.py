@@ -226,7 +226,7 @@ async def batch_create_devices(
     devices = []
     for sid in range(data.slave_id_start, data.slave_id_end + 1):
         if data.name_prefix:
-            name = f"{prefix} {sid}"
+            name = f"{prefix}{sid}"
         else:
             name = f"{prefix} - Slave {sid}"
 
