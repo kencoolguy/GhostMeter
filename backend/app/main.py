@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.api.routes.anomaly import router as anomaly_router
 from app.api.routes.mqtt import router as mqtt_router
@@ -17,8 +17,11 @@ from app.api.routes.devices import router as devices_router
 from app.api.routes.simulation import router as simulation_router
 from app.api.routes.templates import router as templates_router
 from app.config import get_settings
-from app.database import engine
+from app.database import engine, async_session_factory
+from app.models.device import DeviceInstance
 from app.protocols import protocol_manager
+from app.protocols.base import RegisterInfo
+from app.services.template_service import get_template as get_template_with_registers
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.mqtt_adapter import MqttAdapter
 from app.protocols.snmp_agent import SnmpAdapter
@@ -81,6 +84,38 @@ async def lifespan(app: FastAPI):
 
     await protocol_manager.start_all()
     logger.info("Protocol manager started")
+
+    # Resume devices that were running before shutdown
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(DeviceInstance).where(DeviceInstance.status == "running")
+        )
+        running_devices = result.scalars().all()
+
+        resumed = 0
+        for device in running_devices:
+            try:
+                template = await get_template_with_registers(session, device.template_id)
+                register_infos = [
+                    RegisterInfo(
+                        address=reg.address,
+                        function_code=reg.function_code,
+                        data_type=reg.data_type,
+                        byte_order=reg.byte_order,
+                        oid=reg.oid,
+                    )
+                    for reg in template.registers
+                ]
+                await protocol_manager.add_device(
+                    template.protocol, device.id, device.slave_id, register_infos,
+                )
+                await simulation_engine.start_device(device.id)
+                resumed += 1
+            except Exception:
+                logger.error("Failed to resume device %s (%s)", device.name, device.id, exc_info=True)
+
+    if resumed:
+        logger.info("Resumed %d device(s)", resumed)
 
     # Start WebSocket monitor broadcast
     start_broadcast()
