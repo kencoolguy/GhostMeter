@@ -3,7 +3,7 @@ import {
   Button,
   Card,
   Form,
-  Input,
+  InputNumber,
   Popconfirm,
   Select,
   Table,
@@ -28,6 +28,35 @@ const ANOMALY_TYPE_OPTIONS: { value: AnomalyType; label: string }[] = [
   { value: "data_loss", label: "Data Loss" },
 ];
 
+interface AnomalyParamField {
+  name: string;
+  label: string;
+  required: boolean;
+  default?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  placeholder?: string;
+}
+
+const ANOMALY_PARAM_FIELDS: Record<AnomalyType, AnomalyParamField[]> = {
+  spike: [
+    { name: "multiplier", label: "Multiplier", required: true, default: 2.0, min: 0.01, step: 0.5 },
+    { name: "probability", label: "Probability", required: true, default: 0.1, min: 0, max: 1, step: 0.1 },
+  ],
+  drift: [
+    { name: "drift_per_second", label: "Drift/sec", required: true, step: 1, placeholder: "e.g. 10" },
+    { name: "max_drift", label: "Max drift", required: true, min: 0.01, step: 10, placeholder: "e.g. 500" },
+  ],
+  flatline: [
+    { name: "value", label: "Freeze value", required: false, placeholder: "Empty = freeze current" },
+  ],
+  out_of_range: [
+    { name: "value", label: "Value", required: true, placeholder: "e.g. 99999" },
+  ],
+  data_loss: [],
+};
+
 export function AnomalyTab({ deviceId }: { deviceId: string }) {
   const {
     activeAnomalies,
@@ -41,6 +70,7 @@ export function AnomalyTab({ deviceId }: { deviceId: string }) {
   } = useSimulationStore();
 
   const [registers, setRegisters] = useState<RegisterValue[]>([]);
+  const [selectedType, setSelectedType] = useState<AnomalyType | null>(null);
   const [form] = Form.useForm();
 
   const loadRegisters = useCallback(async () => {
@@ -63,23 +93,45 @@ export function AnomalyTab({ deviceId }: { deviceId: string }) {
     label: `${r.name} @${r.address}`,
   }));
 
+  const handleTypeChange = (type: AnomalyType) => {
+    setSelectedType(type);
+    // Clear previous param fields and set defaults for new type
+    const fields = ANOMALY_PARAM_FIELDS[type];
+    const paramDefaults: Record<string, number | undefined> = {};
+    for (const field of fields) {
+      paramDefaults[`param_${field.name}`] = field.default;
+    }
+    // Clear all possible param fields first, then set new defaults
+    const allParamKeys = Object.values(ANOMALY_PARAM_FIELDS)
+      .flat()
+      .map((f) => `param_${f.name}`);
+    const clearFields: Record<string, undefined> = {};
+    for (const key of allParamKeys) {
+      clearFields[key] = undefined;
+    }
+    form.setFieldsValue({ ...clearFields, ...paramDefaults });
+  };
+
   const handleInject = async () => {
     try {
       const values = await form.validateFields();
-      let parsedParams: Record<string, unknown>;
-      try {
-        parsedParams = JSON.parse(values.anomaly_params || "{}");
-      } catch {
-        message.error("Invalid JSON in anomaly params");
-        return;
+      const anomalyType = values.anomaly_type as AnomalyType;
+      const fields = ANOMALY_PARAM_FIELDS[anomalyType];
+      const params: Record<string, number> = {};
+      for (const field of fields) {
+        const val = values[`param_${field.name}`];
+        if (val !== undefined && val !== null) {
+          params[field.name] = val;
+        }
       }
       const success = await injectAnomaly(deviceId, {
         register_name: values.register_name,
-        anomaly_type: values.anomaly_type,
-        anomaly_params: parsedParams,
+        anomaly_type: anomalyType,
+        anomaly_params: params,
       });
       if (success) {
         form.resetFields();
+        setSelectedType(null);
       }
     } catch {
       // validation failed
@@ -183,15 +235,27 @@ export function AnomalyTab({ deviceId }: { deviceId: string }) {
               placeholder="Anomaly type"
               options={ANOMALY_TYPE_OPTIONS}
               style={{ width: 160 }}
+              onChange={handleTypeChange}
             />
           </Form.Item>
-          <Form.Item name="anomaly_params" initialValue="{}">
-            <Input.TextArea
-              rows={1}
-              placeholder='{"key": "value"}'
-              style={{ width: 240, fontFamily: "monospace", fontSize: 12 }}
-            />
-          </Form.Item>
+          {selectedType &&
+            ANOMALY_PARAM_FIELDS[selectedType].map((field) => (
+              <Form.Item
+                key={field.name}
+                name={`param_${field.name}`}
+                label={field.label}
+                rules={field.required ? [{ required: true, message: `Required` }] : []}
+                initialValue={field.default}
+              >
+                <InputNumber
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
+                  placeholder={field.placeholder}
+                  style={{ width: 140 }}
+                />
+              </Form.Item>
+            ))}
           <Form.Item>
             <Button type="primary" onClick={handleInject}>
               Inject
