@@ -1,5 +1,6 @@
 import { Badge, Collapse, Space, Typography } from "antd";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useMonitorStore } from "../../stores/monitorStore";
 import type { MonitorUpdate } from "../../types";
@@ -10,6 +11,8 @@ import { EventLog } from "./EventLog";
 const WS_URL = `ws://${window.location.hostname}:8000/ws/monitor`;
 
 export default function MonitorPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoSelectApplied = useRef(false);
   const {
     devices,
     events,
@@ -18,6 +21,21 @@ export default function MonitorPage() {
     handleMonitorUpdate,
     selectDevice,
   } = useMonitorStore();
+
+  // Auto-select device from ?device= query param (once devices are loaded)
+  useEffect(() => {
+    const deviceParam = searchParams.get("device");
+    if (deviceParam && devices.length > 0 && !autoSelectApplied.current) {
+      const exists = devices.some((d) => d.device_id === deviceParam);
+      if (exists) {
+        selectDevice(deviceParam);
+      }
+      // Clear the query param so it doesn't persist on manual navigation
+      searchParams.delete("device");
+      setSearchParams(searchParams, { replace: true });
+      autoSelectApplied.current = true;
+    }
+  }, [searchParams, setSearchParams, devices, selectDevice]);
 
   const onMessage = useCallback(
     (data: unknown) => {
