@@ -1,5 +1,25 @@
 # Development Log
 
+## 2026-03-30 — Device Detail Live Values & Monitor Navigation (#19)
+
+### What was done
+- **Live register values in Device Detail**: Connected Device Detail page to the existing `ws/monitor` WebSocket. Register table now overlays real-time values from the monitor broadcast instead of showing `—` (null). When the device is not running, values remain `—`.
+- **"Open in Monitor" button**: Added a button on Device Detail that navigates to `/monitor?device=<id>`, auto-selecting the device in the Monitor page. Button is disabled when the device is not running.
+- **Connection status badge**: Register Map card title shows a `Live` / `Disconnected` badge when the device is running.
+- **Monitor auto-select via query param**: Monitor page reads `?device=` query param on mount, waits for WebSocket data to arrive, then auto-selects the matching device. Query param is cleared after use to avoid stale state.
+
+### Decisions
+- Reused the existing `useWebSocket` hook and `ws/monitor` endpoint — no backend changes needed
+- Used `useMemo` to merge live values into the register list (keyed by register name), keeping the original register metadata (address, data type, etc.) from the REST API
+- Used a `useRef` flag (`autoSelectApplied`) to ensure the query param auto-select fires only once, even if `devices` array updates multiple times
+- Disabled the "Open in Monitor" button for non-running devices since the monitor only shows running devices
+
+### Files changed
+- `frontend/src/pages/Devices/DeviceDetail.tsx` — WebSocket connection, live value overlay, Open in Monitor button
+- `frontend/src/pages/Monitor/index.tsx` — `?device=` query param auto-select logic
+
+---
+
 ## 2026-03-29 — Auto-resume & Monitor UX Improvements
 
 ### What was done
