@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Auto-resume: backend now automatically resumes running devices on startup (registers in protocol adapters + restarts simulation engine)
+- Device Detail: register table now shows live values via WebSocket (replaces hard-coded null)
+- Device Detail: "Open in Monitor" button navigates to Monitor page with device auto-selected
+- Device Detail: Live/Disconnected connection status badge on Register Map card
+- Monitor: supports `?device=<id>` query param for auto-selecting a device on page load
 
 ### Changed
 - Monitor DeviceCard preview: defaults to total_power + total_energy instead of voltage_l1/l2

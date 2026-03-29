@@ -1,14 +1,18 @@
-import { SettingOutlined } from "@ant-design/icons";
-import { Badge, Button, Card, Descriptions, Space, Table, Tag, Typography } from "antd";
+import { DashboardOutlined, SettingOutlined } from "@ant-design/icons";
+import { Badge, Button, Card, Descriptions, Space, Table, Tag, Tooltip, Typography } from "antd";
 import "./DeviceDetail.css";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useWebSocket } from "../../hooks/useWebSocket";
 import type { DeviceSummary, RegisterValue } from "../../types";
+import type { MonitorUpdate, RegisterData } from "../../types/monitor";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { EditDeviceModal } from "./EditDeviceModal";
 import { MqttPublishConfig } from "./MqttPublishConfig";
 import { ScenarioCard } from "./ScenarioCard";
+
+const WS_URL = `ws://${window.location.hostname}:8000/ws/monitor`;
 
 const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; text: string }> = {
   running: { status: "success", text: "Running" },
@@ -49,8 +53,32 @@ export default function DeviceDetail() {
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [mqttPublishing, setMqttPublishing] = useState(false);
+  const [liveRegisters, setLiveRegisters] = useState<RegisterData[]>([]);
   const { currentDevice, loading, fetchDevice, clearCurrentDevice, updateDevice } =
     useDeviceStore();
+
+  const onMessage = useCallback(
+    (data: unknown) => {
+      const update = data as MonitorUpdate;
+      if (update.type === "monitor_update" && id) {
+        const device = update.devices.find((d) => d.device_id === id);
+        setLiveRegisters(device?.registers ?? []);
+      }
+    },
+    [id],
+  );
+
+  const { connected } = useWebSocket({ url: WS_URL, onMessage });
+
+  const registersWithLiveValues = useMemo(() => {
+    if (!currentDevice?.registers) return [];
+    if (liveRegisters.length === 0) return currentDevice.registers;
+    const liveMap = new Map(liveRegisters.map((r) => [r.name, r.value]));
+    return currentDevice.registers.map((reg) => ({
+      ...reg,
+      value: liveMap.get(reg.name) ?? reg.value,
+    }));
+  }, [currentDevice?.registers, liveRegisters]);
 
   const handleInlineUpdate = async (field: "name" | "description", value: string) => {
     if (!currentDevice || !id) return;
@@ -93,6 +121,15 @@ export default function DeviceDetail() {
         >
           Edit Settings
         </Button>
+        <Tooltip title={currentDevice?.status !== "running" ? "Device is not running" : ""}>
+          <Button
+            icon={<DashboardOutlined />}
+            onClick={() => navigate(`/monitor?device=${id}`)}
+            disabled={currentDevice?.status !== "running"}
+          >
+            Open in Monitor
+          </Button>
+        </Tooltip>
       </Space>
 
       <Typography.Title
@@ -142,10 +179,22 @@ export default function DeviceDetail() {
         </Descriptions>
       </Card>
 
-      <Card title="Register Map">
+      <Card
+        title={
+          <Space>
+            Register Map
+            {currentDevice?.status === "running" && (
+              <Badge
+                status={connected ? "success" : "error"}
+                text={connected ? "Live" : "Disconnected"}
+              />
+            )}
+          </Space>
+        }
+      >
         <Table
           columns={registerColumns}
-          dataSource={currentDevice?.registers ?? []}
+          dataSource={registersWithLiveValues}
           rowKey="name"
           loading={loading}
           pagination={false}
