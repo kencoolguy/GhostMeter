@@ -1,5 +1,41 @@
 # Development Log
 
+## 2026-04-08 — Remove VirtualBox shared-folder path hacks from frontend tooling
+
+### What was done
+- Removed `/home/ken/.ghostmeter-frontend-modules/...` absolute paths from `frontend/package.json` scripts. `dev`, `build`, `lint` are now standard `vite` / `tsc -b && vite build` / `eslint .` and work on any machine after `npm install`.
+- Deleted `frontend/tsconfig.local.json`, `tsconfig.local.app.json`, `tsconfig.local.node.json` — these pointed at the external `node_modules` directory via `typeRoots` / `paths` and were only useful on the VM.
+- Deleted `frontend/.npmrc` (only held a comment describing the workaround).
+- Removed the workaround comment block from `frontend/vite.config.ts`.
+
+### Why
+These hacks existed because the project lived on a VirtualBox shared folder (`vboxsf`) which does not support the symlinks npm uses in `node_modules`. The workaround was to install `node_modules` in `/home/ken/.ghostmeter-frontend-modules/` (outside the shared folder) and have every script reach into that path explicitly. Current development environment (macOS) no longer needs this, and the hard-coded absolute paths meant nobody else could run `npm run dev` after cloning — first blocker flagged in the consolidation audit.
+
+### Decisions
+- Chose full removal over keeping `build:local` as a fallback. The workaround is specific to one obsolete environment; keeping it would force future readers to wonder which script to run. If the VirtualBox setup is ever needed again, the original commit can be reverted from git history.
+- `Dockerfile` already used standard `npm run build`, so the container build path was unaffected — verified before deleting.
+
+### Files changed
+- `frontend/package.json` — simplified scripts block
+- `frontend/vite.config.ts` — removed workaround comment
+- `frontend/tsconfig.local.json` — deleted
+- `frontend/tsconfig.local.app.json` — deleted
+- `frontend/tsconfig.local.node.json` — deleted
+- `frontend/.npmrc` — deleted
+- `CHANGELOG.md` — Fixed + Removed sections
+- `docs/development-log.md` — this entry
+
+### Verification
+- Confirmed no remaining references to `ghostmeter-frontend-modules`, `/home/ken`, or `sf_AI_Service_Chatbot` in the repo via grep.
+- Dockerfile build path (`RUN npm ci && npm run build`) unaffected since it never touched the removed files.
+- `npm run dev` / `npm run build` verification on a clean checkout requires running `npm install` and should be done before merging.
+
+### Next steps
+- Consolidation step 2: check CI status (`.github/workflows/`).
+- Consolidation step 4: run a docs-vs-implementation drift check on `api-reference.md` and `database-schema.md`.
+
+---
+
 ## 2026-03-30 — Device Detail Live Values & Monitor Navigation (#19)
 
 ### What was done

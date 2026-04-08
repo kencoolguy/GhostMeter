@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Devices with status=running showed no register values after backend restart (simulation engine was not resumed)
+- Frontend `package.json` scripts no longer hard-code VirtualBox shared-folder workaround paths (`/home/ken/.ghostmeter-frontend-modules/...`); `npm run dev` / `npm run build` / `npm run lint` now use standard tooling and work on any machine after `npm install`
+
+### Removed
+- `frontend/tsconfig.local.json`, `tsconfig.local.app.json`, `tsconfig.local.node.json` (VirtualBox shared-folder node_modules workaround — no longer needed)
+- `frontend/.npmrc` comment file (workaround documentation)
+- `frontend/package.json` `build:local` script (workaround for vboxsf symlink issue)
 
 ### Previously Added
 - Scenario mode: reusable anomaly injection timelines bound to device templates
