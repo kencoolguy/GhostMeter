@@ -31,8 +31,48 @@ These hacks existed because the project lived on a VirtualBox shared folder (`vb
 - `npm run dev` / `npm run build` verification on a clean checkout requires running `npm install` and should be done before merging.
 
 ### Next steps
-- Consolidation step 2: check CI status (`.github/workflows/`).
 - Consolidation step 4: run a docs-vs-implementation drift check on `api-reference.md` and `database-schema.md`.
+
+---
+
+## 2026-04-08 — Restore GitHub Actions CI pipeline (consolidation step 2)
+
+### What was done
+- Recreated `.github/workflows/ci.yml` with the same two-job structure as the original (backend lint/test + frontend typecheck/build).
+- Updated two details vs the historical file:
+  - Frontend Node version bumped from 20 → 22 to match `frontend/Dockerfile` (`FROM node:22-alpine`)
+  - Frontend type check changed from `npx tsc --noEmit` to `npx tsc -b` to match the project-references setup now used by `tsconfig.json`
+
+### Why
+The consolidation audit flagged "CI status unknown". Investigation showed:
+- Repo had no `.github/workflows/` directory
+- `gh run list` returned empty
+- But `CLAUDE.md`, `docs/development-log.md`, and `docs/development-phases.md` all claimed "GitHub Actions CI" was in place
+
+This was a docs-vs-reality drift. `git log --all -- '.github/workflows/*'` turned up:
+- 655c977 (2026-03-20) `ci: add GitHub Actions pipeline for backend lint/test and frontend build`
+- 6d92a2c (2026-03-20, 17 minutes later) `chore: temporarily remove CI workflow (requires workflow scope token)`
+
+The removal was "temporary" pending a PAT with `workflow` scope — never reverted. Restoring it now closes the drift and actually enforces lint/tests on future PRs.
+
+### Decisions
+- Restored as a new commit rather than `git revert 6d92a2c` because the file needed the Node 22 / `tsc -b` updates anyway; a revert would have landed stale content.
+- Kept the original environment variables hard-coded in the workflow (`POSTGRES_*`, `APP_NAME`, etc.) — these are test-only values, not secrets.
+- Did not yet add any new steps (e.g. Playwright e2e smoke) — those belong in a later consolidation task once the baseline is green.
+
+### Files changed
+- `.github/workflows/ci.yml` — created (restored + updated)
+- `CHANGELOG.md` — CI section
+- `docs/development-log.md` — this entry
+
+### Verification
+- File content matches the historical 655c977 version character-for-character except for the two documented updates (diffable against `git show 655c977:.github/workflows/ci.yml`).
+- YAML structure verified by visual inspection — no Python `yaml` module or `actionlint` available in the local environment to run a formal parse. Will be validated by GitHub itself on first push.
+- Pushing this change requires a token/gh auth with `workflow` scope (the same reason it was removed in 6d92a2c). This is a push-time concern, not a commit-time concern.
+
+### Next steps
+- Push to remote once the token/auth has `workflow` scope, then verify the pipeline actually runs green on this feature branch's PR.
+- Consolidation step 4: docs-vs-implementation drift check on `api-reference.md` and `database-schema.md`.
 
 ---
 

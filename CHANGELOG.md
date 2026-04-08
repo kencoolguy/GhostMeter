@@ -27,6 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `frontend/.npmrc` comment file (workaround documentation)
 - `frontend/package.json` `build:local` script (workaround for vboxsf symlink issue)
 
+### CI
+- Restored `.github/workflows/ci.yml` (originally added in 655c977 and removed in 6d92a2c due to missing workflow-scope token); pipeline runs on push and PR to `dev`/`main`
+- Backend job: Python 3.12 + PostgreSQL 16 service + ruff lint + alembic migrate + pytest with coverage
+- Frontend job: Node 22 (aligned with Dockerfile) + `tsc -b` type check + `npm run build`
+
 ### Previously Added
 - Scenario mode: reusable anomaly injection timelines bound to device templates
 - Scenario CRUD API (`/api/v1/scenarios`) with list, get, create, update, delete, export, import
