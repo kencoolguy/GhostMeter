@@ -76,6 +76,69 @@ The removal was "temporary" pending a PAT with `workflow` scope — never revert
 
 ---
 
+## 2026-04-08 — API reference drift fix (consolidation step 4)
+
+### What was done
+Fixed documentation drift found by a systematic comparison of `docs/api-reference.md` against `backend/app/api/routes/` and `backend/app/schemas/`. Added 18 previously undocumented endpoints plus a field and note fix on `RegisterValue`.
+
+Changes to `docs/api-reference.md`:
+
+1. **`RegisterValue` schema block**:
+   - Added `oid: string | null` field (used by SNMP templates, `null` for Modbus)
+   - Replaced the stale "`Phase 3: always null`" note on `value` with an accurate description: value is the last tick's value (null when stopped / no tick yet) and live clients should subscribe to `/ws/monitor` rather than poll the detail endpoint.
+
+2. **New section: Simulation Configuration** (inserted between Simulation Profiles and MQTT).
+   Covers:
+   - Schemas: `SimulationConfigCreate`, `SimulationConfigBatchSet`, `SimulationConfigResponse`, `FaultConfigSet`, `FaultConfigResponse` (including fault-type param tables)
+   - Endpoints: `GET/PUT/DELETE /devices/{id}/simulation`, `PATCH /devices/{id}/simulation/{register_name}`, `GET/PUT/DELETE /devices/{id}/fault`
+   - Documented in-memory-only behaviour of faults (cleared on restart).
+
+3. **New section: Anomaly Injection** (inserted after Simulation Configuration).
+   Covers:
+   - Both real-time injection and persisted schedules as the two mechanisms
+   - Schemas: `AnomalyInjectRequest`, `AnomalyActiveResponse`, `AnomalyScheduleCreate`, `AnomalyScheduleBatchSet`, `AnomalyScheduleResponse`
+   - Params tables per anomaly type (`spike`, `drift`, `flatline`, `out_of_range`, `data_loss`)
+   - Endpoints: `POST/GET/DELETE /devices/{id}/anomaly`, `DELETE /devices/{id}/anomaly/{register_name}`, `GET/PUT/DELETE /devices/{id}/anomaly/schedules`
+   - Noted the route ordering constraint (the `/schedules` routes must come before `/{register_name}` to avoid wildcard collision — this was already done in `anomaly.py` but is worth documenting so future editors don't reorder).
+
+4. **Simulation Profiles section**: added the three missing endpoints.
+   - `GET /simulation-profiles/template/{template_id}` — download blank profile JSON (raw file download, not `ApiResponse`)
+   - `GET /simulation-profiles/{profile_id}/export` — export profile as JSON file
+   - `POST /simulation-profiles/import?template_id=...` — upload profile JSON, with the required `template_id` query param documented explicitly
+
+Changes to `docs/development-phases.md`:
+
+- Added **Milestone 8.6 — Polish & UX Fixes** capturing auto-resume, Device Detail live values (#19), Open in Monitor deep-link, anomaly param form, batch naming fix
+- Added **Milestone 8.7 — Consolidation** (in progress) with checked boxes for steps done so far and unchecked boxes for remaining work, including the three audit-surfaced issues (#21 #22 #23)
+
+### Why
+The consolidation audit surfaced that `api-reference.md` documented only the core CRUD surface — anomaly, simulation-config, fault, and the profile import/export variants were all completely absent despite being shipped and actively used. The `RegisterValue.value` note still said "Phase 3: always null" even though #19 had closed that behaviour weeks ago. This is the kind of drift that silently erodes trust in the docs and makes external integration impossible.
+
+The phases doc wasn't dangerously wrong but also hadn't captured anything after Scenario Mode (milestone 8.5). Adding 8.6 and 8.7 gives a clean line of sight into what's in flight without rewriting earlier phases.
+
+### Decisions
+- **Where to put the new sections**: I chose top-level sections ("Simulation Configuration", "Anomaly Injection") rather than sub-sections of Devices because (a) they have their own pydantic schemas with meaningful surface area, and (b) the existing `Simulation Profiles` section is already a peer, so three "Simulation*" / anomaly sections sit consistently together. The table of contents pattern of the file is one H2 per logical resource group, which I followed.
+- **Left Devices section alone**: Not re-touched beyond the `RegisterValue` schema fix. Its CRUD docs are accurate.
+- **Did NOT document `/ws/monitor` snapshot shape in this pass**: there's a whole monitor snapshot structure worth documenting, but that's a second drift item and the user asked specifically for the drift report's 18 endpoints + oid. Deferred — will add to consolidation backlog if it matters.
+- **Left the "Phase 3" vintage comment on `RegisterValue` docstring in `backend/app/schemas/device.py`**: that's code, not docs. Code comments can drift but this one just says "Phase 3: always None" and the user didn't ask for a code sweep. Leave for now.
+
+### Files changed
+- `docs/api-reference.md` — ~320 lines added across four edits
+- `docs/development-phases.md` — new Milestones 8.6 and 8.7
+- `CHANGELOG.md` — Documentation section under [Unreleased]
+- `docs/development-log.md` — this entry
+
+### Verification
+- `grep -E '^(### )?#{0,3} ?`[A-Z]+ /api/v1' docs/api-reference.md` — every added endpoint can be located by its method + path.
+- Cross-checked each new endpoint path against the actual route decorator in `backend/app/api/routes/{anomaly,simulation,simulation_profiles}.py` to make sure method and path match.
+- No code was changed — this is documentation-only, so there is no build/test to rerun.
+
+### Next steps
+- Consolidation step 6: run backend `pytest` full suite and confirm no skips / flakies.
+- Consolidation step 5: cut a release (the README's `0.3.0` badge vs. the pile of Unreleased entries is its own drift).
+
+---
+
 ## 2026-03-30 — Device Detail Live Values & Monitor Navigation (#19)
 
 ### What was done

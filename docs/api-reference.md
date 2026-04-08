@@ -329,7 +329,8 @@ Same as `DeviceSummary` plus `registers: RegisterValue[]`.
 | `scale_factor` | float | Scale multiplier |
 | `unit` | string\|null | Physical unit |
 | `description` | string\|null | Description |
-| `value` | float\|null | Current value (Phase 3: always `null`) |
+| `oid` | string\|null | SNMP OID (populated for SNMP templates; `null` for Modbus) |
+| `value` | float\|null | Current register value. `null` when the device is stopped or has not yet produced a tick. For live values, clients should subscribe to `/ws/monitor` rather than polling `GET /devices/{id}`. |
 
 ---
 
@@ -644,6 +645,54 @@ Delete a simulation profile.
 
 ---
 
+#### `GET /api/v1/simulation-profiles/template/{template_id}`
+
+Download a blank profile JSON template for a given device template. Useful as a starting point for authoring a new profile offline before importing it back.
+
+**Path param:** `template_id` (UUID)
+
+**Response** `200 OK` — `application/json` file download
+
+The response is a raw JSON body (not the standard `ApiResponse` envelope) served with `Content-Disposition: attachment; filename="<template_name>_blank_profile.json"`. The body contains `template_name` plus an empty/default `configs` array aligned with the template's register definitions.
+
+**Error cases:**
+- `404` — template not found
+
+---
+
+#### `GET /api/v1/simulation-profiles/{profile_id}/export`
+
+Export an existing simulation profile as a downloadable JSON file.
+
+**Path param:** `profile_id` (UUID)
+
+**Response** `200 OK` — `application/json` file download
+
+Raw JSON (not the `ApiResponse` envelope) served with `Content-Disposition: attachment; filename="<profile_name>.json"`. Same shape as the import format.
+
+**Error cases:**
+- `404` — profile not found
+
+---
+
+#### `POST /api/v1/simulation-profiles/import?template_id={uuid}`
+
+Import a simulation profile from a JSON file upload.
+
+**Query param:** `template_id` (UUID, required) — the template to attach the imported profile to. The template must already exist.
+
+**Request body:** `multipart/form-data` with field `file` containing the profile JSON (format as produced by the export / blank template endpoints).
+
+**Response** `201 Created` — `ApiResponse[SimulationProfileResponse]`
+
+**Error cases:**
+- `400` — invalid JSON file (`VALIDATION_ERROR`)
+- `404` — template not found
+- `409` — profile name already exists for this template
+- `422` — profile JSON schema does not match the template
+
+---
+
 ### Profile Apply Behavior on Device Creation
 
 When creating a device (`POST /devices` or `POST /devices/batch`), the `profile_id` field controls which profile is applied:
@@ -655,6 +704,339 @@ When creating a device (`POST /devices` or `POST /devices/batch`), the `profile_
 | Explicit `null` | Skip — no profile applied, all registers start at 0 |
 
 Profile configs are **copied** into `simulation_configs` at apply time. There is no ongoing link — subsequent changes to the profile do not affect already-created devices.
+
+---
+
+## Simulation Configuration
+
+Base path: `/api/v1/devices/{device_id}`
+
+Per-register simulation configuration and device-level communication fault control. "Simulation config" tells the engine how to generate values for each register; "fault" injects communication-layer problems into the Modbus protocol adapter without touching generated values.
+
+For higher-level reusable parameter sets, see [Simulation Profiles](#simulation-profiles). Profiles are copied into these simulation configs at device-creation time.
+
+### Schemas
+
+#### `SimulationConfigCreate` (request — single register)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_name` | string | yes | — | Target register name (must exist in the device's template) |
+| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator` |
+| `mode_params` | object | no | `{}` | Mode-specific parameters (shape depends on `data_mode`) |
+| `is_enabled` | boolean | no | `true` | When `false`, the engine skips this register on each tick |
+| `update_interval_ms` | integer | no | `1000` | Update interval per tick, must be between 100 and 60000 |
+
+#### `SimulationConfigBatchSet` (request — whole device)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `configs` | `SimulationConfigCreate[]` | yes | Full replacement set for the device's simulation configs |
+
+> `PUT` is a replace operation — any configs not in the request are deleted.
+
+#### `SimulationConfigResponse` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Config ID |
+| `device_id` | UUID | Owning device |
+| `register_name` | string | Target register |
+| `data_mode` | string | Active data mode |
+| `mode_params` | object | Mode-specific parameters |
+| `is_enabled` | boolean | Whether the engine processes this register |
+| `update_interval_ms` | integer | Current update interval |
+| `created_at` | datetime | ISO 8601 UTC |
+| `updated_at` | datetime | ISO 8601 UTC |
+
+#### `FaultConfigSet` (request)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `fault_type` | string | yes | — | One of: `delay`, `timeout`, `exception`, `intermittent` |
+| `params` | object | no | `{}` | Fault-specific parameters (see table below) |
+
+**Fault params by type:**
+
+| `fault_type` | Expected params |
+|--------------|-----------------|
+| `delay` | `delay_ms` (integer, default `500`) — extra latency added to each response |
+| `timeout` | — (no params) — responses are suppressed so the client hits its own timeout |
+| `exception` | `exception_code` (integer Modbus exception code, default `0x04` SLAVE_DEVICE_FAILURE) |
+| `intermittent` | `failure_rate` (float between 0 and 1, default `0.5`) — probability of suppressing each request |
+
+#### `FaultConfigResponse` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fault_type` | string | Active fault type |
+| `params` | object | Active fault parameters |
+
+> Faults are held **in memory only** — they are cleared on backend restart.
+
+### Endpoints
+
+#### `GET /api/v1/devices/{device_id}/simulation`
+
+List all simulation configs for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[SimulationConfigResponse[]]`
+
+---
+
+#### `PUT /api/v1/devices/{device_id}/simulation`
+
+Replace the entire set of simulation configs for a device. Any existing config not present in the request body is deleted.
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `SimulationConfigBatchSet`
+
+**Response** `200 OK` — `ApiResponse[SimulationConfigResponse[]]`
+
+**Error cases:**
+- `404` — device not found
+- `422` — a `register_name` in the request does not exist in the device's template
+
+---
+
+#### `PATCH /api/v1/devices/{device_id}/simulation/{register_name}`
+
+Upsert a single register's simulation config. Creates it if absent, updates otherwise.
+
+**Path params:** `device_id` (UUID), `register_name` (string)
+
+**Request body:** `SimulationConfigCreate` — the `register_name` in the body should match the path parameter.
+
+**Response** `200 OK` — `ApiResponse[SimulationConfigResponse]`
+
+**Error cases:**
+- `404` — device not found
+- `422` — register does not exist in the template
+
+---
+
+#### `DELETE /api/v1/devices/{device_id}/simulation`
+
+Delete all simulation configs for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Simulation configs deleted successfully" }
+```
+
+**Error cases:**
+- `404` — device not found
+
+---
+
+#### `PUT /api/v1/devices/{device_id}/fault`
+
+Set (or replace) the active communication fault on a device.
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `FaultConfigSet`
+
+**Response** `200 OK` — `ApiResponse[FaultConfigResponse]`
+
+**Error cases:**
+- `422` — unknown `fault_type`
+
+---
+
+#### `GET /api/v1/devices/{device_id}/fault`
+
+Get the currently active fault for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[FaultConfigResponse | null]`
+
+Returns `data: null` when no fault is active.
+
+---
+
+#### `DELETE /api/v1/devices/{device_id}/fault`
+
+Clear the active fault for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Fault cleared successfully" }
+```
+
+---
+
+## Anomaly Injection
+
+Base path: `/api/v1/devices/{device_id}`
+
+Two mechanisms are offered on top of the simulation engine:
+
+1. **Real-time injection** — mutate generated values immediately via in-memory state. Lost on backend restart. Use `POST /anomaly`, `GET /anomaly`, `DELETE /anomaly`.
+2. **Schedules** — persist timeline entries in the database so anomalies trigger automatically at fixed offsets from device start. Use `.../anomaly/schedules`.
+
+Both support the same five anomaly types: `spike`, `drift`, `flatline`, `out_of_range`, `data_loss`.
+
+### Schemas
+
+#### `AnomalyInjectRequest` (request — real-time)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_name` | string | yes | — | Target register |
+| `anomaly_type` | string | yes | — | One of: `spike`, `drift`, `flatline`, `out_of_range`, `data_loss` |
+| `anomaly_params` | object | no | `{}` | Type-specific params (see table below) |
+
+**Anomaly params by type:**
+
+| `anomaly_type` | Required params |
+|----------------|-----------------|
+| `spike` | `multiplier` (float > 0), `probability` (float 0–1) |
+| `drift` | `drift_per_second` (float), `max_drift` (float > 0) |
+| `flatline` | — |
+| `out_of_range` | `value` (float — the value to return) |
+| `data_loss` | — |
+
+#### `AnomalyActiveResponse` (response — real-time state)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `register_name` | string | Target register |
+| `anomaly_type` | string | Active anomaly type |
+| `anomaly_params` | object | Active parameters |
+
+#### `AnomalyScheduleCreate` (request — schedule entry)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_name` | string | yes | — | Target register |
+| `anomaly_type` | string | yes | — | One of the five types above |
+| `anomaly_params` | object | no | `{}` | Same validation rules as real-time injection |
+| `trigger_after_seconds` | integer | yes | — | Seconds after device start to fire the anomaly (≥ 0) |
+| `duration_seconds` | integer | yes | — | How long the anomaly stays active once fired (> 0) |
+| `is_enabled` | boolean | no | `true` | Disabled schedules are stored but not loaded |
+
+#### `AnomalyScheduleBatchSet` (request — whole device)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `schedules` | `AnomalyScheduleCreate[]` | yes | Full replacement set for this device's schedules |
+
+#### `AnomalyScheduleResponse` (response)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Schedule ID |
+| `device_id` | UUID | Owning device |
+| `register_name` | string | Target register |
+| `anomaly_type` | string | Type |
+| `anomaly_params` | object | Parameters |
+| `trigger_after_seconds` | integer | Offset from start |
+| `duration_seconds` | integer | How long the anomaly lasts |
+| `is_enabled` | boolean | Whether loaded on device start |
+| `created_at` | datetime | ISO 8601 UTC |
+| `updated_at` | datetime | ISO 8601 UTC |
+
+### Endpoints — Real-time Injection
+
+#### `POST /api/v1/devices/{device_id}/anomaly`
+
+Inject an anomaly on a register immediately (in-memory, lost on restart).
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `AnomalyInjectRequest`
+
+**Response** `200 OK` — `ApiResponse[AnomalyActiveResponse]`
+
+**Error cases:**
+- `422` — unknown `anomaly_type`, missing required params, or param value out of range
+
+---
+
+#### `GET /api/v1/devices/{device_id}/anomaly`
+
+List all currently active (real-time) anomalies on the device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[AnomalyActiveResponse[]]`
+
+---
+
+#### `DELETE /api/v1/devices/{device_id}/anomaly`
+
+Clear all active anomalies on the device. Does not touch scheduled entries in the DB.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "All anomalies cleared" }
+```
+
+---
+
+#### `DELETE /api/v1/devices/{device_id}/anomaly/{register_name}`
+
+Remove the active anomaly from a specific register.
+
+**Path params:** `device_id` (UUID), `register_name` (string)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "Anomaly removed" }
+```
+
+> The route is registered after the `.../anomaly/schedules` routes so that `schedules` is never matched as a register name.
+
+---
+
+### Endpoints — Schedules (persisted)
+
+#### `GET /api/v1/devices/{device_id}/anomaly/schedules`
+
+List all scheduled anomalies for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[AnomalyScheduleResponse[]]`
+
+---
+
+#### `PUT /api/v1/devices/{device_id}/anomaly/schedules`
+
+Replace the entire set of anomaly schedules for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Request body:** `AnomalyScheduleBatchSet`
+
+**Response** `200 OK` — `ApiResponse[AnomalyScheduleResponse[]]`
+
+**Error cases:**
+- `422` — unknown `anomaly_type`, invalid `trigger_after_seconds` / `duration_seconds`, or missing required anomaly params
+
+---
+
+#### `DELETE /api/v1/devices/{device_id}/anomaly/schedules`
+
+Delete all anomaly schedules for a device.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK`
+```json
+{ "success": true, "data": null, "message": "All schedules deleted" }
+```
 
 ---
 

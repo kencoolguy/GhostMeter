@@ -32,6 +32,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Backend job: Python 3.12 + PostgreSQL 16 service + ruff lint + alembic migrate + pytest with coverage
 - Frontend job: Node 22 (aligned with Dockerfile) + `tsc -b` type check + `npm run build`
 
+### Documentation
+- `docs/api-reference.md`: documented 18 previously-undocumented endpoints surfaced during consolidation drift check
+  - Anomaly injection: `POST/GET/DELETE /devices/{id}/anomaly`, `DELETE /devices/{id}/anomaly/{register_name}`, `GET/PUT/DELETE /devices/{id}/anomaly/schedules`
+  - Simulation config: `GET/PUT/DELETE /devices/{id}/simulation`, `PATCH /devices/{id}/simulation/{register_name}`
+  - Fault control: `GET/PUT/DELETE /devices/{id}/fault`
+  - Simulation profiles: `GET /simulation-profiles/template/{template_id}` (blank template download), `POST /simulation-profiles/import` (with `template_id` query param), `GET /simulation-profiles/{profile_id}/export`
+- `docs/api-reference.md` `RegisterValue` schema: added `oid` field (used for SNMP templates) and replaced the stale "Phase 3: always null" note on `value` with an accurate description pointing to `/ws/monitor` for live values
+- `docs/development-phases.md`: added Milestone 8.6 (Polish & UX Fixes) and Milestone 8.7 (Consolidation, in progress) to reflect work completed since Scenario Mode shipped
+
 ### Previously Added
 - Scenario mode: reusable anomaly injection timelines bound to device templates
 - Scenario CRUD API (`/api/v1/scenarios`) with list, get, create, update, delete, export, import
