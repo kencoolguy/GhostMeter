@@ -4,7 +4,6 @@ import uuid
 
 from httpx import AsyncClient
 
-
 TEMPLATE_PAYLOAD = {
     "name": "Sim Test Meter",
     "protocol": "modbus_tcp",
@@ -106,7 +105,11 @@ class TestSetSimulationConfigs:
         # Replace with only one config
         payload2 = {
             "configs": [
-                {"register_name": "voltage", "data_mode": "random", "mode_params": {"min": 200, "max": 240}},
+                {
+                    "register_name": "voltage",
+                    "data_mode": "random",
+                    "mode_params": {"min": 200, "max": 240},
+                },
             ]
         }
         resp = await client.put(
@@ -146,8 +149,16 @@ class TestSetSimulationConfigs:
         _, device_id = await _create_template_and_device(client)
         payload = {
             "configs": [
-                {"register_name": "voltage", "data_mode": "static", "mode_params": {"value": 220}},
-                {"register_name": "voltage", "data_mode": "random", "mode_params": {"min": 200, "max": 240}},
+                {
+                    "register_name": "voltage",
+                    "data_mode": "static",
+                    "mode_params": {"value": 220},
+                },
+                {
+                    "register_name": "voltage",
+                    "data_mode": "random",
+                    "mode_params": {"min": 200, "max": 240},
+                },
             ]
         }
         resp = await client.put(

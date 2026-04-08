@@ -12,7 +12,6 @@ from app.exceptions import ValidationException
 from app.schemas.common import ApiResponse
 from app.schemas.simulation_profile import (
     SimulationProfileCreate,
-    SimulationProfileExport,
     SimulationProfileResponse,
     SimulationProfileUpdate,
 )

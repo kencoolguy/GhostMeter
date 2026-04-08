@@ -8,7 +8,7 @@ from uuid import UUID
 
 import aiomqtt
 
-from app.protocols.base import DeviceStats, ProtocolAdapter, RegisterInfo
+from app.protocols.base import ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 

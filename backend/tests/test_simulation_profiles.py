@@ -4,7 +4,6 @@ import uuid
 
 from httpx import AsyncClient
 
-
 TEMPLATE_PAYLOAD = {
     "name": "Profile Test Meter",
     "protocol": "modbus_tcp",

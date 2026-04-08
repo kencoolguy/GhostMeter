@@ -1,6 +1,5 @@
 """Tests for scenario CRUD and execution."""
 
-import asyncio
 
 from httpx import AsyncClient
 
@@ -93,7 +92,9 @@ class TestScenarioCRUD:
         assert resp.status_code == 200
         assert len(resp.json()["data"]) == 1
         # Non-existent template returns empty
-        resp2 = await client.get("/api/v1/scenarios?template_id=00000000-0000-0000-0000-000000000000")
+        resp2 = await client.get(
+            "/api/v1/scenarios?template_id=00000000-0000-0000-0000-000000000000",
+        )
         assert resp2.status_code == 200
         assert len(resp2.json()["data"]) == 0
 
@@ -223,7 +224,12 @@ class TestScenarioCRUD:
         assert data["template_id"] == template["id"]
 
 
-async def create_device(client: AsyncClient, template_id: str, name: str = "Test Device", slave_id: int = 1) -> dict:
+async def create_device(
+    client: AsyncClient,
+    template_id: str,
+    name: str = "Test Device",
+    slave_id: int = 1,
+) -> dict:
     resp = await client.post("/api/v1/devices", json={
         "template_id": template_id,
         "name": name,

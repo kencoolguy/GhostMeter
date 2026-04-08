@@ -1,15 +1,15 @@
 """add device_templates and register_definitions
 
 Revision ID: 448f2e5c6613
-Revises: 
+Revises:
 Create Date: 2026-03-17 14:30:05.827993
 
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '448f2e5c6613'

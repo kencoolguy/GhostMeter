@@ -4,7 +4,6 @@ import uuid
 
 from httpx import AsyncClient
 
-
 TEMPLATE_PAYLOAD = {
     "name": "Apply Test Meter",
     "protocol": "modbus_tcp",
@@ -154,7 +153,9 @@ class TestAutoApplyDefaultProfile:
         self, client: AsyncClient,
     ) -> None:
         """If no default profile exists and profile_id absent, device has no configs."""
-        resp = await client.post("/api/v1/templates", json=TEMPLATE_PAYLOAD | {"name": "No Default Meter"})
+        resp = await client.post(
+            "/api/v1/templates", json=TEMPLATE_PAYLOAD | {"name": "No Default Meter"},
+        )
         template_id = resp.json()["data"]["id"]
 
         resp = await client.post("/api/v1/devices", json={

@@ -186,7 +186,11 @@ class SimulationEngine:
         # Sort and filter configs — warn once for missing registers
         default_meta = RegisterMeta(0, 3, "float32", "big_endian", 1.0, 9999)
         valid_configs = []
-        for c in sorted(configs, key=lambda c: register_map.get(c.register_name, default_meta).sort_order):
+
+        def _sort_key(c: SimulationConfig) -> int:
+            return register_map.get(c.register_name, default_meta).sort_order
+
+        for c in sorted(configs, key=_sort_key):
             if c.register_name in register_map:
                 valid_configs.append(c)
             else:

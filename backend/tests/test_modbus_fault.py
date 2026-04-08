@@ -4,8 +4,8 @@ import uuid
 
 import pytest
 
-from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.base import RegisterInfo
+from app.protocols.modbus_tcp import ModbusTcpAdapter
 
 
 class TestReverseMapping:
@@ -17,7 +17,9 @@ class TestReverseMapping:
         await adapter.start()
         try:
             device_id = uuid.uuid4()
-            registers = [RegisterInfo(address=0, function_code=3, data_type="float32", byte_order="big_endian")]
+            registers = [RegisterInfo(
+                address=0, function_code=3, data_type="float32", byte_order="big_endian",
+            )]
             await adapter.add_device(device_id, 1, registers)
 
             assert adapter.get_device_id_for_slave(1) == device_id
@@ -31,7 +33,9 @@ class TestReverseMapping:
         await adapter.start()
         try:
             device_id = uuid.uuid4()
-            registers = [RegisterInfo(address=0, function_code=3, data_type="float32", byte_order="big_endian")]
+            registers = [RegisterInfo(
+                address=0, function_code=3, data_type="float32", byte_order="big_endian",
+            )]
             await adapter.add_device(device_id, 1, registers)
             await adapter.remove_device(device_id)
 
@@ -44,7 +48,9 @@ class TestReverseMapping:
         adapter = ModbusTcpAdapter(host="127.0.0.1", port=15504)
         await adapter.start()
         device_id = uuid.uuid4()
-        registers = [RegisterInfo(address=0, function_code=3, data_type="float32", byte_order="big_endian")]
+        registers = [RegisterInfo(
+            address=0, function_code=3, data_type="float32", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, 1, registers)
         await adapter.stop()
         assert adapter.get_device_id_for_slave(1) is None

@@ -1,6 +1,5 @@
 """Tests for batch device start/stop/delete operations."""
 
-import uuid
 
 import pytest
 from httpx import AsyncClient
@@ -72,7 +71,7 @@ class TestBatchStart:
 
     async def test_batch_start_all(self, client: AsyncClient):
         """Empty device_ids starts all stopped devices."""
-        devices = await _setup_devices(client, 3)
+        await _setup_devices(client, 3)
 
         resp = await client.post("/api/v1/devices/batch/start", json={
             "device_ids": [],
@@ -116,7 +115,7 @@ class TestBatchStop:
 
     async def test_batch_stop_all(self, client: AsyncClient):
         """Empty device_ids stops all running devices."""
-        devices = await _setup_devices(client, 3)
+        await _setup_devices(client, 3)
 
         # Start all
         await client.post("/api/v1/devices/batch/start", json={"device_ids": []})

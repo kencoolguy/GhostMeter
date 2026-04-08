@@ -137,7 +137,11 @@ class ScenarioRunner:
                 # Deactivate steps that should end
                 for i, step in enumerate(running.steps):
                     end_at = step.trigger_at_seconds + step.duration_seconds
-                    if i in triggered and elapsed >= end_at and step.register_name in running.active_anomalies:
+                    if (
+                        i in triggered
+                        and elapsed >= end_at
+                        and step.register_name in running.active_anomalies
+                    ):
                         self._injector.remove(device_id, step.register_name)
                         running.active_anomalies.discard(step.register_name)
 
@@ -145,7 +149,10 @@ class ScenarioRunner:
                 if elapsed >= running.total_duration_seconds and not running.active_anomalies:
                     running.status = "completed"
                     self._running.pop(device_id, None)
-                    logger.info("Scenario '%s' completed on device %s", running.scenario_name, device_id)
+                    logger.info(
+                        "Scenario '%s' completed on device %s",
+                        running.scenario_name, device_id,
+                    )
                     break
 
                 await asyncio.sleep(1)
@@ -154,7 +161,9 @@ class ScenarioRunner:
             pass  # Cleanup handled by stop()
 
 
-# Module-level singleton — importable from services layer
-from app.simulation import anomaly_injector as _anomaly_injector
+# Module-level singleton — importable from services layer.
+# Late import avoids a circular import between services and simulation packages
+# during app startup (services imports simulation imports services via scenarios).
+from app.simulation import anomaly_injector as _anomaly_injector  # noqa: E402
 
 scenario_runner = ScenarioRunner(_anomaly_injector)

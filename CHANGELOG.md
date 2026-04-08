@@ -32,6 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Backend job: Python 3.12 + PostgreSQL 16 service + ruff lint + alembic migrate + pytest with coverage
 - Frontend job: Node 22 (aligned with Dockerfile) + `tsc -b` type check + `npm run build`
 
+### Fixed (lint debt)
+- Resolved 91 ruff lint errors accumulated in `backend/` since CI was removed on 2026-03-20 (31 unsorted imports, 12 unused imports, 44 line-too-long, 2 unused variables, 1 module-level import not at top, 1 trailing whitespace). CI is now green.
+- `backend/pyproject.toml`: added `alembic/versions/*` to ruff `per-file-ignores` for `E501` — auto-generated migration files get long type declarations that reappear on each regen and shouldn't be hand-wrapped.
+- `backend/app/services/scenario_runner.py`: documented why the `_anomaly_injector` import is late (circular-import avoidance) and added `# noqa: E402` with the explanation.
+
 ### Documentation
 - `docs/api-reference.md`: documented 18 previously-undocumented endpoints surfaced during consolidation drift check
   - Anomaly injection: `POST/GET/DELETE /devices/{id}/anomaly`, `DELETE /devices/{id}/anomaly/{register_name}`, `GET/PUT/DELETE /devices/{id}/anomaly/schedules`

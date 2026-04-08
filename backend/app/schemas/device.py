@@ -3,7 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
 # --- Request Schemas ---
 
 class DeviceCreate(BaseModel):

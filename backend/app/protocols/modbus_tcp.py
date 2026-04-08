@@ -15,7 +15,7 @@ from pymodbus.datastore import (
 from pymodbus.pdu import ExceptionResponse
 from pymodbus.server import ModbusTcpServer
 
-from app.protocols.base import DeviceStats, ProtocolAdapter, RegisterInfo
+from app.protocols.base import ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 

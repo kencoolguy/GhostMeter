@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app.simulation.fault_simulator import FaultSimulator, FaultConfig
+from app.simulation.fault_simulator import FaultConfig, FaultSimulator
 
 
 @pytest.fixture
