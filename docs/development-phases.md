@@ -228,10 +228,14 @@
 - [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)
 - [x] API reference drift fix: document 18 previously undocumented endpoints (anomaly, simulation config, fault, simulation-profile import/export/blank)
 - [x] `RegisterValue` schema: document `oid` field and update stale `value` description
-- [ ] Push feature branch and verify CI pipeline runs green
-- [ ] Backend test health check (`pytest` full run, confirm no skipped/flaky tests)
+- [x] Push feature branch and verify CI pipeline runs green (PR #24, merged 2026-04-09)
+- [x] Backend test health check — full `pytest` runs in CI on every push: 278 tests pass, 65% coverage (verified on PR #24)
+- [x] Clear accumulated lint debt: 91 ruff errors that piled up while CI was off (resolved as part of PR #24)
+- [x] Fix stale test (`test_batch_create_with_prefix`) caught by the now-running CI
+- [x] Issue #21 — Cloudflare Pages build output directory (fixed via Dashboard setting change)
 - [ ] Cut release (resolve README 0.3.0 vs. current unreleased feature gap)
-- [ ] Address issues surfaced during audit: #21 (Cloudflare Pages build config), #22 (npm audit vulnerabilities), #23 (frontend bundle >500KB)
+- [ ] Address remaining audit issues: #22 (npm audit vulnerabilities), #23 (frontend bundle >500KB)
+- [ ] Optional follow-ups: dead code sweep, fresh-environment Docker quickstart smoke test
 
 ---
 

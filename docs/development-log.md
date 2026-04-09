@@ -1,5 +1,33 @@
 # Development Log
 
+## 2026-04-09 — PR #24 merged (consolidation pass: VM hack + CI + docs drift + lint debt + stale test)
+
+PR #24 merged into `dev` (merge commit `83c91c6`) bundling five commits from the consolidation audit:
+
+1. `53ad096` chore: remove VirtualBox shared-folder workaround from frontend tooling
+2. `d545415` ci: restore GitHub Actions pipeline for backend lint/test and frontend build
+3. `b790c82` docs: close API reference drift by documenting 18 missing endpoints
+4. `11d9ae2` chore: fix 91 ruff lint errors accumulated while CI was disabled
+5. `b7f8a8b` test: update test_batch_create_with_prefix for new name format
+
+Net effect: 55 files changed, +875 / -145. CI is now green and runs on every push to `dev`/`main`. The "first real CI run after restore" was red as expected (91 lint errors + 1 stale test); both were cleaned up in the same PR so the dev branch lands green.
+
+Issue #21 (Cloudflare Pages build config) was closed in parallel — fixed via a Cloudflare Dashboard setting change (Build output directory: `frontend/dist` → `dist`).
+
+Updated `docs/development-phases.md` Milestone 8.7 to mark all completed items and add the lint-debt + stale-test entries that surfaced during the PR.
+
+Branch cleanup:
+- Deleted local feature branch `feature/claude-remove-vm-path-hacks-20260408` (merged)
+- Deleted 4 stale local branches that had been merged previously: anomaly-params-form, device-detail-live-values, fix-batch-name-prefix, resume-simulation-monitor-defaults
+- Deleted 3 stale remote branches on origin matching the same names
+
+Remaining consolidation work (tracked in 8.7):
+- Cut a release (README still says 0.3.0)
+- Address #22 (npm audit) and #23 (bundle size)
+- Optional: dead code sweep, Docker quickstart smoke test on a clean env
+
+---
+
 ## 2026-04-08 — Remove VirtualBox shared-folder path hacks from frontend tooling
 
 ### What was done
