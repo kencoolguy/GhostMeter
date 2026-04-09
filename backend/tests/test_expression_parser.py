@@ -1,6 +1,6 @@
 import pytest
 
-from app.simulation.expression_parser import parse_and_evaluate, ExpressionError
+from app.simulation.expression_parser import ExpressionError, parse_and_evaluate
 
 
 class TestParseAndEvaluate:

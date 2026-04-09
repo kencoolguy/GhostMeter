@@ -215,6 +215,24 @@
 - [x] ScenarioExecutionCard on Device Detail: start/stop with real-time progress polling
 - [x] 19 integration tests (CRUD, seed, built-in protection, export/import)
 
+### Milestone 8.6：Polish & UX Fixes ✅
+- [x] Auto-resume: running devices restored after backend restart (re-registers protocol adapters + restarts simulation engine)
+- [x] Device Detail live values via `/ws/monitor` WebSocket (closes #19)
+- [x] Device Detail "Open in Monitor" button with `?device=<id>` deep link
+- [x] Monitor page `?device=` query param auto-selects device on mount
+- [x] Anomaly injection panel: replaced raw JSON textarea with dynamic per-type param form
+- [x] Batch device name prefix spacing fix
+
+### Milestone 8.7：Consolidation (in progress 🔄)
+- [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
+- [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)
+- [x] API reference drift fix: document 18 previously undocumented endpoints (anomaly, simulation config, fault, simulation-profile import/export/blank)
+- [x] `RegisterValue` schema: document `oid` field and update stale `value` description
+- [ ] Push feature branch and verify CI pipeline runs green
+- [ ] Backend test health check (`pytest` full run, confirm no skipped/flaky tests)
+- [ ] Cut release (resolve README 0.3.0 vs. current unreleased feature gap)
+- [ ] Address issues surfaced during audit: #21 (Cloudflare Pages build config), #22 (npm audit vulnerabilities), #23 (frontend bundle >500KB)
+
 ---
 
 ## 時程總覽

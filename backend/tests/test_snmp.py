@@ -209,6 +209,7 @@ class TestSnmpAdapterUnit:
     async def test_to_snmp_value_int(self):
         """Integer types convert to Integer32."""
         from pysnmp.proto.rfc1902 import Integer32
+
         from app.protocols.snmp_agent import SnmpAdapter
 
         val = SnmpAdapter.to_snmp_value(42.0, "int32")
@@ -218,6 +219,7 @@ class TestSnmpAdapterUnit:
     async def test_to_snmp_value_uint(self):
         """Unsigned types convert to Gauge32."""
         from pysnmp.proto.rfc1902 import Gauge32
+
         from app.protocols.snmp_agent import SnmpAdapter
 
         val = SnmpAdapter.to_snmp_value(1000.0, "uint32")

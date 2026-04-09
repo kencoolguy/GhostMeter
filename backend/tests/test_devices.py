@@ -122,7 +122,9 @@ class TestBatchCreateDevices:
         )
         assert response.status_code == 201
         devices = response.json()["data"]
-        assert devices[0]["name"] == "Floor 3 10"
+        # Name format is "{prefix}{slave_id}" — no space between prefix and slave ID
+        # (updated in commit 4c8cefa to avoid double spacing when the prefix ends in " ")
+        assert devices[0]["name"] == "Floor 310"
 
     async def test_batch_create_invalid_range(self, client: AsyncClient) -> None:
         template = await create_template(client)

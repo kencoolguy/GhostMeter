@@ -20,6 +20,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Devices with status=running showed no register values after backend restart (simulation engine was not resumed)
+- Frontend `package.json` scripts no longer hard-code VirtualBox shared-folder workaround paths (`/home/ken/.ghostmeter-frontend-modules/...`); `npm run dev` / `npm run build` / `npm run lint` now use standard tooling and work on any machine after `npm install`
+
+### Removed
+- `frontend/tsconfig.local.json`, `tsconfig.local.app.json`, `tsconfig.local.node.json` (VirtualBox shared-folder node_modules workaround — no longer needed)
+- `frontend/.npmrc` comment file (workaround documentation)
+- `frontend/package.json` `build:local` script (workaround for vboxsf symlink issue)
+
+### CI
+- Restored `.github/workflows/ci.yml` (originally added in 655c977 and removed in 6d92a2c due to missing workflow-scope token); pipeline runs on push and PR to `dev`/`main`
+- Backend job: Python 3.12 + PostgreSQL 16 service + ruff lint + alembic migrate + pytest with coverage
+- Frontend job: Node 22 (aligned with Dockerfile) + `tsc -b` type check + `npm run build`
+
+### Fixed (lint debt)
+- Resolved 91 ruff lint errors accumulated in `backend/` since CI was removed on 2026-03-20 (31 unsorted imports, 12 unused imports, 44 line-too-long, 2 unused variables, 1 module-level import not at top, 1 trailing whitespace). CI is now green.
+- `backend/pyproject.toml`: added `alembic/versions/*` to ruff `per-file-ignores` for `E501` — auto-generated migration files get long type declarations that reappear on each regen and shouldn't be hand-wrapped.
+- `backend/app/services/scenario_runner.py`: documented why the `_anomaly_injector` import is late (circular-import avoidance) and added `# noqa: E402` with the explanation.
+
+### Documentation
+- `docs/api-reference.md`: documented 18 previously-undocumented endpoints surfaced during consolidation drift check
+  - Anomaly injection: `POST/GET/DELETE /devices/{id}/anomaly`, `DELETE /devices/{id}/anomaly/{register_name}`, `GET/PUT/DELETE /devices/{id}/anomaly/schedules`
+  - Simulation config: `GET/PUT/DELETE /devices/{id}/simulation`, `PATCH /devices/{id}/simulation/{register_name}`
+  - Fault control: `GET/PUT/DELETE /devices/{id}/fault`
+  - Simulation profiles: `GET /simulation-profiles/template/{template_id}` (blank template download), `POST /simulation-profiles/import` (with `template_id` query param), `GET /simulation-profiles/{profile_id}/export`
+- `docs/api-reference.md` `RegisterValue` schema: added `oid` field (used for SNMP templates) and replaced the stale "Phase 3: always null" note on `value` with an accurate description pointing to `/ws/monitor` for live values
+- `docs/development-phases.md`: added Milestone 8.6 (Polish & UX Fixes) and Milestone 8.7 (Consolidation, in progress) to reflect work completed since Scenario Mode shipped
 
 ### Previously Added
 - Scenario mode: reusable anomaly injection timelines bound to device templates

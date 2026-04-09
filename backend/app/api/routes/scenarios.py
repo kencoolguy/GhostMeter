@@ -16,7 +16,8 @@ from app.schemas.scenario import (
     ScenarioUpdate,
 )
 from app.services import scenario_service
-from app.services.scenario_runner import StepInfo, scenario_runner as runner
+from app.services.scenario_runner import StepInfo
+from app.services.scenario_runner import scenario_runner as runner
 
 router = APIRouter()
 
@@ -99,7 +100,10 @@ async def export_scenario(
 # --- Execution endpoints (mounted under /devices via execution_router) ---
 
 
-@execution_router.post("/{device_id}/scenario/{scenario_id}/start", response_model=ApiResponse[None])
+@execution_router.post(
+    "/{device_id}/scenario/{scenario_id}/start",
+    response_model=ApiResponse[None],
+)
 async def start_scenario(
     device_id: uuid.UUID,
     scenario_id: uuid.UUID,
@@ -157,7 +161,10 @@ async def stop_scenario(device_id: uuid.UUID) -> ApiResponse[None]:
     return ApiResponse(data=None, message="Scenario stopped")
 
 
-@execution_router.get("/{device_id}/scenario/status", response_model=ApiResponse[ScenarioExecutionStatus])
+@execution_router.get(
+    "/{device_id}/scenario/status",
+    response_model=ApiResponse[ScenarioExecutionStatus],
+)
 async def get_scenario_status(device_id: uuid.UUID) -> ApiResponse[ScenarioExecutionStatus]:
     """Get scenario execution status for a device."""
     from app.exceptions import NotFoundException

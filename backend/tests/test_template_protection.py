@@ -1,6 +1,5 @@
 from httpx import AsyncClient
 
-
 TEMPLATE_PAYLOAD = {
     "name": "Protected Meter",
     "protocol": "modbus_tcp",

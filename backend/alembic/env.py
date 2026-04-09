@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import app.models  # noqa: F401 — ensure models are registered with Base.metadata
 from app.config import get_settings
 from app.database import Base
-import app.models  # noqa: F401 — ensure models are registered with Base.metadata
 
 # Alembic Config object
 config = context.config

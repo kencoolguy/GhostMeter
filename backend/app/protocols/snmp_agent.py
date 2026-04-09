@@ -7,7 +7,7 @@ from uuid import UUID
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdrsp, context
-from pysnmp.proto.rfc1902 import Gauge32, Integer32, OctetString
+from pysnmp.proto.rfc1902 import Gauge32, Integer32
 
 from app.exceptions import ConflictException
 from app.protocols.base import ProtocolAdapter, RegisterInfo

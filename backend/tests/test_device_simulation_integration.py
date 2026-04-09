@@ -41,7 +41,11 @@ class TestDeviceSimulationIntegration:
         # Set simulation config while stopped
         resp = await client.put(f"/api/v1/devices/{device_id}/simulation", json={
             "configs": [
-                {"register_name": "voltage", "data_mode": "static", "mode_params": {"value": 230.0}},
+                {
+                    "register_name": "voltage",
+                    "data_mode": "static",
+                    "mode_params": {"value": 230.0},
+                },
             ],
         })
         assert resp.status_code == 200

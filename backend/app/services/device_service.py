@@ -6,20 +6,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictException, NotFoundException, ValidationException
-from app.protocols import protocol_manager
-from app.protocols.base import RegisterInfo
-from app.services import mqtt_service, simulation_profile_service
-from app.services.template_service import get_template as get_template_with_registers
-from app.simulation import simulation_engine
 from app.models.device import DeviceInstance
 from app.models.mqtt import MqttPublishConfig
 from app.models.template import DeviceTemplate
+from app.protocols import protocol_manager
+from app.protocols.base import RegisterInfo
 from app.schemas.device import (
     DeviceBatchCreate,
     DeviceCreate,
     DeviceUpdate,
     RegisterValue,
 )
+from app.services import mqtt_service, simulation_profile_service
+from app.services.template_service import get_template as get_template_with_registers
+from app.simulation import simulation_engine
 
 logger = logging.getLogger(__name__)
 

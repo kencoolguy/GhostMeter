@@ -1,6 +1,190 @@
 # Development Log
 
-## 2026-03-30 — Device Detail Live Values & Monitor Navigation (#19)
+## 2026-04-08 — Remove VirtualBox shared-folder path hacks from frontend tooling
+
+### What was done
+- Removed `/home/ken/.ghostmeter-frontend-modules/...` absolute paths from `frontend/package.json` scripts. `dev`, `build`, `lint` are now standard `vite` / `tsc -b && vite build` / `eslint .` and work on any machine after `npm install`.
+- Deleted `frontend/tsconfig.local.json`, `tsconfig.local.app.json`, `tsconfig.local.node.json` — these pointed at the external `node_modules` directory via `typeRoots` / `paths` and were only useful on the VM.
+- Deleted `frontend/.npmrc` (only held a comment describing the workaround).
+- Removed the workaround comment block from `frontend/vite.config.ts`.
+
+### Why
+These hacks existed because the project lived on a VirtualBox shared folder (`vboxsf`) which does not support the symlinks npm uses in `node_modules`. The workaround was to install `node_modules` in `/home/ken/.ghostmeter-frontend-modules/` (outside the shared folder) and have every script reach into that path explicitly. Current development environment (macOS) no longer needs this, and the hard-coded absolute paths meant nobody else could run `npm run dev` after cloning — first blocker flagged in the consolidation audit.
+
+### Decisions
+- Chose full removal over keeping `build:local` as a fallback. The workaround is specific to one obsolete environment; keeping it would force future readers to wonder which script to run. If the VirtualBox setup is ever needed again, the original commit can be reverted from git history.
+- `Dockerfile` already used standard `npm run build`, so the container build path was unaffected — verified before deleting.
+
+### Files changed
+- `frontend/package.json` — simplified scripts block
+- `frontend/vite.config.ts` — removed workaround comment
+- `frontend/tsconfig.local.json` — deleted
+- `frontend/tsconfig.local.app.json` — deleted
+- `frontend/tsconfig.local.node.json` — deleted
+- `frontend/.npmrc` — deleted
+- `CHANGELOG.md` — Fixed + Removed sections
+- `docs/development-log.md` — this entry
+
+### Verification
+- Confirmed no remaining references to `ghostmeter-frontend-modules`, `/home/ken`, or `sf_AI_Service_Chatbot` in the repo via grep.
+- Dockerfile build path (`RUN npm ci && npm run build`) unaffected since it never touched the removed files.
+- `npm run dev` / `npm run build` verification on a clean checkout requires running `npm install` and should be done before merging.
+
+### Next steps
+- Consolidation step 4: run a docs-vs-implementation drift check on `api-reference.md` and `database-schema.md`.
+
+---
+
+## 2026-04-08 — Restore GitHub Actions CI pipeline (consolidation step 2)
+
+### What was done
+- Recreated `.github/workflows/ci.yml` with the same two-job structure as the original (backend lint/test + frontend typecheck/build).
+- Updated two details vs the historical file:
+  - Frontend Node version bumped from 20 → 22 to match `frontend/Dockerfile` (`FROM node:22-alpine`)
+  - Frontend type check changed from `npx tsc --noEmit` to `npx tsc -b` to match the project-references setup now used by `tsconfig.json`
+
+### Why
+The consolidation audit flagged "CI status unknown". Investigation showed:
+- Repo had no `.github/workflows/` directory
+- `gh run list` returned empty
+- But `CLAUDE.md`, `docs/development-log.md`, and `docs/development-phases.md` all claimed "GitHub Actions CI" was in place
+
+This was a docs-vs-reality drift. `git log --all -- '.github/workflows/*'` turned up:
+- 655c977 (2026-03-20) `ci: add GitHub Actions pipeline for backend lint/test and frontend build`
+- 6d92a2c (2026-03-20, 17 minutes later) `chore: temporarily remove CI workflow (requires workflow scope token)`
+
+The removal was "temporary" pending a PAT with `workflow` scope — never reverted. Restoring it now closes the drift and actually enforces lint/tests on future PRs.
+
+### Decisions
+- Restored as a new commit rather than `git revert 6d92a2c` because the file needed the Node 22 / `tsc -b` updates anyway; a revert would have landed stale content.
+- Kept the original environment variables hard-coded in the workflow (`POSTGRES_*`, `APP_NAME`, etc.) — these are test-only values, not secrets.
+- Did not yet add any new steps (e.g. Playwright e2e smoke) — those belong in a later consolidation task once the baseline is green.
+
+### Files changed
+- `.github/workflows/ci.yml` — created (restored + updated)
+- `CHANGELOG.md` — CI section
+- `docs/development-log.md` — this entry
+
+### Verification
+- File content matches the historical 655c977 version character-for-character except for the two documented updates (diffable against `git show 655c977:.github/workflows/ci.yml`).
+- YAML structure verified by visual inspection — no Python `yaml` module or `actionlint` available in the local environment to run a formal parse. Will be validated by GitHub itself on first push.
+- Pushing this change requires a token/gh auth with `workflow` scope (the same reason it was removed in 6d92a2c). This is a push-time concern, not a commit-time concern.
+
+### Next steps
+- Push to remote once the token/auth has `workflow` scope, then verify the pipeline actually runs green on this feature branch's PR.
+- Consolidation step 4: docs-vs-implementation drift check on `api-reference.md` and `database-schema.md`.
+
+---
+
+## 2026-04-08 — API reference drift fix (consolidation step 4)
+
+### What was done
+Fixed documentation drift found by a systematic comparison of `docs/api-reference.md` against `backend/app/api/routes/` and `backend/app/schemas/`. Added 18 previously undocumented endpoints plus a field and note fix on `RegisterValue`.
+
+Changes to `docs/api-reference.md`:
+
+1. **`RegisterValue` schema block**:
+   - Added `oid: string | null` field (used by SNMP templates, `null` for Modbus)
+   - Replaced the stale "`Phase 3: always null`" note on `value` with an accurate description: value is the last tick's value (null when stopped / no tick yet) and live clients should subscribe to `/ws/monitor` rather than poll the detail endpoint.
+
+2. **New section: Simulation Configuration** (inserted between Simulation Profiles and MQTT).
+   Covers:
+   - Schemas: `SimulationConfigCreate`, `SimulationConfigBatchSet`, `SimulationConfigResponse`, `FaultConfigSet`, `FaultConfigResponse` (including fault-type param tables)
+   - Endpoints: `GET/PUT/DELETE /devices/{id}/simulation`, `PATCH /devices/{id}/simulation/{register_name}`, `GET/PUT/DELETE /devices/{id}/fault`
+   - Documented in-memory-only behaviour of faults (cleared on restart).
+
+3. **New section: Anomaly Injection** (inserted after Simulation Configuration).
+   Covers:
+   - Both real-time injection and persisted schedules as the two mechanisms
+   - Schemas: `AnomalyInjectRequest`, `AnomalyActiveResponse`, `AnomalyScheduleCreate`, `AnomalyScheduleBatchSet`, `AnomalyScheduleResponse`
+   - Params tables per anomaly type (`spike`, `drift`, `flatline`, `out_of_range`, `data_loss`)
+   - Endpoints: `POST/GET/DELETE /devices/{id}/anomaly`, `DELETE /devices/{id}/anomaly/{register_name}`, `GET/PUT/DELETE /devices/{id}/anomaly/schedules`
+   - Noted the route ordering constraint (the `/schedules` routes must come before `/{register_name}` to avoid wildcard collision — this was already done in `anomaly.py` but is worth documenting so future editors don't reorder).
+
+4. **Simulation Profiles section**: added the three missing endpoints.
+   - `GET /simulation-profiles/template/{template_id}` — download blank profile JSON (raw file download, not `ApiResponse`)
+   - `GET /simulation-profiles/{profile_id}/export` — export profile as JSON file
+   - `POST /simulation-profiles/import?template_id=...` — upload profile JSON, with the required `template_id` query param documented explicitly
+
+Changes to `docs/development-phases.md`:
+
+- Added **Milestone 8.6 — Polish & UX Fixes** capturing auto-resume, Device Detail live values (#19), Open in Monitor deep-link, anomaly param form, batch naming fix
+- Added **Milestone 8.7 — Consolidation** (in progress) with checked boxes for steps done so far and unchecked boxes for remaining work, including the three audit-surfaced issues (#21 #22 #23)
+
+### Why
+The consolidation audit surfaced that `api-reference.md` documented only the core CRUD surface — anomaly, simulation-config, fault, and the profile import/export variants were all completely absent despite being shipped and actively used. The `RegisterValue.value` note still said "Phase 3: always null" even though #19 had closed that behaviour weeks ago. This is the kind of drift that silently erodes trust in the docs and makes external integration impossible.
+
+The phases doc wasn't dangerously wrong but also hadn't captured anything after Scenario Mode (milestone 8.5). Adding 8.6 and 8.7 gives a clean line of sight into what's in flight without rewriting earlier phases.
+
+### Decisions
+- **Where to put the new sections**: I chose top-level sections ("Simulation Configuration", "Anomaly Injection") rather than sub-sections of Devices because (a) they have their own pydantic schemas with meaningful surface area, and (b) the existing `Simulation Profiles` section is already a peer, so three "Simulation*" / anomaly sections sit consistently together. The table of contents pattern of the file is one H2 per logical resource group, which I followed.
+- **Left Devices section alone**: Not re-touched beyond the `RegisterValue` schema fix. Its CRUD docs are accurate.
+- **Did NOT document `/ws/monitor` snapshot shape in this pass**: there's a whole monitor snapshot structure worth documenting, but that's a second drift item and the user asked specifically for the drift report's 18 endpoints + oid. Deferred — will add to consolidation backlog if it matters.
+- **Left the "Phase 3" vintage comment on `RegisterValue` docstring in `backend/app/schemas/device.py`**: that's code, not docs. Code comments can drift but this one just says "Phase 3: always None" and the user didn't ask for a code sweep. Leave for now.
+
+### Files changed
+- `docs/api-reference.md` — ~320 lines added across four edits
+- `docs/development-phases.md` — new Milestones 8.6 and 8.7
+- `CHANGELOG.md` — Documentation section under [Unreleased]
+- `docs/development-log.md` — this entry
+
+### Verification
+- `grep -E '^(### )?#{0,3} ?`[A-Z]+ /api/v1' docs/api-reference.md` — every added endpoint can be located by its method + path.
+- Cross-checked each new endpoint path against the actual route decorator in `backend/app/api/routes/{anomaly,simulation,simulation_profiles}.py` to make sure method and path match.
+- No code was changed — this is documentation-only, so there is no build/test to rerun.
+
+### Next steps
+- Consolidation step 6: run backend `pytest` full suite and confirm no skips / flakies.
+- Consolidation step 5: cut a release (the README's `0.3.0` badge vs. the pile of Unreleased entries is its own drift).
+
+---
+
+## 2026-04-08 — Clear accumulated ruff lint debt so CI goes green
+
+### What was done
+The first real CI run on PR #24 (after restoring `.github/workflows/ci.yml`) surfaced **91 ruff errors** that had accumulated in `backend/` between 2026-03-20 (when CI was removed) and today. Fixed all of them.
+
+**Breakdown:**
+- 31× `I001` unsorted-imports — auto-fixed by `ruff check --fix`
+- 12× `F401` unused-import — auto-fixed
+- 44× `E501` line-too-long — handled manually; 16 of them live in `alembic/versions/*.py` (see decision below), the other 28 were hand-wrapped
+- 2× `F841` unused-variable — dropped the unused `devices = await _setup_devices(...)` binding in `tests/test_batch_device_ops.py` where the return value was never read
+- 1× `E402` module-level import not at top — added `# noqa: E402` with an explanatory comment in `app/services/scenario_runner.py`, since the late import exists to break a circular dependency
+- 1× `W291` trailing-whitespace — removed trailing space on `Revises: ` line in `alembic/versions/448f2e5c6613_...py`
+
+### Why
+CI was off from 2026-03-20 to 2026-04-08. During that window several feature branches landed on dev (MQTT, SNMP, Scenarios, Device Detail live values, anomaly params form) without a lint gate. The 91 errors are the accumulated cost. The consolidation audit called this out as the expected consequence of "step 2: restore CI" — first run is guaranteed to be red.
+
+### Decisions
+- **`alembic/versions/*` → `E501` per-file-ignore** instead of hand-wrapping 16 lines in migration files. These files are auto-generated by `alembic revision --autogenerate`; hand-wrapping the `sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False)` lines would just get overwritten on the next regen. Standard Python ecosystem practice. Added one line to `backend/pyproject.toml` under `[tool.ruff.lint.per-file-ignores]`.
+- **Did NOT run `ruff format`** even though it would fix some issues. `ruff format` would reformat 71 files and touch far more than the 91 specific errors — that's churn, not cleanup. Kept the diff scoped to exactly what was needed.
+- **`# noqa: E402` over restructuring scenario_runner.py**: the late `from app.simulation import anomaly_injector as _anomaly_injector` was added to avoid a real circular import between `services` and `simulation` packages. Moving it to the top would need a restructure that's out of scope. A documented `noqa` is clearer than rearranging the package boundary.
+- **Dropped unused `devices =` bindings in test_batch_device_ops.py** rather than converting to `_` or adding `# noqa: F841`. The tests were using the helper for side effects only — the assignment was a leftover from a refactor. Deleting the assignment is the real fix.
+- **Used `def _sort_key` instead of an inline `lambda`** in `engine.py:189`. First attempt was a named lambda with `# noqa: E731`; realized that's trading one lint error for another. A real nested function is cleaner.
+
+### Files changed
+- `backend/pyproject.toml` — per-file-ignores
+- `backend/app/api/routes/devices.py`, `backend/app/api/routes/scenarios.py` — wrapped long f-strings and decorators
+- `backend/app/main.py` — wrapped long logger call and `include_router` calls
+- `backend/app/services/scenario_runner.py` — `# noqa: E402` + comment; wrapped long condition and logger call
+- `backend/app/simulation/engine.py` — replaced long inline lambda with a named `_sort_key`
+- `backend/alembic/versions/448f2e5c6613_*.py` — removed trailing whitespace
+- 36 auto-fixed files (imports): `alembic/env.py`, 11 migration files, 11 app files, 13 test files (see `git show` for full list)
+- 8 manually-wrapped test files: `test_batch_device_ops.py`, `test_modbus.py`, `test_modbus_fault.py`, `test_device_profile_apply.py`, `test_device_simulation_integration.py`, `test_scenarios.py`, `test_seed_profiles.py`, `test_simulation_api.py`
+
+### Verification
+- `ruff check .` from `backend/` → `All checks passed!` (exit 0)
+- `python3 -m compileall -q app/ alembic/versions/ tests/` → exit 0 (no syntax errors introduced)
+- Pytest not runnable locally in this environment (no venv with backend deps), but all 91 errors are pure formatting / unused-binding / line-wrap — none of them change runtime behaviour. CI will be the real test.
+
+### Next steps
+- Push this commit, watch PR #24 CI turn from red to green.
+- Consolidation step 6: full `pytest` run in CI.
+- Consolidation step 5: cut a release.
+
+---
+
+## 2026-04-08 — API reference drift fix (consolidation step 4)
 
 ### What was done
 - **Live register values in Device Detail**: Connected Device Detail page to the existing `ws/monitor` WebSocket. Register table now overlays real-time values from the monitor broadcast instead of showing `—` (null). When the device is not running, values remain `—`.

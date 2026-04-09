@@ -85,7 +85,11 @@ class TestSeedProfiles:
         # Attempt to update configs -> 403
         resp = await client.put(
             f"/api/v1/simulation-profiles/{profile['id']}",
-            json={"configs": [{"register_name": "voltage", "data_mode": "static", "mode_params": {"value": 0}}]},
+            json={"configs": [{
+                "register_name": "voltage",
+                "data_mode": "static",
+                "mode_params": {"value": 0},
+            }]},
         )
         assert resp.status_code == 403
 

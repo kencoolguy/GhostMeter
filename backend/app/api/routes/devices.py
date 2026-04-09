@@ -62,7 +62,10 @@ async def batch_start_devices(
     )
     return ApiResponse(
         data=BatchActionResult(**result),
-        message=f"Started {result['success_count']}, skipped {result['skipped_count']}, errors {result['error_count']}",
+        message=(
+            f"Started {result['success_count']}, "
+            f"skipped {result['skipped_count']}, errors {result['error_count']}"
+        ),
     )
 
 
@@ -77,7 +80,10 @@ async def batch_stop_devices(
     )
     return ApiResponse(
         data=BatchActionResult(**result),
-        message=f"Stopped {result['success_count']}, skipped {result['skipped_count']}, errors {result['error_count']}",
+        message=(
+            f"Stopped {result['success_count']}, "
+            f"skipped {result['skipped_count']}, errors {result['error_count']}"
+        ),
     )
 
 
@@ -92,7 +98,10 @@ async def batch_delete_devices(
     result = await device_service.batch_delete_devices(session, data.device_ids)
     return ApiResponse(
         data=BatchActionResult(**result),
-        message=f"Deleted {result['success_count']}, skipped {result['skipped_count']}, errors {result['error_count']}",
+        message=(
+            f"Deleted {result['success_count']}, "
+            f"skipped {result['skipped_count']}, errors {result['error_count']}"
+        ),
     )
 
 

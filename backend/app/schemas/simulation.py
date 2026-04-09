@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
 VALID_DATA_MODES = {"static", "random", "daily_curve", "computed", "accumulator"}
 VALID_FAULT_TYPES = {"delay", "timeout", "exception", "intermittent"}
 

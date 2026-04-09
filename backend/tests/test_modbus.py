@@ -80,7 +80,9 @@ class TestModbusReadWrite:
     async def test_read_initial_zeros(self, adapter, client) -> None:
         """After adding a device, registers should read as zero."""
         device_id = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=3, data_type="uint16", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=3, data_type="uint16", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, slave_id=1, registers=regs)
 
         result = await client.read_holding_registers(0, count=1, device_id=1)
@@ -90,7 +92,9 @@ class TestModbusReadWrite:
     async def test_read_input_registers(self, adapter, client) -> None:
         """FC04 (input registers) should also work."""
         device_id = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=4, data_type="uint16", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=4, data_type="uint16", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, slave_id=1, registers=regs)
 
         result = await client.read_input_registers(0, count=1, device_id=1)
@@ -99,7 +103,9 @@ class TestModbusReadWrite:
 
     async def test_update_and_read_uint16(self, adapter, client) -> None:
         device_id = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=3, data_type="uint16", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=3, data_type="uint16", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, slave_id=1, registers=regs)
 
         await adapter.update_register(device_id, address=0, function_code=3,
@@ -110,7 +116,9 @@ class TestModbusReadWrite:
 
     async def test_update_and_read_float32_big_endian(self, adapter, client) -> None:
         device_id = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=4, data_type="float32", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=4, data_type="float32", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, slave_id=1, registers=regs)
 
         await adapter.update_register(device_id, address=0, function_code=4,
@@ -125,7 +133,9 @@ class TestModbusReadWrite:
 
     async def test_update_and_read_int32(self, adapter, client) -> None:
         device_id = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=3, data_type="int32", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=3, data_type="int32", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, slave_id=1, registers=regs)
 
         await adapter.update_register(device_id, address=0, function_code=3,
@@ -142,7 +152,9 @@ class TestMultiSlave:
         """Two devices with different slave IDs have independent registers."""
         dev1 = uuid.uuid4()
         dev2 = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=3, data_type="uint16", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=3, data_type="uint16", byte_order="big_endian",
+        )]
         await adapter.add_device(dev1, slave_id=1, registers=regs)
         await adapter.add_device(dev2, slave_id=2, registers=regs)
 
@@ -159,7 +171,9 @@ class TestMultiSlave:
         from pymodbus.exceptions import ModbusIOException
 
         device_id = uuid.uuid4()
-        regs = [RegisterInfo(address=0, function_code=3, data_type="uint16", byte_order="big_endian")]
+        regs = [RegisterInfo(
+            address=0, function_code=3, data_type="uint16", byte_order="big_endian",
+        )]
         await adapter.add_device(device_id, slave_id=1, registers=regs)
         await adapter.remove_device(device_id)
 
@@ -198,7 +212,8 @@ class TestEncodeValue:
 # Device API integration tests — HTTP start/stop creates/removes Modbus slaves
 # ---------------------------------------------------------------------------
 
-from httpx import ASGITransport, AsyncClient as HttpClient
+from httpx import ASGITransport
+from httpx import AsyncClient as HttpClient
 
 from app.main import app as fastapi_app
 from app.protocols import protocol_manager
