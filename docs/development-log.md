@@ -1,5 +1,32 @@
 # Development Log
 
+## 2026-04-10 — Isolate test database from production
+
+### What was done
+- conftest.py now creates a dedicated `ghostmeter_test` database (session-scoped fixture), runs all tests against it, and drops it on teardown
+- Replaced module-level `async_session_factory` in all modules that import it directly (`app.database`, `app.seed.loader`, `app.services.monitor_service`, `app.simulation.engine`) so that seed loader and other code using `async_session_factory` also hits the test DB
+- Removed `_fresh_session_factory()` workaround from `test_seed_profiles.py` that was creating its own production-pointing session factory
+
+### Why
+Running `pytest` inside the backend container executed `TRUNCATE ... CASCADE` on all production tables via conftest's `setup_database` teardown. This was the root cause of the data loss incident on 2026-04-10 — all device instances, templates, simulation configs, and profiles were wiped when tests ran against the production database.
+
+### Decisions
+- Chose to create/drop a separate database (`ghostmeter_test`) per test session rather than schema isolation, because alembic migrations and the app code assume the `public` schema
+- Patched `async_session_factory` in individual modules rather than switching to a lazy accessor pattern — more explicit and avoids a larger refactor
+
+### Files changed
+- `backend/tests/conftest.py` — test DB creation, module-level factory patching
+- `backend/tests/test_seed_profiles.py` — removed production DB workaround
+- `CHANGELOG.md` — Fixed section
+- `docs/development-log.md` — this entry
+
+### Verification
+- 278/278 tests passed
+- Production DB confirmed intact after full test run (10 devices, 4 templates)
+- ruff lint clean
+
+---
+
 ## 2026-04-10 — Simulation engine crash recovery and error counting fix
 
 ### What was done
