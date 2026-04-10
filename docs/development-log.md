@@ -1,5 +1,35 @@
 # Development Log
 
+## 2026-04-10 — Simulation engine crash recovery and error counting fix
+
+### What was done
+- Added `add_done_callback` on each device simulation task to detect unexpected crashes
+- Implemented auto-restart with exponential backoff (2s → 4s → 8s → 16s → 32s), max 5 attempts
+- After max restart attempts exceeded, device DB status is updated to "error" so the UI reflects reality
+- Fixed inner error counting: `adapter.update_register` failures (e.g. pymodbus write errors) now count toward the consecutive error threshold (5 ticks)
+- Introduced `_DeviceTaskState` dataclass to track restart count per device, replacing the bare `dict[UUID, Task]`
+
+### Why
+When pymodbus lost connectivity (e.g. network disconnection), `adapter.update_register` raised exceptions caught by the inner try-except (line 235). These errors were logged but never counted toward `error_count`, so the outer loop's `error_count` was always reset to 0 — the simulation task kept running but producing no useful output. If the task crashed entirely (unhandled exception), it silently disappeared from `_device_tasks` while the DB still showed `status="running"`. Users saw all register values stuck/null with no indication of a problem.
+
+### Decisions
+- Chose exponential backoff (base 2s, max 5 attempts = up to 32s delay) as a balance between quick recovery from transient issues and not hammering a persistently broken adapter
+- Kept backward-compatible `_device_tasks` property so existing code (monitor_service, tests) that reads task state doesn't break
+- `_on_task_done` callback distinguishes between: cancelled (normal stop), normal return (max errors hit, already handled), and exception (unexpected crash needing restart)
+
+### Files changed
+- `backend/app/simulation/engine.py` — crash recovery, error counting, `_DeviceTaskState`
+- `CHANGELOG.md` — Fixed section
+- `docs/development-log.md` — this entry
+
+### Verification
+- `python -m py_compile app/simulation/engine.py` — OK
+- `pytest tests/test_simulation_engine.py` — 4/4 passed
+- `pytest tests/test_anomaly_*.py tests/test_*simulation*.py` — 45/45 passed
+- `ruff check app/simulation/engine.py` — all checks passed
+
+---
+
 ## 2026-04-08 — Remove VirtualBox shared-folder path hacks from frontend tooling
 
 ### What was done

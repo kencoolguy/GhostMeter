@@ -19,6 +19,10 @@ from app.simulation.data_generator import DataGenerator, GeneratorContext
 logger = logging.getLogger(__name__)
 
 
+MAX_RESTART_ATTEMPTS = 5
+RESTART_BASE_DELAY_S = 2.0
+
+
 @dataclass
 class RegisterMeta:
     """Register metadata needed by the simulation loop."""
@@ -31,20 +35,42 @@ class RegisterMeta:
     sort_order: int
 
 
+@dataclass
+class _DeviceTaskState:
+    """Tracks restart attempts for a device simulation task."""
+
+    task: asyncio.Task
+    restart_count: int = 0
+    last_restart: datetime | None = None
+
+
 class SimulationEngine:
     """Manages per-device simulation tasks."""
 
     def __init__(self) -> None:
-        self._device_tasks: dict[UUID, asyncio.Task] = {}
+        self._device_states: dict[UUID, _DeviceTaskState] = {}
         self._device_values: dict[UUID, dict[str, float]] = {}
         self._data_generator = DataGenerator()
 
+    # ------------------------------------------------------------------
+    # Backward-compatible property for code that reads _device_tasks
+    # ------------------------------------------------------------------
+    @property
+    def _device_tasks(self) -> dict[UUID, asyncio.Task]:
+        return {did: st.task for did, st in self._device_states.items()}
+
     async def start_device(self, device_id: UUID) -> None:
         """Start simulation for a device."""
-        if device_id in self._device_tasks:
+        if device_id in self._device_states:
             logger.warning("Simulation already running for device %s", device_id)
             return
 
+        await self._launch_device_task(device_id, restart_count=0)
+
+    async def _launch_device_task(
+        self, device_id: UUID, restart_count: int,
+    ) -> None:
+        """Create and register a simulation task for a device."""
         configs, register_map, device_protocol = await self._load_device_data(device_id)
 
         if not configs:
@@ -61,16 +87,70 @@ class SimulationEngine:
             self._run_device(device_id, configs, register_map, device_protocol, interval),
             name=f"sim-{device_id}",
         )
-        self._device_tasks[device_id] = task
-        logger.info("Simulation started for device %s (interval=%.1fs)", device_id, interval)
+        task.add_done_callback(lambda t: self._on_task_done(device_id, t))
+        self._device_states[device_id] = _DeviceTaskState(
+            task=task,
+            restart_count=restart_count,
+            last_restart=datetime.now(timezone.utc) if restart_count > 0 else None,
+        )
+        logger.info(
+            "Simulation started for device %s (interval=%.1fs, restart=%d)",
+            device_id, interval, restart_count,
+        )
+
+    def _on_task_done(self, device_id: UUID, task: asyncio.Task) -> None:
+        """Callback when a simulation task finishes unexpectedly."""
+        if task.cancelled():
+            return  # Normal stop via stop_device()
+
+        exc = task.exception()
+        if exc is None:
+            # Task returned normally (e.g. hit max consecutive errors).
+            # _run_device already called _set_device_error in that case.
+            self._device_states.pop(device_id, None)
+            return
+
+        state = self._device_states.get(device_id)
+        restart_count = (state.restart_count if state else 0) + 1
+
+        if restart_count > MAX_RESTART_ATTEMPTS:
+            logger.error(
+                "Device %s simulation crashed %d times, giving up: %s",
+                device_id, restart_count, exc,
+            )
+            self._device_states.pop(device_id, None)
+            asyncio.create_task(self._set_device_error(device_id))
+            return
+
+        delay = RESTART_BASE_DELAY_S * (2 ** (restart_count - 1))
+        logger.warning(
+            "Device %s simulation crashed (attempt %d/%d), restarting in %.1fs: %s",
+            device_id, restart_count, MAX_RESTART_ATTEMPTS, delay, exc,
+        )
+        asyncio.create_task(self._delayed_restart(device_id, restart_count, delay))
+
+    async def _delayed_restart(
+        self, device_id: UUID, restart_count: int, delay: float,
+    ) -> None:
+        """Restart a device simulation after a delay."""
+        await asyncio.sleep(delay)
+        # Clean up old state before restarting
+        self._device_states.pop(device_id, None)
+        try:
+            await self._launch_device_task(device_id, restart_count)
+        except Exception:
+            logger.exception(
+                "Failed to restart simulation for device %s", device_id,
+            )
+            await self._set_device_error(device_id)
 
     async def stop_device(self, device_id: UUID) -> None:
         """Stop simulation for a device."""
-        task = self._device_tasks.pop(device_id, None)
-        if task is not None:
-            task.cancel()
+        state = self._device_states.pop(device_id, None)
+        if state is not None:
+            state.task.cancel()
             try:
-                await task
+                await state.task
             except asyncio.CancelledError:
                 pass
             self._device_values.pop(device_id, None)
@@ -85,7 +165,7 @@ class SimulationEngine:
 
     def is_device_simulating(self, device_id: UUID) -> bool:
         """Check if a device has an active simulation task."""
-        return device_id in self._device_tasks
+        return device_id in self._device_states
 
     def get_current_values(self, device_id: UUID) -> dict[str, float]:
         """Get last generated values for a device (for monitoring)."""
@@ -93,8 +173,8 @@ class SimulationEngine:
 
     async def shutdown(self) -> None:
         """Cancel all simulation tasks concurrently."""
-        tasks = list(self._device_tasks.values())
-        self._device_tasks.clear()
+        tasks = [st.task for st in self._device_states.values()]
+        self._device_states.clear()
         for t in tasks:
             t.cancel()
         if tasks:
@@ -211,6 +291,7 @@ class SimulationEngine:
                     current_hour_utc=now_hour,
                 )
 
+                tick_had_error = False
                 for config in valid_configs:
                     reg = register_map[config.register_name]
 
@@ -237,22 +318,27 @@ class SimulationEngine:
                             "Error generating value for %s on device %s: %s",
                             config.register_name, device_id, e,
                         )
+                        tick_had_error = True
 
                 tick_count += 1
-                error_count = 0
+                if tick_had_error:
+                    error_count += 1
+                else:
+                    error_count = 0
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.error("Simulation tick failed for device %s: %s", device_id, e)
                 error_count += 1
-                if error_count >= 5:
-                    logger.error(
-                        "Device %s simulation stopped after %d consecutive errors",
-                        device_id, error_count,
-                    )
-                    await self._set_device_error(device_id)
-                    return
+
+            if error_count >= 5:
+                logger.error(
+                    "Device %s simulation stopped after %d consecutive errors",
+                    device_id, error_count,
+                )
+                await self._set_device_error(device_id)
+                return
 
             await asyncio.sleep(interval)
 
