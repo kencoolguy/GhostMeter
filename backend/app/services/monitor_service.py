@@ -75,7 +75,6 @@ class MonitorService:
             stmt = (
                 select(DeviceInstance)
                 .options(selectinload(DeviceInstance.template).selectinload(DeviceTemplate.registers))
-                .where(DeviceInstance.status != "stopped")
             )
             result = await session.execute(stmt)
             devices = result.scalars().all()
