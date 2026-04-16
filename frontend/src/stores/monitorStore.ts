@@ -83,7 +83,7 @@ export const useMonitorStore = create<MonitorState>((set) => ({
         events: update.events,
         registerHistory: newHistory,
         mqttBrokerConnected: update.mqtt_broker_connected,
-        recentToastEvent: newToast ?? state.recentToastEvent,
+        ...(newToast !== null ? { recentToastEvent: newToast } : {}),
       };
     });
   },

@@ -3,27 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deviceApi } from "../../services/deviceApi";
 import type { DeviceMonitorData, RegisterHistoryPoint } from "../../types";
+import { pickPrimaryAndSecondary } from "./pickPrimary";
 import { Sparkline } from "./Sparkline";
 
 interface DeviceCardProps {
   device: DeviceMonitorData;
   history: RegisterHistoryPoint[];
-}
-
-const PREFERRED = ["total_power", "ac_power", "total_energy"];
-
-function pickPrimaryAndSecondary(device: DeviceMonitorData) {
-  const names = device.registers.map((r) => r.name);
-  const primary =
-    PREFERRED.find((n) => names.includes(n)) ?? names[0] ?? null;
-  const secondary =
-    PREFERRED.find((n) => names.includes(n) && n !== primary) ??
-    names.find((n) => n !== primary) ??
-    null;
-  return {
-    primary: primary ? device.registers.find((r) => r.name === primary) ?? null : null,
-    secondary: secondary ? device.registers.find((r) => r.name === secondary) ?? null : null,
-  };
 }
 
 export function DeviceCard({ device, history }: DeviceCardProps) {
