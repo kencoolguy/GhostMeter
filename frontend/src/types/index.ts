@@ -50,6 +50,7 @@ export type {
   FaultInfo,
   MonitorEvent,
   MonitorUpdate,
+  MqttStats,
   RegisterData,
   RegisterHistoryPoint,
 } from "./monitor";
