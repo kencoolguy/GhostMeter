@@ -137,6 +137,7 @@ class MonitorService:
             devices_data.append({
                 "device_id": str(device_id),
                 "name": device.name,
+                "template_name": device.template.name if device.template else None,
                 "slave_id": device.slave_id,
                 "port": device.port,
                 "status": device.status,

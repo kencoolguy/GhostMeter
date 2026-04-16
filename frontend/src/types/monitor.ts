@@ -27,6 +27,7 @@ export interface FaultInfo {
 export interface DeviceMonitorData {
   device_id: string;
   name: string;
+  template_name: string | null;
   slave_id: number;
   port: number;
   status: string;

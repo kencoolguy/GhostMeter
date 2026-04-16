@@ -57,7 +57,7 @@ export function EmptyState() {
           {builtins.map((t) => (
             <span
               key={t.id}
-              onClick={() => navigate(`/devices?template=${t.id}`)}
+              onClick={() => navigate("/devices")}
               style={{
                 padding: "6px 12px",
                 background: "#121826",

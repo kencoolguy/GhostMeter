@@ -63,7 +63,7 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
     padding: 14,
     cursor: "pointer",
     position: "relative",
-    opacity: isStopped ? 0.55 : 1,
+    opacity: isStopped ? 0.45 : 1,
   };
 
   const onCardClick = () => {
@@ -97,6 +97,11 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
         </span>
         <span style={{ color: "#5f6b80", fontSize: 10 }}>slv {device.slave_id}</span>
       </div>
+      {device.template_name && (
+        <div style={{ color: "#5f6b80", fontSize: 10, marginTop: 2 }}>
+          {device.template_name}
+        </div>
+      )}
 
       {primary ? (
         <>
