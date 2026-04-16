@@ -15,11 +15,11 @@ import { useAppStore } from "../stores/appStore";
 const { Header, Sider, Content } = Layout;
 
 const menuItems = [
-  { key: "/templates", icon: <AppstoreOutlined />, label: "Templates" },
+  { key: "/monitor", icon: <DashboardOutlined />, label: "Monitor" },
   { key: "/devices", icon: <HddOutlined />, label: "Devices" },
+  { key: "/templates", icon: <AppstoreOutlined />, label: "Templates" },
   { key: "/simulation", icon: <ExperimentOutlined />, label: "Simulation" },
   { key: "/scenarios", icon: <ThunderboltOutlined />, label: "Scenarios" },
-  { key: "/monitor", icon: <DashboardOutlined />, label: "Monitor" },
   { key: "/settings", icon: <SettingOutlined />, label: "Settings" },
 ];
 
