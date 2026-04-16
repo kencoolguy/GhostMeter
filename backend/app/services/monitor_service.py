@@ -147,11 +147,21 @@ class MonitorService:
                 "mqtt_stats": mqtt_stats_data,
             })
 
+        # MQTT broker connection state
+        mqtt_adapter = protocol_manager.get_adapter("mqtt")
+        mqtt_broker_connected = False
+        if mqtt_adapter is not None:
+            try:
+                mqtt_broker_connected = bool(mqtt_adapter.get_status().get("connected", False))
+            except Exception:  # pragma: no cover — defensive
+                logger.warning("Failed to read MQTT adapter status", exc_info=True)
+
         return {
             "type": "monitor_update",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "devices": devices_data,
             "events": self.get_events(),
+            "mqtt_broker_connected": mqtt_broker_connected,
         }
 
 

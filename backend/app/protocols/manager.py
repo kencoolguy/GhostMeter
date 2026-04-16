@@ -62,9 +62,9 @@ class ProtocolManager:
         adapter = self._adapters[protocol]
         await adapter.remove_device(device_id)
 
-    def get_adapter(self, protocol: str) -> ProtocolAdapter:
-        """Get adapter by protocol name."""
-        return self._adapters[protocol]
+    def get_adapter(self, protocol: str) -> ProtocolAdapter | None:
+        """Get adapter by protocol name. Returns None if not registered."""
+        return self._adapters.get(protocol)
 
     def get_stats(self, protocol: str, device_id: UUID) -> DeviceStats | None:
         """Get device stats via the named adapter. Returns None if adapter not found."""

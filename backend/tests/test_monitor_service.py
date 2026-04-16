@@ -18,3 +18,12 @@ async def test_snapshot_includes_stopped_devices(client: AsyncClient) -> None:
 
     found = next(d for d in snapshot["devices"] if d["device_id"] == device["id"])
     assert found["status"] == "stopped"
+
+
+async def test_snapshot_includes_mqtt_broker_connected(client: AsyncClient) -> None:
+    """Snapshot must expose top-level mqtt_broker_connected boolean."""
+    snapshot = await monitor_service.get_snapshot()
+    assert "mqtt_broker_connected" in snapshot
+    assert isinstance(snapshot["mqtt_broker_connected"], bool)
+    # In test env the MQTT adapter has no broker configured → expect False
+    assert snapshot["mqtt_broker_connected"] is False
