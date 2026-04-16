@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Monitor 首頁重做：卡片網格 + KPI panel + sparkline + 即時值動畫 + Event toast/drawer (issue #29)
+- 完全沒設備時的引導空狀態（內建模板捷徑）
+- WebSocket monitor_update payload 新增 `mqtt_broker_connected` 欄位
+- DeviceMonitorData 新增 `mqtt_stats`、`template_name` 欄位
+
+### Changed
+- `/` route 改導向 `/monitor`（原 `/templates`）
+- 側邊欄 Monitor 移到第一位
+- Monitor service 不再 filter 掉 stopped 設備（卡片網格會淡化顯示）
+- DeviceCard 點擊行為改為跳轉 `/devices/{id}`（取代同頁展開 detail panel）
+- ProtocolManager.get_adapter() 改為回傳 Optional（呼叫端統一加 None check + RuntimeError）
+
+### Removed
+- `pages/Monitor/DeviceDetailPanel.tsx`、`RegisterChart.tsx`、`StatsPanel.tsx`、`EventLog.tsx`
+- monitorStore 的 `selectedDeviceId` / `selectDevice`
+
+### Previously Added
 - Auto-resume: backend now automatically resumes running devices on startup (registers in protocol adapters + restarts simulation engine)
 - Device Detail: register table now shows live values via WebSocket (replaces hard-coded null)
 - Device Detail: "Open in Monitor" button navigates to Monitor page with device auto-selected
