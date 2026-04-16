@@ -1,5 +1,4 @@
 import { App, Tag } from "antd";
-import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deviceApi } from "../../services/deviceApi";
 import type { DeviceMonitorData, RegisterHistoryPoint } from "../../types";
@@ -15,20 +14,6 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const { primary, secondary } = pickPrimaryAndSecondary(device);
-
-  // Value-flash detection
-  const lastPrimaryValueRef = useRef<number | null>(null);
-  const [flashKey, setFlashKey] = useState(0);
-  useEffect(() => {
-    if (!primary) return;
-    if (
-      lastPrimaryValueRef.current !== null &&
-      lastPrimaryValueRef.current !== primary.value
-    ) {
-      setFlashKey((k) => k + 1);
-    }
-    lastPrimaryValueRef.current = primary.value;
-  }, [primary]);
 
   const isStopped = device.status === "stopped";
   const isError = device.status === "error";
@@ -95,8 +80,8 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
               {primary.name}
             </span>
             <span
-              key={flashKey}
-              className={flashKey > 0 ? "gm-mon-value-flash" : undefined}
+              key={primary.value}
+              className="gm-mon-value-flash"
               style={{
                 color: isError ? "#fb7185" : "#22d3ee",
                 fontFamily: "'JetBrains Mono', monospace",
