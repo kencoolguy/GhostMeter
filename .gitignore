@@ -62,3 +62,6 @@ frontend/coverage/
 
 # MCP
 .mcp.json
+
+# Superpowers brainstorm
+.superpowers/
