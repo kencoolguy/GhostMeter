@@ -25,5 +25,5 @@ async def test_snapshot_includes_mqtt_broker_connected(client: AsyncClient) -> N
     snapshot = await monitor_service.get_snapshot()
     assert "mqtt_broker_connected" in snapshot
     assert isinstance(snapshot["mqtt_broker_connected"], bool)
-    # In test env the MQTT adapter has no broker configured → expect False
+    # Test env doesn't register the MQTT adapter → expect False
     assert snapshot["mqtt_broker_connected"] is False

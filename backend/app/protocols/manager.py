@@ -54,12 +54,16 @@ class ProtocolManager:
         registers: list[RegisterInfo],
     ) -> None:
         """Delegate add_device to the correct adapter."""
-        adapter = self._adapters[protocol]
+        adapter = self.get_adapter(protocol)
+        if adapter is None:
+            raise RuntimeError(f"Protocol adapter not registered: {protocol!r}")
         await adapter.add_device(device_id, slave_id, registers)
 
     async def remove_device(self, protocol: str, device_id: UUID) -> None:
         """Delegate remove_device to the correct adapter."""
-        adapter = self._adapters[protocol]
+        adapter = self.get_adapter(protocol)
+        if adapter is None:
+            raise RuntimeError(f"Protocol adapter not registered: {protocol!r}")
         await adapter.remove_device(device_id)
 
     def get_adapter(self, protocol: str) -> ProtocolAdapter | None:
