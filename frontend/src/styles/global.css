@@ -1,0 +1,210 @@
+/* ===== GhostMeter global styles ===== */
+
+:root {
+  color-scheme: dark;
+
+  --gm-bg-0: #0b0f17;
+  --gm-bg-1: #121826;
+  --gm-bg-2: #1a2030;
+  --gm-border: rgba(148, 163, 184, 0.12);
+  --gm-border-strong: rgba(148, 163, 184, 0.22);
+  --gm-text-1: #e6edf5;
+  --gm-text-2: #9aa5b8;
+  --gm-text-3: #5f6b80;
+  --gm-cyan: #22d3ee;
+  --gm-cyan-soft: rgba(34, 211, 238, 0.14);
+  --gm-emerald: #34d399;
+  --gm-coral: #fb7185;
+  --gm-amber: #fbbf24;
+  --gm-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  color: var(--gm-text-1);
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(34, 211, 238, 0.05), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 100% 20%, rgba(34, 211, 238, 0.03), transparent 60%),
+    var(--gm-bg-0);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mono numerals where they matter */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--gm-mono);
+}
+
+/* Scrollbar refinement */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.22);
+  background-clip: padding-box;
+}
+
+/* Selection */
+::selection {
+  background: rgba(34, 211, 238, 0.3);
+  color: #ffffff;
+}
+
+/* ===== GhostMeter MainLayout refinements ===== */
+
+.gm-sider {
+  border-right: 1px solid var(--gm-border);
+}
+
+.gm-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--gm-border);
+  margin-bottom: 8px;
+}
+
+.gm-brand-collapsed {
+  padding: 18px 0 16px;
+  justify-content: center;
+}
+
+.gm-brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
+  display: grid;
+  place-items: center;
+  font-family: var(--gm-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: #04101a;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+.gm-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.gm-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gm-text-1);
+  letter-spacing: -0.01em;
+}
+
+.gm-brand-tag {
+  font-family: var(--gm-mono);
+  font-size: 9.5px;
+  color: var(--gm-cyan);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.gm-header {
+  border-bottom: 1px solid var(--gm-border);
+  padding: 0 20px !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gm-header-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  font-family: var(--gm-mono);
+  font-size: 11px;
+  color: var(--gm-cyan);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gm-header-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gm-cyan);
+  box-shadow: 0 0 8px var(--gm-cyan);
+  animation: gm-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes gm-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(34, 211, 238, 0);
+  }
+}
+
+.gm-content {
+  margin: 20px !important;
+  padding: 24px !important;
+  background: var(--gm-bg-1) !important;
+  border: 1px solid var(--gm-border);
+  border-radius: 10px;
+}
+
+/* Subtle top-edge cyan line on content card */
+.gm-content {
+  position: relative;
+}
+
+.gm-content::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gm-cyan-soft), transparent);
+  pointer-events: none;
+}
+
+/* Make the AntD menu items feel a bit more spacious */
+.gm-sider .ant-menu-item {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.gm-sider .ant-menu-item-selected {
+  box-shadow: inset 2px 0 0 var(--gm-cyan);
+}
