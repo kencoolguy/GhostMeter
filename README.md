@@ -69,9 +69,24 @@ docker compose down -v
 
 # 強制重建 image（程式碼有改動時）
 docker compose up -d --build
+
+# 只重建前端（改了 frontend/ 時）
+docker compose up -d --build frontend
+# 或分兩步：先 build 再重啟
+docker compose build frontend
+docker compose up -d frontend
+
+# 只重建後端（改了 backend/ 時）
+docker compose up -d --build backend
+
+# 完全清掉快取重建（依賴有改、或 build 結果怪怪的時候）
+docker compose build --no-cache frontend
+docker compose up -d frontend
 ```
 
 > **注意**：`docker compose up -d` 不會重啟已在運行的 container。若需重啟請用 `docker compose restart`。
+>
+> **前端改完沒反應？** Nginx container 是 serve build 後的靜態檔，單純 `restart` 不會帶入新程式碼，必須 `--build`。
 
 > **資料庫被清空後恢復**：如果不小心跑了 `docker compose down -v`，需要手動重建 DB schema 再重啟：
 > ```bash
