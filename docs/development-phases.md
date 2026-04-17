@@ -223,6 +223,15 @@
 - [x] Anomaly injection panel: replaced raw JSON textarea with dynamic per-type param form
 - [x] Batch device name prefix spacing fix
 
+### Milestone 8.8：Monitor Redesign — Glance Dashboard (issue #29) ✅ Complete (2026-04-17)
+- [x] Monitor redesigned as glance dashboard: KPI panel, mid-density card grid, sparklines, value-flash animation, status dot pulse
+- [x] `/monitor` set as home route (`/` redirects to `/monitor`); Monitor moved to top of sidebar
+- [x] Stopped devices surfaced in grid (faded + Start shortcut); guided empty state when no devices exist
+- [x] Backend: include stopped devices in monitor snapshot; expose `mqtt_broker_connected`; per-device `template_name`
+- [x] Event toast notifications (3s auto-dismiss) + Drawer for accumulated history
+- [x] Refactor: shared `pickPrimary` helper module; `ProtocolManager.get_adapter` returns Optional with None checks at all call sites
+- [x] Removed DeviceDetailPanel, RegisterChart, StatsPanel, EventLog from Monitor page
+
 ### Milestone 8.7：Consolidation (in progress 🔄)
 - [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
 - [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)

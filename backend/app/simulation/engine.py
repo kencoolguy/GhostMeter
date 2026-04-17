@@ -261,6 +261,8 @@ class SimulationEngine:
         from app.simulation import anomaly_injector
 
         adapter = protocol_manager.get_adapter(protocol)
+        if adapter is None:
+            raise RuntimeError(f"Protocol adapter not registered: {protocol!r}")
         self._device_values[device_id] = {}
 
         # Sort and filter configs — warn once for missing registers

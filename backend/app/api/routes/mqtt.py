@@ -168,6 +168,8 @@ async def start_mqtt_publishing(
 
     try:
         mqtt_adapter = protocol_manager.get_adapter("mqtt")
+        if mqtt_adapter is None:
+            raise RuntimeError("MQTT protocol adapter is not registered")
         await mqtt_adapter.start_publishing(device_id, config)  # type: ignore[attr-defined]
     except Exception as e:
         # Revert enabled flag on failure
@@ -203,8 +205,10 @@ async def stop_mqtt_publishing(
 
     try:
         mqtt_adapter = protocol_manager.get_adapter("mqtt")
+        if mqtt_adapter is None:
+            raise RuntimeError("MQTT protocol adapter is not registered")
         await mqtt_adapter.stop_publishing(device_id)  # type: ignore[attr-defined]
-    except (KeyError, Exception):
+    except Exception:
         pass  # Best-effort stop
     return ApiResponse(data=MqttPublishConfigRead(
         device_id=str(config.device_id),

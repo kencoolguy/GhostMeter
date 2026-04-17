@@ -16,9 +16,19 @@ test.describe("Smoke Tests", () => {
     await expect(page.locator("text=Simulation")).toBeVisible();
   });
 
+  test("Root redirects to Monitor", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/monitor$/);
+    await expect(page.locator("text=Monitor").first()).toBeVisible();
+  });
+
   test("Monitor page loads", async ({ page }) => {
     await page.goto("/monitor");
-    await expect(page.locator("text=Monitor")).toBeVisible();
+    await expect(page.locator("text=Monitor").first()).toBeVisible();
+    // Either EmptyState or KPI tiles must render
+    const empty = page.locator("text=還沒有設備");
+    const kpi = page.locator("text=Running");
+    await expect(empty.or(kpi).first()).toBeVisible();
   });
 
   test("Settings page loads with export/import buttons", async ({ page }) => {

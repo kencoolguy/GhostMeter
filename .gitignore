@@ -62,3 +62,10 @@ frontend/coverage/
 
 # MCP
 .mcp.json
+
+# Superpowers brainstorm
+.superpowers/
+
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/

@@ -1,5 +1,29 @@
 # Development Log
 
+## 2026-04-17 — Monitor 首頁重做 (issue #29)
+
+### 做了什麼
+- 把 `/monitor` 從「卡片 + 點擊展開細節 + 底部 Event log」改成「KPI panel + 卡片網格（點擊跳細節頁） + Toast/Drawer」
+- 設為全站首頁、側邊欄第一順位
+- 加入 4 主 KPI（Running/Stopped/Errors/DPS）+ 條件式 pills（active anomalies/faults、MQTT broker）
+- 卡片包含：mid 密度（主指標大字 + sparkline + 副指標小字）、template name 副標、狀態燈動畫（running 呼吸/error 閃爍）、即時值更新 cyan glow flash、hover 上浮、stopped 淡化 + Start 快捷
+- Event 觸發 toast 通知（3 秒自動消失）+ Drawer 累積歷史
+- 完全空狀態引導（內建模板 chips + 建立 CTA）
+- 後端：移除 monitor snapshot 的 stopped filter；新增 `mqtt_broker_connected` top-level 欄位、每設備 `template_name`
+- 重構：`pickPrimary` register 選取邏輯抽出共用模組；`ProtocolManager.get_adapter` Optional 化 + 呼叫端 None check 統一
+
+### 為什麼
+- 對應 Phase UI #2（issue #29）— 把 Monitor 升級為視覺焦點
+- 解決 stopped 設備不可見導致使用者不知設備存在的問題
+- 把 register 細節分析職責還給 `/devices/{id}` 頁，Monitor 專心做 dashboard
+
+### 遇到的問題
+- Brainstorm 階段發現 issue #28（theme）的 PR 尚未 merge — 先 push + merge #28 後再 rebase monitor branch
+- Code review 發現 `pickPrimary` 在 DeviceCard / DeviceCardGrid 重複定義可能 silently diverge → 抽出共用模組
+- Code review 發現 monitorStore toast race（dismiss 後新 tick 可能讓 toast 復活）→ 改用 spread-only-if-newToast pattern
+
+---
+
 ## 2026-04-10 — Isolate test database from production
 
 ### What was done

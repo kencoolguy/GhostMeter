@@ -75,7 +75,6 @@ class MonitorService:
             stmt = (
                 select(DeviceInstance)
                 .options(selectinload(DeviceInstance.template).selectinload(DeviceTemplate.registers))
-                .where(DeviceInstance.status != "stopped")
             )
             result = await session.execute(stmt)
             devices = result.scalars().all()
@@ -138,6 +137,7 @@ class MonitorService:
             devices_data.append({
                 "device_id": str(device_id),
                 "name": device.name,
+                "template_name": device.template.name if device.template else None,
                 "slave_id": device.slave_id,
                 "port": device.port,
                 "status": device.status,
@@ -148,11 +148,21 @@ class MonitorService:
                 "mqtt_stats": mqtt_stats_data,
             })
 
+        # MQTT broker connection state
+        mqtt_adapter = protocol_manager.get_adapter("mqtt")
+        mqtt_broker_connected = False
+        if mqtt_adapter is not None:
+            try:
+                mqtt_broker_connected = bool(mqtt_adapter.get_status().get("connected", False))
+            except Exception:  # pragma: no cover — defensive
+                logger.warning("Failed to read MQTT adapter status", exc_info=True)
+
         return {
             "type": "monitor_update",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "devices": devices_data,
             "events": self.get_events(),
+            "mqtt_broker_connected": mqtt_broker_connected,
         }
 
 

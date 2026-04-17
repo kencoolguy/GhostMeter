@@ -25,7 +25,7 @@ function App() {
         <Route path="/scenarios" element={<ScenariosPage />} />
         <Route path="/monitor" element={<MonitorPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/" element={<Navigate to="/templates" replace />} />
+        <Route path="/" element={<Navigate to="/monitor" replace />} />
       </Route>
     </Routes>
   );
