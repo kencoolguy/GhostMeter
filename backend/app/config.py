@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     SNMP_PORT: int = 10161
     SNMP_COMMUNITY: str = "public"
 
+    # OPC UA
+    OPCUA_HOST: str = "0.0.0.0"
+    OPCUA_PORT: int = 4840
+    OPCUA_ENDPOINT_PATH: str = "/ghostmeter/server/"
+    OPCUA_SERVER_NAME: str = "GhostMeter OPC UA Server"
+    OPCUA_NAMESPACE_URI: str = "http://ghostmeter.local/opcua/"
+
     # Direct override (takes precedence if set)
     DATABASE_URL: str | None = None
 

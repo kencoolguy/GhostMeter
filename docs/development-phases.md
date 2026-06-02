@@ -232,6 +232,14 @@
 - [x] Refactor: shared `pickPrimary` helper module; `ProtocolManager.get_adapter` returns Optional with None checks at all call sites
 - [x] Removed DeviceDetailPanel, RegisterChart, StatsPanel, EventLog from Monitor page
 
+### Milestone 8.9：OPC UA Server Adapter ✅
+- [x] OpcUaAdapter extending ProtocolAdapter (asyncua, single shared server, Anonymous/None)
+- [x] Push value-sync: simulation engine update_register → variable node; subscriptions fire automatically
+- [x] RegisterInfo extended with name/unit; device name via set_device_meta pre-add hook
+- [x] Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile
+- [x] Frontend OPC UA protocol option; docker-compose port 4840
+- [x] Integration tests: server lifecycle, node CRUD, typed value round-trip, subscription, device wiring
+
 ### Milestone 8.7：Consolidation (in progress 🔄)
 - [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
 - [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)

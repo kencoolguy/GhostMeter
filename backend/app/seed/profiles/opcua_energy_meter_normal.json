@@ -1,0 +1,19 @@
+{
+  "template_name": "Energy Meter (OPC UA)",
+  "name": "Normal Operation",
+  "description": "Physically consistent three-phase meter: ~220V per phase, daily load curve on current, power computed from V*I*PF across phases, frequency ~50Hz, energy accumulating.",
+  "is_default": true,
+  "configs": [
+    {"register_name": "voltage_l1", "data_mode": "random", "mode_params": {"base": 220, "amplitude": 3, "distribution": "gaussian"}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "voltage_l2", "data_mode": "random", "mode_params": {"base": 220, "amplitude": 3, "distribution": "gaussian"}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "voltage_l3", "data_mode": "random", "mode_params": {"base": 220, "amplitude": 3, "distribution": "gaussian"}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "current_l1", "data_mode": "daily_curve", "mode_params": {"base": 8, "amplitude": 6, "peak_hour": 14}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "current_l2", "data_mode": "daily_curve", "mode_params": {"base": 8, "amplitude": 6, "peak_hour": 14}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "current_l3", "data_mode": "daily_curve", "mode_params": {"base": 8, "amplitude": 6, "peak_hour": 14}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "power_factor", "data_mode": "random", "mode_params": {"base": 0.95, "amplitude": 0.03, "distribution": "gaussian"}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "active_power_total", "data_mode": "computed", "mode_params": {"expression": "({voltage_l1}*{current_l1} + {voltage_l2}*{current_l2} + {voltage_l3}*{current_l3}) * {power_factor}"}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "frequency", "data_mode": "random", "mode_params": {"base": 50, "amplitude": 0.05, "distribution": "gaussian"}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "energy_total", "data_mode": "accumulator", "mode_params": {"start_value": 0, "increment_per_second": 0.01}, "update_interval_ms": 1000, "is_enabled": true},
+    {"register_name": "status", "data_mode": "static", "mode_params": {"value": 0}, "update_interval_ms": 5000, "is_enabled": true}
+  ]
+}
