@@ -279,6 +279,9 @@ class TestOpcUaRemoveDevice:
             assert status["device_count"] == 0
             assert status["node_count"] == 0
 
+            # _device_meta must be cleaned up (no leak)
+            assert device_id not in adapter._device_meta
+
             url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
             async with Client(url=url) as client:
                 ns = await client.get_namespace_index(
@@ -287,6 +290,50 @@ class TestOpcUaRemoveDevice:
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
                 with pytest.raises(BadNoMatch):
                     await gm.get_child([f"{ns}:Gone"])
+        finally:
+            await adapter.stop()
+
+
+class TestOpcUaOutOfRangeClamping:
+    @pytest.mark.parametrize(
+        "data_type,written,expected",
+        [
+            ("int16", 99999.0, 32767),
+            ("int16", -99999.0, -32768),
+            ("uint16", -5.0, 0),
+            ("uint16", 99999.0, 65535),
+            ("int32", 9e12, 2147483647),
+            ("uint32", -1.0, 0),
+            ("float32", 1e40, 3.4028234663852886e38),
+            ("float32", -1e40, -3.4028234663852886e38),
+        ],
+    )
+    async def test_out_of_range_value_stays_client_readable(self, data_type, written, expected):
+        """An out-of-range value (as anomaly injection produces) must be clamped
+        so the node remains readable by clients (pre-fix this raised BadInternalError)."""
+        from asyncua import Client
+
+        from app.protocols.base import RegisterInfo
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        device_id = uuid.uuid4()
+        regs = [RegisterInfo(0, 3, data_type, "big_endian", name="value")]
+        try:
+            adapter.set_device_meta(device_id, "Clamp")
+            await adapter.add_device(device_id, 1, regs)
+            await adapter.update_register(device_id, 0, 3, written, data_type, "big_endian")
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                ns = await client.get_namespace_index("http://ghostmeter.local/opcua/")
+                gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                dev = await gm.get_child([f"{ns}:Clamp"])
+                var = await dev.get_child([f"{ns}:value"])
+                read = await var.read_value()   # pre-fix: raises BadInternalError
+                assert abs(float(read) - float(expected)) <= abs(expected) * 1e-6 + 1e-6
         finally:
             await adapter.stop()
 

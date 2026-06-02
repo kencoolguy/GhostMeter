@@ -9,6 +9,7 @@ Security: SecurityPolicy None + Anonymous (MVP).
 """
 
 import logging
+import math
 from uuid import UUID
 
 from asyncua import Server, ua
@@ -27,6 +28,37 @@ _TYPE_MAP: dict[str, tuple[ua.VariantType, type]] = {
     "float32": (ua.VariantType.Float, float),
     "float64": (ua.VariantType.Double, float),
 }
+
+# Writable integer ranges per Variant type (clamp targets)
+_INT_RANGES: dict[ua.VariantType, tuple[int, int]] = {
+    ua.VariantType.Int16: (-32768, 32767),
+    ua.VariantType.UInt16: (0, 65535),
+    ua.VariantType.Int32: (-2147483648, 2147483647),
+    ua.VariantType.UInt32: (0, 4294967295),
+}
+_FLOAT32_MAX = 3.4028234663852886e38
+
+
+def _coerce_to_range(value: float, vtype: ua.VariantType) -> float | int:
+    """Clamp/saturate a value into the range writable for an OPC UA Variant type.
+
+    Out-of-range values (reachable via anomaly injection) would write but then
+    fail every client read with a server-side struct error, so we clamp to keep
+    the node readable. Double is unconstrained (Python float is 64-bit already).
+    """
+    num = float(value)
+    if vtype in _INT_RANGES:
+        if math.isnan(num):
+            return 0
+        lo, hi = _INT_RANGES[vtype]
+        if num <= lo:
+            return lo
+        if num >= hi:
+            return hi
+        return int(num)
+    if vtype == ua.VariantType.Float and not math.isnan(num):
+        return max(-_FLOAT32_MAX, min(_FLOAT32_MAX, num))
+    return num
 
 
 class OpcUaAdapter(ProtocolAdapter):
@@ -141,6 +173,7 @@ class OpcUaAdapter(ProtocolAdapter):
         self._nodes = {
             key: node for key, node in self._nodes.items() if key[0] != device_id
         }
+        self._device_meta.pop(device_id, None)
         logger.info("OPC UA: removed device %s", device_id)
 
     async def update_register(
@@ -160,8 +193,8 @@ class OpcUaAdapter(ProtocolAdapter):
                 device_id, address, function_code,
             )
             return
-        vtype, caster = _TYPE_MAP.get(data_type, (ua.VariantType.Double, float))
-        await node.write_value(ua.Variant(caster(value), vtype))
+        vtype, _caster = _TYPE_MAP.get(data_type, (ua.VariantType.Double, float))
+        await node.write_value(ua.Variant(_coerce_to_range(value, vtype), vtype))
 
     def set_device_meta(self, device_id: UUID, device_name: str) -> None:
         """Set the display name used for a device's Object node.
