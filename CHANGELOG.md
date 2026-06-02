@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Batch device name prefix: removed extra space between prefix and slave ID (e.g. "Meter1" instead of "Meter 1")
 
 ### Fixed
+- Pinned `pymodbus>=3.12,<3.13`: the unbounded `>=3.12` constraint resolved to 3.13.0 on fresh installs (CI / container rebuild), whose `ModbusServerContext(devices={})` change broke the Modbus TCP server and its tests. Capped to the 3.12.x line until the adapter is adapted to 3.13.
 - Simulation engine crash recovery: tasks that crash (e.g. network disconnection) now auto-restart with exponential backoff (max 5 attempts), and DB status correctly updates to "error" when recovery fails
 - Inner adapter errors (e.g. pymodbus write failures) now count toward consecutive error threshold, preventing silent simulation death while device status stays "running"
 - **Test suite now uses an isolated `ghostmeter_test` database** instead of running TRUNCATE on the production database — previously, running pytest inside the backend container would wipe all production data
