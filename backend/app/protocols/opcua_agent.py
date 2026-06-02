@@ -51,7 +51,7 @@ class OpcUaAdapter(ProtocolAdapter):
         self._folder = None  # GhostMeter parent folder node
         self._running = False
         self._device_objects: dict[UUID, object] = {}          # device_id → Object node
-        self._nodes: dict[tuple[UUID, int, int], object] = {}  # (device_id, addr, fc) → Variable node
+        self._nodes: dict[tuple[UUID, int, int], object] = {}  # (dev, addr, fc) → node
         self._device_meta: dict[UUID, str] = {}                # device_id → display name
 
     async def start(self) -> None:

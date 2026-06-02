@@ -255,7 +255,7 @@ class TestOpcUaSubscription:
 
 class TestOpcUaRemoveDevice:
     async def test_remove_device_clears_nodes(self):
-        from asyncua import Client, ua
+        from asyncua import Client
         from asyncua.ua.uaerrors import BadNoMatch
 
         from app.protocols.base import RegisterInfo

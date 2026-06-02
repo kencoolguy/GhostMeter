@@ -342,7 +342,7 @@ class OpcUaAdapter(ProtocolAdapter):
         self._folder = None  # GhostMeter parent folder node
         self._running = False
         self._device_objects: dict[UUID, object] = {}          # device_id → Object node
-        self._nodes: dict[tuple[UUID, int, int], object] = {}  # (device_id, addr, fc) → Variable node
+        self._nodes: dict[tuple[UUID, int, int], object] = {}  # (dev, addr, fc) → node
         self._device_meta: dict[UUID, str] = {}                # device_id → display name
 
     async def start(self) -> None:
@@ -769,7 +769,7 @@ Append to `backend/tests/test_opcua_adapter.py`:
 ```python
 class TestOpcUaRemoveDevice:
     async def test_remove_device_clears_nodes(self):
-        from asyncua import Client, ua
+        from asyncua import Client
         from asyncua.ua.uaerrors import BadNoMatch
 
         from app.protocols.base import RegisterInfo
