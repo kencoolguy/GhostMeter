@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile
 - OPC UA protocol option in template creation
 - OPC UA server port 4840 exposed in docker-compose
+- OPC UA out-of-range values (e.g. from anomaly injection) are clamped to the node's Variant type range, so an over-range value saturates instead of making the node unreadable for clients
+- OPC UA device nodes are browse-addressable with a `(#slave_id)` qualifier, keeping same-named devices distinct in the address space
 - Monitor 首頁重做：卡片網格 + KPI panel + sparkline + 即時值動畫 + Event toast/drawer (issue #29)
 - 完全沒設備時的引導空狀態（內建模板捷徑）
 - WebSocket monitor_update payload 新增 `mqtt_broker_connected` 欄位
