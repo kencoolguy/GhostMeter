@@ -209,7 +209,7 @@ In `backend/app/config.py`, immediately after the SNMP block (line 35, after `SN
 
 - [ ] **Step 4: Add to .env.example**
 
-In `backend/.env.example`, add (near the SNMP vars if present, otherwise at the end):
+In the canonical root `.env.example` (NOT `backend/.env.example` — config uses `env_file="../.env"` and the README references the root file), add after the Modbus block:
 
 ```
 # OPC UA
