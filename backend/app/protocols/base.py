@@ -13,7 +13,9 @@ class RegisterInfo:
     function_code: int  # 3=holding, 4=input
     data_type: str      # int16, uint16, int32, uint32, float32, float64
     byte_order: str     # big_endian, little_endian, etc.
-    oid: str | None = None  # SNMP OID string, null for Modbus
+    oid: str | None = None   # SNMP OID string, null for Modbus
+    name: str | None = None  # register name → OPC UA browse/display name
+    unit: str | None = None  # → OPC UA node Description (interim EngineeringUnits)
 
 
 @dataclass
