@@ -289,3 +289,65 @@ class TestOpcUaRemoveDevice:
                     await gm.get_child([f"{ns}:Gone"])
         finally:
             await adapter.stop()
+
+
+class TestOpcUaDeviceWiring:
+    async def test_started_device_appears_as_named_nodes(self, client):
+        """Creating + starting an opcua device registers named nodes via device_service.
+
+        Proves the glue: device_service builds RegisterInfo with name/unit and
+        calls set_device_meta before add_device.
+        """
+        from asyncua import Client
+
+        from app.protocols import protocol_manager
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        protocol_manager.register_adapter("opcua", adapter)
+        await protocol_manager.start_all()  # only opcua is registered in test process
+        try:
+            # Create an OPC UA template via the API
+            tpl_resp = await client.post("/api/v1/templates", json={
+                "name": "Wire-OPCUA",
+                "protocol": "opcua",
+                "registers": [
+                    {"name": "voltage_l1", "address": 0, "function_code": 3,
+                     "data_type": "float32", "byte_order": "big_endian",
+                     "scale_factor": 1.0, "unit": "V", "sort_order": 0},
+                    {"name": "active_power_total", "address": 1, "function_code": 3,
+                     "data_type": "float32", "byte_order": "big_endian",
+                     "scale_factor": 1.0, "unit": "W", "sort_order": 1},
+                ],
+            })
+            assert tpl_resp.status_code == 201
+            template_id = tpl_resp.json()["data"]["id"]
+
+            dev_resp = await client.post("/api/v1/devices", json={
+                "name": "MyOpcMeter",
+                "template_id": template_id,
+                "slave_id": 1,
+                "port": 4840,
+            })
+            assert dev_resp.status_code == 201
+            device_id = dev_resp.json()["data"]["id"]
+
+            start_resp = await client.post(f"/api/v1/devices/{device_id}/start")
+            assert start_resp.status_code == 200
+
+            assert adapter.get_status()["device_count"] == 1
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as opc:
+                ns = await opc.get_namespace_index(
+                    "http://ghostmeter.local/opcua/"
+                )
+                gm = await opc.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                dev = await gm.get_child([f"{ns}:MyOpcMeter"])     # proves set_device_meta
+                var = await dev.get_child([f"{ns}:voltage_l1"])    # proves RegisterInfo.name
+                val = await var.read_value()
+                assert isinstance(val, (int, float))
+        finally:
+            await protocol_manager.stop_all()
+            protocol_manager._adapters.pop("opcua", None)

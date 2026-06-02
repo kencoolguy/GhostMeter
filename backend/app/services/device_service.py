@@ -330,9 +330,17 @@ async def start_device(
             data_type=reg.data_type,
             byte_order=reg.byte_order,
             oid=reg.oid,
+            name=reg.name,
+            unit=reg.unit,
         )
         for reg in template.registers
     ]
+
+    # OPC UA needs the device display name before the Object node is created
+    if template.protocol == "opcua" and protocol_manager.is_running:
+        opcua_adapter = protocol_manager.get_adapter("opcua")
+        if opcua_adapter is not None:
+            opcua_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
 
     # Register device in protocol adapter
     if protocol_manager.is_running:

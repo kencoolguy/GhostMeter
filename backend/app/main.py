@@ -29,6 +29,7 @@ from app.protocols import protocol_manager
 from app.protocols.base import RegisterInfo
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.mqtt_adapter import MqttAdapter
+from app.protocols.opcua_agent import OpcUaAdapter
 from app.protocols.snmp_agent import SnmpAdapter
 from app.seed.loader import seed_builtin_profiles, seed_builtin_scenarios, seed_builtin_templates
 from app.services.template_service import get_template as get_template_with_registers
@@ -83,6 +84,16 @@ async def lifespan(app: FastAPI):
     )
     protocol_manager.register_adapter("snmp", snmp_adapter)
 
+    # Register OPC UA adapter
+    opcua_adapter = OpcUaAdapter(
+        host=settings.OPCUA_HOST,
+        port=settings.OPCUA_PORT,
+        endpoint_path=settings.OPCUA_ENDPOINT_PATH,
+        server_name=settings.OPCUA_SERVER_NAME,
+        namespace_uri=settings.OPCUA_NAMESPACE_URI,
+    )
+    protocol_manager.register_adapter("opcua", opcua_adapter)
+
     await protocol_manager.start_all()
     logger.info("Protocol manager started")
 
@@ -104,9 +115,13 @@ async def lifespan(app: FastAPI):
                         data_type=reg.data_type,
                         byte_order=reg.byte_order,
                         oid=reg.oid,
+                        name=reg.name,
+                        unit=reg.unit,
                     )
                     for reg in template.registers
                 ]
+                if template.protocol == "opcua":
+                    opcua_adapter.set_device_meta(device.id, device.name)
                 await protocol_manager.add_device(
                     template.protocol, device.id, device.slave_id, register_infos,
                 )
