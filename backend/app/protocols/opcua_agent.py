@@ -95,7 +95,40 @@ class OpcUaAdapter(ProtocolAdapter):
         slave_id: int,
         registers: list[RegisterInfo],
     ) -> None:
-        """Placeholder — implemented in Task 5."""
+        """Create an Object node for the device and a Variable node per register."""
+        if self._server is None or self._folder is None:
+            raise RuntimeError("OPC UA server not started")
+
+        display_name = self._device_meta.get(device_id) or f"Device_{slave_id}"
+        dev_obj = await self._folder.add_object(self._ns_idx, display_name)
+        self._device_objects[device_id] = dev_obj
+
+        for reg in registers:
+            node_name = reg.name or f"reg_{reg.address}"
+            vtype, caster = _TYPE_MAP.get(reg.data_type, (ua.VariantType.Double, float))
+            var = await dev_obj.add_variable(
+                self._ns_idx,
+                node_name,
+                caster(0),
+                varianttype=vtype,
+            )
+            # Unit → node Description (best-effort; non-critical for MVP)
+            if reg.unit:
+                try:
+                    await var.write_attribute(
+                        ua.AttributeIds.Description,
+                        ua.DataValue(ua.Variant(
+                            ua.LocalizedText(reg.unit), ua.VariantType.LocalizedText
+                        )),
+                    )
+                except Exception:
+                    logger.debug("Could not set Description for %s", node_name)
+            self._nodes[(device_id, reg.address, reg.function_code)] = var
+
+        logger.info(
+            "OPC UA: added device %s (%s) with %d nodes",
+            display_name, device_id, len(registers),
+        )
 
     async def _do_remove_device(self, device_id: UUID) -> None:
         """Placeholder — implemented in Task 8."""
