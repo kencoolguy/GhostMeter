@@ -117,7 +117,7 @@ class TestOpcUaAddDevice:
                     "http://ghostmeter.local/opcua/"
                 )
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
-                dev = await gm.get_child([f"{ns}:Test Meter"])
+                dev = await gm.get_child([f"{ns}:Test Meter (#1)"])
                 var = await dev.get_child([f"{ns}:voltage_l1"])
                 assert await var.read_value() == 0.0
         finally:
@@ -145,6 +145,39 @@ class TestOpcUaAddDevice:
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
                 dev = await gm.get_child([f"{ns}:Device_7"])
                 assert dev is not None
+        finally:
+            await adapter.stop()
+
+
+    async def test_duplicate_names_are_independently_addressable(self):
+        """Two devices sharing a name must both be reachable by browse (issue #2)."""
+        from asyncua import Client
+
+        from app.protocols.base import RegisterInfo
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        dev_a = uuid.uuid4()
+        dev_b = uuid.uuid4()
+        regs = [RegisterInfo(0, 3, "float32", "big_endian", name="v")]
+        try:
+            adapter.set_device_meta(dev_a, "Meter")
+            adapter.set_device_meta(dev_b, "Meter")
+            await adapter.add_device(dev_a, 1, regs)
+            await adapter.add_device(dev_b, 2, regs)
+            await adapter.update_register(dev_a, 0, 3, 10.0, "float32", "big_endian")
+            await adapter.update_register(dev_b, 0, 3, 20.0, "float32", "big_endian")
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                ns = await client.get_namespace_index("http://ghostmeter.local/opcua/")
+                gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                a = await (await gm.get_child([f"{ns}:Meter (#1)"])).get_child([f"{ns}:v"])
+                b = await (await gm.get_child([f"{ns}:Meter (#2)"])).get_child([f"{ns}:v"])
+                assert abs(await a.read_value() - 10.0) < 0.01
+                assert abs(await b.read_value() - 20.0) < 0.01
         finally:
             await adapter.stop()
 
@@ -183,7 +216,7 @@ class TestOpcUaUpdateRegister:
                     "http://ghostmeter.local/opcua/"
                 )
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
-                dev = await gm.get_child([f"{ns}:DT"])
+                dev = await gm.get_child([f"{ns}:DT (#1)"])
                 var = await dev.get_child([f"{ns}:value"])
                 read = await var.read_value()
                 assert abs(read - expected) < 0.01
@@ -231,7 +264,7 @@ class TestOpcUaSubscription:
                     "http://ghostmeter.local/opcua/"
                 )
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
-                dev = await gm.get_child([f"{ns}:SubMeter"])
+                dev = await gm.get_child([f"{ns}:SubMeter (#1)"])
                 var = await dev.get_child([f"{ns}:voltage"])
 
                 handler = _SubHandler()
@@ -289,7 +322,7 @@ class TestOpcUaRemoveDevice:
                 )
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
                 with pytest.raises(BadNoMatch):
-                    await gm.get_child([f"{ns}:Gone"])
+                    await gm.get_child([f"{ns}:Gone (#1)"])
         finally:
             await adapter.stop()
 
@@ -330,7 +363,7 @@ class TestOpcUaOutOfRangeClamping:
             async with Client(url=url) as client:
                 ns = await client.get_namespace_index("http://ghostmeter.local/opcua/")
                 gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
-                dev = await gm.get_child([f"{ns}:Clamp"])
+                dev = await gm.get_child([f"{ns}:Clamp (#1)"])
                 var = await dev.get_child([f"{ns}:value"])
                 read = await var.read_value()   # pre-fix: raises BadInternalError
                 assert abs(float(read) - float(expected)) <= abs(expected) * 1e-6 + 1e-6
@@ -391,7 +424,7 @@ class TestOpcUaDeviceWiring:
                     "http://ghostmeter.local/opcua/"
                 )
                 gm = await opc.nodes.objects.get_child([f"{ns}:GhostMeter"])
-                dev = await gm.get_child([f"{ns}:MyOpcMeter"])     # proves set_device_meta
+                dev = await gm.get_child([f"{ns}:MyOpcMeter (#1)"])     # proves set_device_meta
                 var = await dev.get_child([f"{ns}:voltage_l1"])    # proves RegisterInfo.name
                 val = await var.read_value()
                 assert isinstance(val, (int, float))

@@ -131,7 +131,8 @@ class OpcUaAdapter(ProtocolAdapter):
         if self._server is None or self._folder is None:
             raise RuntimeError("OPC UA server not started")
 
-        display_name = self._device_meta.get(device_id) or f"Device_{slave_id}"
+        meta_name = self._device_meta.get(device_id)
+        display_name = f"{meta_name} (#{slave_id})" if meta_name else f"Device_{slave_id}"
         dev_obj = await self._folder.add_object(self._ns_idx, display_name)
         self._device_objects[device_id] = dev_obj
 
