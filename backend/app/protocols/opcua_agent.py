@@ -131,7 +131,17 @@ class OpcUaAdapter(ProtocolAdapter):
         )
 
     async def _do_remove_device(self, device_id: UUID) -> None:
-        """Placeholder — implemented in Task 8."""
+        """Delete the device's Object node (and child variables) and clear maps."""
+        dev_obj = self._device_objects.pop(device_id, None)
+        if dev_obj is not None and self._server is not None:
+            try:
+                await self._server.delete_nodes([dev_obj], recursive=True)
+            except Exception:
+                logger.debug("Error deleting OPC UA nodes for %s", device_id, exc_info=True)
+        self._nodes = {
+            key: node for key, node in self._nodes.items() if key[0] != device_id
+        }
+        logger.info("OPC UA: removed device %s", device_id)
 
     async def update_register(
         self,

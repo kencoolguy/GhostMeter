@@ -251,3 +251,41 @@ class TestOpcUaSubscription:
                 )
         finally:
             await adapter.stop()
+
+
+class TestOpcUaRemoveDevice:
+    async def test_remove_device_clears_nodes(self):
+        from asyncua import Client, ua
+        from asyncua.ua.uaerrors import BadNoMatch
+
+        from app.protocols.base import RegisterInfo
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        device_id = uuid.uuid4()
+        regs = [
+            RegisterInfo(0, 3, "float32", "big_endian", name="voltage_l1"),
+            RegisterInfo(1, 3, "float32", "big_endian", name="voltage_l2"),
+        ]
+        try:
+            adapter.set_device_meta(device_id, "Gone")
+            await adapter.add_device(device_id, 1, regs)
+            assert adapter.get_status()["node_count"] == 2
+
+            await adapter.remove_device(device_id)
+            status = adapter.get_status()
+            assert status["device_count"] == 0
+            assert status["node_count"] == 0
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                ns = await client.get_namespace_index(
+                    "http://ghostmeter.local/opcua/"
+                )
+                gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                with pytest.raises(BadNoMatch):
+                    await gm.get_child([f"{ns}:Gone"])
+        finally:
+            await adapter.stop()
