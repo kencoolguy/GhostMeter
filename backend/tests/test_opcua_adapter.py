@@ -52,3 +52,37 @@ class TestOpcUaSettings:
         assert s.OPCUA_HOST == "0.0.0.0"
         assert s.OPCUA_NAMESPACE_URI == "http://ghostmeter.local/opcua/"
         assert s.OPCUA_ENDPOINT_PATH == "/ghostmeter/server/"
+
+
+class TestOpcUaLifecycle:
+    async def test_initial_status(self):
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        adapter = OpcUaAdapter(host="127.0.0.1", port=_free_port())
+        status = adapter.get_status()
+        assert status["running"] is False
+        assert status["device_count"] == 0
+        assert status["node_count"] == 0
+
+    async def test_start_then_client_can_connect(self):
+        from asyncua import Client
+
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        try:
+            assert adapter.get_status()["running"] is True
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                ns = await client.get_namespace_index(
+                    "http://ghostmeter.local/opcua/"
+                )
+                assert ns >= 0
+                # GhostMeter folder exists under Objects
+                folder = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                assert folder is not None
+        finally:
+            await adapter.stop()
+        assert adapter.get_status()["running"] is False
