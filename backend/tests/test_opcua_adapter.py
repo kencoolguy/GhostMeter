@@ -41,3 +41,14 @@ class TestRegisterInfoExtension:
         reg = RegisterInfo(0, 3, "float32", "big_endian")
         assert reg.name is None
         assert reg.unit is None
+
+
+class TestOpcUaSettings:
+    async def test_opcua_settings_defaults(self):
+        from app.config import get_settings
+
+        s = get_settings()
+        assert s.OPCUA_PORT == 4840
+        assert s.OPCUA_HOST == "0.0.0.0"
+        assert s.OPCUA_NAMESPACE_URI == "http://ghostmeter.local/opcua/"
+        assert s.OPCUA_ENDPOINT_PATH == "/ghostmeter/server/"
