@@ -30,7 +30,7 @@
 - `backend/app/protocols/opcua_agent.py` — new OpcUaAdapter
 - `backend/app/protocols/base.py` — RegisterInfo name/unit
 - `backend/app/config.py` — OPC UA settings
-- `backend/app/.env.example` — OPC UA env vars
+- `.env.example` (repo root) — OPC UA env vars
 - `backend/app/main.py` — register adapter + resume-path wiring
 - `backend/app/services/device_service.py` — set_device_meta + RegisterInfo name/unit
 - `backend/app/seed/opcua_energy_meter.json` — built-in OPC UA template
@@ -46,6 +46,17 @@
 - 299/299 backend tests passed (pytest -q)
 - ruff lint clean
 - Frontend tsc -b: no errors; npm run build: succeeded
+
+### Post-review hardening (final code review, same day)
+- **Out-of-range values bricked nodes (critical):** values outside a register's numeric type range (reachable via anomaly injection — `out_of_range` / `spike` / `drift`) were written into typed Variant nodes without clamping; asyncua stored them but every subsequent client read failed server-side (`BadInternalError` from `struct.error` / `OverflowError`). Fixed with `_coerce_to_range()` clamping in `update_register`; regression-tested across all int/float types. (Modbus is immune — values are masked into 16-bit registers — so this was OPC-UA-specific.)
+- **Duplicate-name browse collision:** device `name` is not unique in the DB (only `slave_id`+`port` is), so two same-named devices shared a BrowseName and the second became invisible to browse clients. Fixed with a `(#slave_id)` qualifier on the Object node name.
+- **`_device_meta` leak:** not cleaned on device removal; fixed.
+- Final verification after hardening: **308/308** backend tests, ruff clean.
+
+### Merge & follow-up (PRs #33–#35)
+- **PR #33** — OPC UA adapter merged to `dev`.
+- **PR #34** — pinned `pymodbus>=3.12,<3.13`. The unbounded `>=3.12` resolved to 3.13.0 on fresh installs (CI / container rebuild), and 3.13's `ModbusServerContext(devices={})` change broke the Modbus TCP server (it starts empty and adds slaves dynamically) and its tests. Surfaced while building a host venv for the OPC UA work. Verified the pin fresh-resolves to 3.12.1 with the Modbus suite green. **Deferred follow-up:** migrate the Modbus adapter to the 3.13 `ModbusServerContext` API so the cap can be lifted.
+- **PR #35** — marked Milestone 8.9 as merged in `development-phases.md`.
 
 ---
 
