@@ -203,3 +203,51 @@ class TestOpcUaUpdateRegister:
             )
         finally:
             await adapter.stop()
+
+
+class TestOpcUaSubscription:
+    async def test_subscription_fires_on_value_change(self):
+        """A subscribed client receives a notification when update_register runs.
+
+        This is the core OPC UA value-add: the push model makes Subscribe work.
+        """
+        from asyncua import Client
+
+        from app.protocols.base import RegisterInfo
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        device_id = uuid.uuid4()
+        regs = [RegisterInfo(0, 3, "float32", "big_endian", name="voltage")]
+        try:
+            adapter.set_device_meta(device_id, "SubMeter")
+            await adapter.add_device(device_id, 1, regs)
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                ns = await client.get_namespace_index(
+                    "http://ghostmeter.local/opcua/"
+                )
+                gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                dev = await gm.get_child([f"{ns}:SubMeter"])
+                var = await dev.get_child([f"{ns}:voltage"])
+
+                handler = _SubHandler()
+                sub = await client.create_subscription(50, handler)
+                await sub.subscribe_data_change(var)
+                # initial notification arrives with value 0
+                await asyncio.sleep(0.3)
+
+                await adapter.update_register(
+                    device_id, 0, 3, 231.4, "float32", "big_endian"
+                )
+                await asyncio.sleep(0.5)
+                await sub.delete()
+
+                assert any(abs(v - 231.4) < 0.05 for v in handler.values), (
+                    f"expected 231.4 in notifications, got {handler.values}"
+                )
+        finally:
+            await adapter.stop()
