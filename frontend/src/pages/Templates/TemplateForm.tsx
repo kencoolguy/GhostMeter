@@ -9,6 +9,7 @@ import { RegisterTable } from "./RegisterTable";
 const PROTOCOL_OPTIONS = [
   { value: "modbus_tcp", label: "Modbus TCP" },
   { value: "snmp", label: "SNMP" },
+  { value: "opcua", label: "OPC UA" },
 ];
 
 export default function TemplateForm() {
