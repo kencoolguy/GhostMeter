@@ -1,5 +1,54 @@
 # Development Log
 
+## 2026-06-03 — OPC UA Server Adapter (4th protocol)
+
+### What was done
+- Added `OpcUaAdapter` in `backend/app/protocols/opcua_agent.py`: a single shared `asyncua.Server` (endpoint `opc.tcp://0.0.0.0:4840/ghostmeter/server/`, Anonymous + SecurityPolicy None)
+- Each device becomes an Object node under a `GhostMeter` folder; each register becomes a read-only Variable node updated on every simulation tick (push model)
+- Extended `RegisterInfo` in `protocols/base.py` with `name` and `unit` fields so OPC UA Variable nodes get meaningful browse names
+- Added `set_device_meta` hook (mirrors MQTT pattern): device display name is passed to the adapter before `add_device` so the Object node uses the device name rather than its UUID
+- Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile added to seed
+- Bumped builtin template count expectation in `test_seed.py`: 4 → 5
+- Frontend OPC UA protocol option added to template selector
+- docker-compose port 4840 exposed for OPC UA server access
+
+### Key decisions
+- **Single shared asyncua server** (not one server per device): asyncua's server lifecycle is expensive; sharing one server matches pymodbus multi-device pattern
+- **Push value-sync** (not pull like SNMP): asyncua subscriptions deliver notifications only when node values actually change; SNMP's pull model (read-on-request from datastore) doesn't apply here — the simulation engine must write into the node on every tick
+- **Anonymous + SecurityPolicy None for MVP**: certificates and username/password add significant setup complexity with no benefit for local EMS testing
+- **`RegisterInfo` extended with `name`/`unit`**: OPC UA Variable nodes require meaningful browse names for clients to navigate the address space; address integers alone are not useful in OPC UA context
+- **`set_device_meta` pre-add hook**: device display name is not available at `OpcUaAdapter.__init__` time; the hook (same pattern as MQTT broker) injects metadata before the node tree is built
+
+### Out of scope (deferred)
+- Writable nodes (OPC UA Write service)
+- Methods and alarms (OPC UA Method / Event model)
+- Certificate-based security and username/password authentication
+- OPC UA comm-layer fault injection (connection delay, timeout, exception codes)
+- Per-request stats tracking
+
+### Files changed
+- `backend/app/protocols/opcua_agent.py` — new OpcUaAdapter
+- `backend/app/protocols/base.py` — RegisterInfo name/unit
+- `backend/app/config.py` — OPC UA settings
+- `backend/app/.env.example` — OPC UA env vars
+- `backend/app/main.py` — register adapter + resume-path wiring
+- `backend/app/services/device_service.py` — set_device_meta + RegisterInfo name/unit
+- `backend/app/seed/opcua_energy_meter.json` — built-in OPC UA template
+- `backend/app/seed/profiles/opcua_energy_meter_normal.json` — built-in profile
+- `backend/tests/test_opcua_adapter.py` — adapter unit/integration tests
+- `backend/tests/test_opcua_seed.py` — seed JSON validation tests
+- `backend/tests/test_seed.py` — bumped template count 4 → 5
+- `backend/requirements.txt` — added asyncua>=1.1,<2
+- `docker-compose.yml` — port 4840
+- `frontend/src/pages/Templates/TemplateForm.tsx` — OPC UA protocol option
+
+### Verification
+- 299/299 backend tests passed (pytest -q)
+- ruff lint clean
+- Frontend tsc -b: no errors; npm run build: succeeded
+
+---
+
 ## 2026-04-17 — Monitor 首頁重做 (issue #29)
 
 ### 做了什麼

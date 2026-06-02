@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- OPC UA server adapter: exposes simulated devices as browsable Variable nodes (Read + Subscribe, Anonymous + SecurityPolicy None) via asyncua
+- Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile
+- OPC UA protocol option in template creation
+- OPC UA server port 4840 exposed in docker-compose
 - Monitor 首頁重做：卡片網格 + KPI panel + sparkline + 即時值動畫 + Event toast/drawer (issue #29)
 - 完全沒設備時的引導空狀態（內建模板捷徑）
 - WebSocket monitor_update payload 新增 `mqtt_broker_connected` 欄位
