@@ -142,7 +142,16 @@ class OpcUaAdapter(ProtocolAdapter):
         data_type: str,
         byte_order: str,
     ) -> None:
-        """Placeholder — implemented in Task 6."""
+        """Push a value into the variable node (byte_order is irrelevant for OPC UA)."""
+        node = self._nodes.get((device_id, address, function_code))
+        if node is None:
+            logger.debug(
+                "OPC UA: no node for device %s addr %d fc %d",
+                device_id, address, function_code,
+            )
+            return
+        vtype, caster = _TYPE_MAP.get(data_type, (ua.VariantType.Double, float))
+        await node.write_value(ua.Variant(caster(value), vtype))
 
     def set_device_meta(self, device_id: UUID, device_name: str) -> None:
         """Set the display name used for a device's Object node.

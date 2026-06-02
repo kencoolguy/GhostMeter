@@ -147,3 +147,59 @@ class TestOpcUaAddDevice:
                 assert dev is not None
         finally:
             await adapter.stop()
+
+
+class TestOpcUaUpdateRegister:
+    @pytest.mark.parametrize(
+        "data_type,written,expected",
+        [
+            ("float32", 220.5, 220.5),
+            ("float64", 49.985, 49.985),
+            ("int16", -123.0, -123),
+            ("uint16", 1000.0, 1000),
+            ("int32", -70000.0, -70000),
+            ("uint32", 250000.0, 250000),
+        ],
+    )
+    async def test_update_register_round_trips(self, data_type, written, expected):
+        from asyncua import Client
+
+        from app.protocols.base import RegisterInfo
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        device_id = uuid.uuid4()
+        regs = [RegisterInfo(0, 3, data_type, "big_endian", name="value")]
+        try:
+            adapter.set_device_meta(device_id, "DT")
+            await adapter.add_device(device_id, 1, regs)
+            await adapter.update_register(device_id, 0, 3, written, data_type, "big_endian")
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                ns = await client.get_namespace_index(
+                    "http://ghostmeter.local/opcua/"
+                )
+                gm = await client.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                dev = await gm.get_child([f"{ns}:DT"])
+                var = await dev.get_child([f"{ns}:value"])
+                read = await var.read_value()
+                assert abs(read - expected) < 0.01
+        finally:
+            await adapter.stop()
+
+    async def test_update_unknown_register_is_noop(self):
+        """Writing to a non-existent (device, addr, fc) does not raise."""
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        try:
+            await adapter.update_register(
+                uuid.uuid4(), 99, 3, 1.0, "float32", "big_endian"
+            )
+        finally:
+            await adapter.stop()
