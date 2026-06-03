@@ -116,3 +116,7 @@ class TestDeviceSimulationIntegration:
             "fault_type": "delay", "params": {"delay_ms": 200},
         })
         assert resp.status_code == 404
+
+        # The rejected request must not have left an orphan fault entry.
+        resp = await client.get(f"/api/v1/devices/{unknown}/fault")
+        assert resp.json()["data"] is None

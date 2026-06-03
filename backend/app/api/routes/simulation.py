@@ -100,10 +100,13 @@ async def set_fault(
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[FaultConfigResponse]:
     """Set a communication fault on a device (in-memory) and apply it to the adapter."""
+    # Resolve the device's protocol first — this 404s on an unknown device, so we
+    # validate before mutating any state (no orphan fault entry on a bad request).
+    protocol = await device_service.get_device_protocol(session, device_id)
+
     fault = FaultConfig(fault_type=data.fault_type, params=data.params)
     fault_simulator.set_fault(device_id, fault)
 
-    protocol = await device_service.get_device_protocol(session, device_id)
     adapter = protocol_manager.get_adapter(protocol)
     if adapter is not None and protocol_manager.is_running:
         await adapter.apply_fault(device_id)
