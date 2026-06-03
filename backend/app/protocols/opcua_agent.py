@@ -10,8 +10,8 @@ Security: SecurityPolicy None + Anonymous (MVP).
 
 import logging
 import math
-import random  # noqa: F401 — used in Task 3 fault callbacks
-import time  # noqa: F401 — used in Task 3 fault callbacks
+import random
+import time
 from uuid import UUID
 
 from asyncua import Server, ua
@@ -171,6 +171,9 @@ class OpcUaAdapter(ProtocolAdapter):
             "OPC UA: added device %s (%s) with %d nodes",
             display_name, device_id, len(registers),
         )
+        from app.simulation import fault_simulator
+        if fault_simulator.get_fault(device_id) is not None:
+            await self.apply_fault(device_id)
 
     async def _do_remove_device(self, device_id: UUID) -> None:
         """Delete the device's Object node (and child variables) and clear maps."""
@@ -215,6 +218,76 @@ class OpcUaAdapter(ProtocolAdapter):
             # Node has a fault value-callback attached; writing would clear it.
             return
         await node.write_value(ua.Variant(coerced, vtype))
+
+    # --- Fault application (overrides base no-op) ---
+
+    def _bad_datavalue(self, status_code: int) -> "ua.DataValue":
+        """Build a DataValue carrying a Bad StatusCode (no value)."""
+        return ua.DataValue(StatusCode_=ua.StatusCode(status_code))
+
+    def _good_datavalue(self, key: tuple[UUID, int, int]) -> "ua.DataValue":
+        """Build a Good DataValue from the latest cached value for a node."""
+        value, vtype = self._last_values.get(key, (0, ua.VariantType.Double))
+        return ua.DataValue(ua.Variant(value, vtype))
+
+    def _make_fault_callback(self, device_id: UUID, key: tuple[UUID, int, int]):
+        """Create the synchronous value callback asyncua calls on every read.
+
+        Reads fault_simulator live so it reflects the current fault type/params
+        (single source of truth, same model as Modbus trace_pdu).
+        """
+        from app.simulation import fault_simulator
+
+        def cb(nodeid, attr):  # noqa: ANN001 — asyncua calls cb(nodeid, attr)
+            fault = fault_simulator.get_fault(device_id)
+            if fault is None:
+                return self._good_datavalue(key)
+            ftype = fault.fault_type
+            if ftype == "exception":
+                return self._bad_datavalue(ua.StatusCodes.BadDeviceFailure)
+            if ftype == "timeout":
+                return self._bad_datavalue(ua.StatusCodes.BadTimeout)
+            if ftype == "delay":
+                delay_ms = min(int(fault.params.get("delay_ms", 500)), 10000)
+                time.sleep(delay_ms / 1000.0)  # bounded blocking (mirrors Modbus)
+                return self._good_datavalue(key)
+            if ftype == "intermittent":
+                rate = float(fault.params.get("failure_rate", 0.5))
+                if random.random() < rate:
+                    return self._bad_datavalue(ua.StatusCodes.BadCommunicationError)
+                return self._good_datavalue(key)
+            return self._good_datavalue(key)  # unknown type → behave normally
+
+        return cb
+
+    async def apply_fault(self, device_id: UUID) -> None:
+        """Attach a value callback to each of the device's nodes (idempotent)."""
+        if self._server is None or device_id in self._faulted:
+            return
+        aspace = self._server.iserver.aspace
+        for key, node in list(self._nodes.items()):
+            if key[0] != device_id:
+                continue
+            cb = self._make_fault_callback(device_id, key)
+            aspace.set_attribute_value_callback(node.nodeid, ua.AttributeIds.Value, cb)
+        self._faulted.add(device_id)
+        logger.info("OPC UA: fault callbacks attached for device %s", device_id)
+
+    async def remove_fault(self, device_id: UUID) -> None:
+        """Detach callbacks by re-writing cached values (restores value +
+        clears callback + resumes subscriptions in one write)."""
+        if device_id not in self._faulted:
+            return
+        for key, node in list(self._nodes.items()):
+            if key[0] != device_id:
+                continue
+            value, vtype = self._last_values.get(key, (0, ua.VariantType.Double))
+            try:
+                await node.write_value(ua.Variant(value, vtype))
+            except Exception:
+                logger.debug("OPC UA: error restoring node after fault clear", exc_info=True)
+        self._faulted.discard(device_id)
+        logger.info("OPC UA: fault callbacks removed for device %s", device_id)
 
     def set_device_meta(self, device_id: UUID, device_name: str) -> None:
         """Set the display name used for a device's Object node.
