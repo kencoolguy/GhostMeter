@@ -10,6 +10,8 @@ Security: SecurityPolicy None + Anonymous (MVP).
 
 import logging
 import math
+import random  # noqa: F401 — used in Task 3 fault callbacks
+import time  # noqa: F401 — used in Task 3 fault callbacks
 from uuid import UUID
 
 from asyncua import Server, ua
@@ -85,6 +87,8 @@ class OpcUaAdapter(ProtocolAdapter):
         self._device_objects: dict[UUID, object] = {}          # device_id → Object node
         self._nodes: dict[tuple[UUID, int, int], object] = {}  # (dev, addr, fc) → node
         self._device_meta: dict[UUID, str] = {}                # device_id → display name
+        self._last_values: dict[tuple[UUID, int, int], tuple[float | int, ua.VariantType]] = {}
+        self._faulted: set[UUID] = set()  # devices with fault callbacks attached
 
     async def start(self) -> None:
         """Start the OPC UA server and create the GhostMeter folder."""
@@ -116,6 +120,8 @@ class OpcUaAdapter(ProtocolAdapter):
         self._folder = None
         self._device_objects.clear()
         self._nodes.clear()
+        self._last_values.clear()
+        self._faulted.clear()
         self._device_meta.clear()
         self._device_stats.clear()
         self._running = False
@@ -157,6 +163,9 @@ class OpcUaAdapter(ProtocolAdapter):
                 except Exception:
                     logger.debug("Could not set Description for %s", node_name)
             self._nodes[(device_id, reg.address, reg.function_code)] = var
+            self._last_values[(device_id, reg.address, reg.function_code)] = (
+                caster(0), vtype,
+            )
 
         logger.info(
             "OPC UA: added device %s (%s) with %d nodes",
@@ -174,6 +183,10 @@ class OpcUaAdapter(ProtocolAdapter):
         self._nodes = {
             key: node for key, node in self._nodes.items() if key[0] != device_id
         }
+        self._last_values = {
+            k: v for k, v in self._last_values.items() if k[0] != device_id
+        }
+        self._faulted.discard(device_id)
         self._device_meta.pop(device_id, None)
         logger.info("OPC UA: removed device %s", device_id)
 
@@ -187,7 +200,8 @@ class OpcUaAdapter(ProtocolAdapter):
         byte_order: str,
     ) -> None:
         """Push a value into the variable node (byte_order is irrelevant for OPC UA)."""
-        node = self._nodes.get((device_id, address, function_code))
+        key = (device_id, address, function_code)
+        node = self._nodes.get(key)
         if node is None:
             logger.debug(
                 "OPC UA: no node for device %s addr %d fc %d",
@@ -195,7 +209,12 @@ class OpcUaAdapter(ProtocolAdapter):
             )
             return
         vtype, _caster = _TYPE_MAP.get(data_type, (ua.VariantType.Double, float))
-        await node.write_value(ua.Variant(_coerce_to_range(value, vtype), vtype))
+        coerced = _coerce_to_range(value, vtype)
+        self._last_values[key] = (coerced, vtype)
+        if device_id in self._faulted:
+            # Node has a fault value-callback attached; writing would clear it.
+            return
+        await node.write_value(ua.Variant(coerced, vtype))
 
     def set_device_meta(self, device_id: UUID, device_name: str) -> None:
         """Set the display name used for a device's Object node.
