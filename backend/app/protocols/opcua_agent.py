@@ -285,7 +285,13 @@ class OpcUaAdapter(ProtocolAdapter):
             try:
                 await node.write_value(ua.Variant(value, vtype))
             except Exception:
-                logger.debug("OPC UA: error restoring node after fault clear", exc_info=True)
+                # The node keeps its fault callback until the next update_register
+                # write clears it; surface this since a stuck callback is observable.
+                logger.warning(
+                    "OPC UA: failed to restore node %s after fault clear (device %s); "
+                    "its fault callback persists until the next value update",
+                    key, device_id, exc_info=True,
+                )
         self._faulted.discard(device_id)
         logger.info("OPC UA: fault callbacks removed for device %s", device_id)
 

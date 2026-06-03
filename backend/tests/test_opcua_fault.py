@@ -249,3 +249,25 @@ class TestOpcUaFaultApplication:
         finally:
             fault_simulator.clear_all()
             await adapter.stop()
+
+    async def test_fault_type_switches_live_without_reattach(self):
+        """The callback reads fault_simulator live, so changing the fault type
+        while attached flips the observed status with no second apply_fault."""
+        from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import FaultConfig
+
+        port = _free_port()
+        adapter, dev, url = await _make_running_device(port)
+        try:
+            fault_simulator.set_fault(dev, FaultConfig("exception", {}))
+            await adapter.apply_fault(dev)
+            status, _ = await _read_status(url)
+            assert status == "BadDeviceFailure", status
+
+            # Switch type WITHOUT calling apply_fault again — same callback, live read.
+            fault_simulator.set_fault(dev, FaultConfig("timeout", {}))
+            status, _ = await _read_status(url)
+            assert status == "BadTimeout", status
+        finally:
+            fault_simulator.clear_all()
+            await adapter.stop()
