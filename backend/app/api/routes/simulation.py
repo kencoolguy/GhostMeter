@@ -148,12 +148,16 @@ async def clear_fault(
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[None]:
     """Clear the active fault for a device and detach it from the adapter."""
-    fault_simulator.clear_fault(device_id)
-
+    # Detach the adapter hook before clearing the in-memory state, mirroring the
+    # state-then-hook order of set_fault in reverse (LIFO teardown): remove_fault
+    # restores the node value and callback atomically, so reads never observe a
+    # still-attached callback against absent fault state.
     protocol = await device_service.get_device_protocol(session, device_id)
     adapter = protocol_manager.get_adapter(protocol)
     if adapter is not None and protocol_manager.is_running:
         await adapter.remove_fault(device_id)
+
+    fault_simulator.clear_fault(device_id)
 
     monitor_service.log_event(
         device_id, str(device_id), "fault_clear", "Fault cleared",
