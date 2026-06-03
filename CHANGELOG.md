@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- OPC UA comm-layer fault simulation: delay / timeout / exception / intermittent now
+  apply to OPC UA devices via per-node value callbacks (push-based; attaches on fault set,
+  detaches on clear). Modbus behavior unchanged.
 - OPC UA server adapter: exposes simulated devices as browsable Variable nodes (Read + Subscribe, Anonymous + SecurityPolicy None) via asyncua
 - Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile
 - OPC UA protocol option in template creation

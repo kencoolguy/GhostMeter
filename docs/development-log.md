@@ -1,5 +1,40 @@
 # Development Log
 
+## 2026-06-03 — OPC UA Comm-layer Fault Simulation
+
+### What was done
+- Added `apply_fault(device_id)` / `remove_fault(device_id)` no-op hooks to `ProtocolAdapter` base class. Modbus inherits these unchanged (Modbus applies faults via `trace_pdu` polling; no action needed at hook time).
+- `OpcUaAdapter` overrides the hooks to attach/detach per-node asyncua value callbacks (`set_attribute_value_callback`). The callback reads `fault_simulator.get_fault(device_id)` live on every client read — same single-source-of-truth model as Modbus trace_pdu polling.
+- Added per-node last-value cache (`_last_values`) and faulted-device tracking set (`_faulted`). While a fault is active, `update_register` updates the cache but skips `node.write_value` (which would clear the callback and silently disable the fault). `remove_fault` restores the node by re-writing the cached value, which simultaneously restores the stored value, clears the callback, and resumes OPC UA subscriptions.
+- Fault type mapping: `exception` → `BadDeviceFailure` status code, `timeout` → `BadTimeout` status code, `delay` → bounded `time.sleep` (capped 10 s) then returns cached value, `intermittent` → random `BadCommunicationError` by `failure_rate` param.
+- Auto-reattach: `_do_add_device` checks `fault_simulator` after registering nodes and re-calls `apply_fault` if a fault is already active, giving parity with Modbus (fault survives device stop/start).
+- REST wiring: `PUT/DELETE /api/v1/devices/{id}/fault` now resolves the device's protocol via `device_service.get_device_protocol(session, device_id)` and calls the adapter hook. Modbus uses the inherited no-ops (still pull-based). No request/response schema change.
+
+### Key design decisions
+- **Push-based (callback) vs. pull-based:** asyncua clients read directly from the node's stored value; there is no request-intercept hook equivalent to Modbus's `trace_pdu`. The only way to inject a Bad status or a delayed response into every client read is to attach a value callback that overrides what the stored value returns. The callback is called synchronously by asyncua's address space on each `ReadRequest`.
+- **asyncua callback constraint:** `set_attribute_value_callback` replaces the node's stored value reads and sets the stored value to `None`. There is no API to clear the callback directly with `None`; the only way to detach is via a `write_value` call, which sets the stored value, clears the callback, and fires subscription change notifications in one atomic operation.
+- **Per-node cache necessity:** because the callback returns the last-known value for `delay`/`intermittent`, and `write_value` is suppressed while faulted, the adapter needs its own cache — the asyncua node's stored value is `None` while a callback is active.
+- **Single source of truth:** the callback reads `fault_simulator` live. The hook (`apply_fault`/`remove_fault`) is a presence toggle only; the active `FaultConfig` always lives in `fault_simulator`, exactly like Modbus trace_pdu.
+
+### Known caveat / deferred work
+- **`delay` blocks the event loop:** the callback is synchronous (asyncua calls it without `await`). A `delay` fault's `time.sleep` briefly blocks the shared asyncio event loop for the sleep duration (capped at 10 s). This mirrors Modbus's synchronous delay approach (trace_pdu runs in a thread context) but is more impactful in a shared single-server setup. Mitigation: cap enforced; out of scope to convert to async for MVP.
+- **`timeout` is a Bad status, not a true dropped connection:** the shared single-session server cannot drop an individual device's response at the TCP level. `BadTimeout` conveys the semantic intent; a real dropped connection would require a per-device server instance.
+- **Regression in `test_device_simulation_integration.test_fault_api_roundtrip`:** the test uses a hardcoded non-existent UUID to call `PUT /fault`. Previously this worked because the endpoint was pure in-memory; after Task 4 wired `get_device_protocol` (a DB lookup), the endpoint returns 404 for non-existent devices. This test needs to be updated to create a real device — left as a known concern for the reviewer (Task 5, not addressed per plan scope).
+
+### Files changed
+- `backend/app/protocols/base.py` — `apply_fault`/`remove_fault` no-op hooks on `ProtocolAdapter`
+- `backend/app/protocols/opcua_agent.py` — `_last_values` cache, `_faulted` set, `_make_fault_callback`, `apply_fault`, `remove_fault`, `update_register` skip, `_do_add_device` re-attach, `stop` cleanup
+- `backend/app/services/device_service.py` — `get_device_protocol` helper
+- `backend/app/api/routes/simulation.py` — `set_fault` / `clear_fault` wired to adapter hook via `get_device_protocol`
+- `backend/tests/test_opcua_fault.py` — new: adapter-level fault tests + REST wiring e2e test
+- `backend/tests/test_modbus_fault.py` — added `TestBaseFaultHooks` to assert Modbus inherits no-op base hooks
+
+### Verification
+- 320/321 backend tests passed (1 pre-existing regression in `test_device_simulation_integration.test_fault_api_roundtrip` — see caveat above)
+- ruff lint clean
+
+---
+
 ## 2026-06-03 — OPC UA Server Adapter (4th protocol)
 
 ### What was done
