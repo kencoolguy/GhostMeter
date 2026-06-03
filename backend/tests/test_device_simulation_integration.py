@@ -120,3 +120,16 @@ class TestDeviceSimulationIntegration:
         # The rejected request must not have left an orphan fault entry.
         resp = await client.get(f"/api/v1/devices/{unknown}/fault")
         assert resp.json()["data"] is None
+
+    async def test_fault_api_rejects_invalid_params(self, client: AsyncClient):
+        """Malformed fault params are rejected with 422 at the API boundary
+        (body validation runs before the handler, so device need not exist)."""
+        dev = "00000000-0000-0000-0000-000000000009"
+        for body in (
+            {"fault_type": "delay", "params": {"delay_ms": -100}},
+            {"fault_type": "delay", "params": {"delay_ms": "abc"}},
+            {"fault_type": "intermittent", "params": {"failure_rate": 1.5}},
+            {"fault_type": "intermittent", "params": {"failure_rate": "x"}},
+        ):
+            resp = await client.put(f"/api/v1/devices/{dev}/fault", json=body)
+            assert resp.status_code == 422, (body, resp.status_code)

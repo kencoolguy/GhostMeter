@@ -248,11 +248,12 @@ class OpcUaAdapter(ProtocolAdapter):
             if ftype == "timeout":
                 return self._bad_datavalue(ua.StatusCodes.BadTimeout)
             if ftype == "delay":
-                delay_ms = min(int(fault.params.get("delay_ms", 500)), 10000)
+                # Clamp defensively to [0, 10s]; the REST schema validates this too.
+                delay_ms = min(max(int(fault.params.get("delay_ms", 500)), 0), 10000)
                 time.sleep(delay_ms / 1000.0)  # bounded blocking (mirrors Modbus)
                 return self._good_datavalue(key)
             if ftype == "intermittent":
-                rate = float(fault.params.get("failure_rate", 0.5))
+                rate = min(max(float(fault.params.get("failure_rate", 0.5)), 0.0), 1.0)
                 if random.random() < rate:
                     return self._bad_datavalue(ua.StatusCodes.BadCommunicationError)
                 return self._good_datavalue(key)
