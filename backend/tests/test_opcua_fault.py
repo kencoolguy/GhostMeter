@@ -271,3 +271,64 @@ class TestOpcUaFaultApplication:
         finally:
             fault_simulator.clear_all()
             await adapter.stop()
+
+
+class TestOpcUaFaultRestWiring:
+    async def test_put_fault_applies_to_opcua_then_delete_clears(self, client):
+        from asyncua import Client
+
+        from app.protocols import protocol_manager
+        from app.protocols.opcua_agent import OpcUaAdapter
+        from app.simulation import fault_simulator
+
+        port = _free_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        protocol_manager.register_adapter("opcua", adapter)
+        await protocol_manager.start_all()
+        try:
+            tpl = await client.post("/api/v1/templates", json={
+                "name": "Fault-OPCUA",
+                "protocol": "opcua",
+                "registers": [
+                    {"name": "v", "address": 0, "function_code": 3,
+                     "data_type": "float32", "byte_order": "big_endian",
+                     "scale_factor": 1.0, "unit": "V", "sort_order": 0},
+                ],
+            })
+            assert tpl.status_code == 201
+            template_id = tpl.json()["data"]["id"]
+
+            dev = await client.post("/api/v1/devices", json={
+                "name": "RestFaultMeter", "template_id": template_id,
+                "slave_id": 1, "port": 4840,
+            })
+            assert dev.status_code == 201
+            device_id = dev.json()["data"]["id"]
+            assert (await client.post(f"/api/v1/devices/{device_id}/start")).status_code == 200
+
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+
+            async def read_status():
+                async with Client(url=url) as opc:
+                    ns = await opc.get_namespace_index("http://ghostmeter.local/opcua/")
+                    gm = await opc.nodes.objects.get_child([f"{ns}:GhostMeter"])
+                    d = await gm.get_child([f"{ns}:RestFaultMeter (#1)"])
+                    var = await d.get_child([f"{ns}:v"])
+                    dv = await var.read_data_value(raise_on_bad_status=False)
+                    return dv.StatusCode_.name
+
+            # PUT fault → OPC UA reads go Bad
+            put = await client.put(
+                f"/api/v1/devices/{device_id}/fault",
+                json={"fault_type": "exception", "params": {}},
+            )
+            assert put.status_code == 200
+            assert await read_status() == "BadDeviceFailure"
+
+            # DELETE fault → reads recover
+            assert (await client.delete(f"/api/v1/devices/{device_id}/fault")).status_code == 200
+            assert await read_status() == "Good"
+        finally:
+            fault_simulator.clear_all()
+            await protocol_manager.stop_all()
+            protocol_manager._adapters.pop("opcua", None)
