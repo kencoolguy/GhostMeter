@@ -19,19 +19,24 @@
 ### Known caveat / deferred work
 - **`delay` blocks the event loop:** the callback is synchronous (asyncua calls it without `await`). A `delay` fault's `time.sleep` briefly blocks the shared asyncio event loop for the sleep duration (capped at 10 s). This mirrors Modbus's synchronous delay approach (trace_pdu runs in a thread context) but is more impactful in a shared single-server setup. Mitigation: cap enforced; out of scope to convert to async for MVP.
 - **`timeout` is a Bad status, not a true dropped connection:** the shared single-session server cannot drop an individual device's response at the TCP level. `BadTimeout` conveys the semantic intent; a real dropped connection would require a per-device server instance.
-- **Regression in `test_device_simulation_integration.test_fault_api_roundtrip`:** the test uses a hardcoded non-existent UUID to call `PUT /fault`. Previously this worked because the endpoint was pure in-memory; after Task 4 wired `get_device_protocol` (a DB lookup), the endpoint returns 404 for non-existent devices. This test needs to be updated to create a real device — left as a known concern for the reviewer (Task 5, not addressed per plan scope).
+- **Resolved during review — `test_fault_api_roundtrip`:** after Task 4 wired `get_device_protocol` (a DB lookup), `PUT/DELETE /fault` correctly returns 404 for a non-existent device (you can't fault a device that doesn't exist). The old test used a hardcoded fake UUID and broke; it was rewritten to create a real Modbus device, and a `test_set_fault_on_unknown_device_returns_404` was added. `set_fault` was also reordered to resolve the protocol (validate) **before** mutating `fault_simulator`, so a rejected request leaves no orphan fault entry.
+- **Resolved during review — fault param validation:** `FaultConfigSet` now validates type-specific params (`delay_ms` int ≥ 0; `failure_rate` float in [0,1]) → clean 422 instead of a `BadInternalError` raised deep in the value callback; the callback also clamps defensively.
+- **Deferred follow-up — test-infra flake ([#37](https://github.com/kencoolguy/GhostMeter/issues/37)):** the OPC UA server tests share the asyncio event loop with the per-test asyncpg DB fixture; under load (and the `delay` test's blocking `time.sleep`) the connection can enter a bad state, cascading `asyncpg.InterfaceError` into later tests' fixture setup/teardown (errors only, never assertion failures). Pre-existing since the 8.9 adapter; aggravated here. Excluding the two OPC UA server test files the suite is clean (285 passed). Fix tracked separately.
 
 ### Files changed
 - `backend/app/protocols/base.py` — `apply_fault`/`remove_fault` no-op hooks on `ProtocolAdapter`
 - `backend/app/protocols/opcua_agent.py` — `_last_values` cache, `_faulted` set, `_make_fault_callback`, `apply_fault`, `remove_fault`, `update_register` skip, `_do_add_device` re-attach, `stop` cleanup
 - `backend/app/services/device_service.py` — `get_device_protocol` helper
 - `backend/app/api/routes/simulation.py` — `set_fault` / `clear_fault` wired to adapter hook via `get_device_protocol`
+- `backend/app/schemas/simulation.py` — `FaultConfigSet` param validation (delay_ms / failure_rate)
 - `backend/tests/test_opcua_fault.py` — new: adapter-level fault tests + REST wiring e2e test
 - `backend/tests/test_modbus_fault.py` — added `TestBaseFaultHooks` to assert Modbus inherits no-op base hooks
+- `backend/tests/test_device_simulation_integration.py` — fault roundtrip uses a real device; added 404 + invalid-param (422) tests
 
 ### Verification
-- 320/321 backend tests passed (1 pre-existing regression in `test_device_simulation_integration.test_fault_api_roundtrip` — see caveat above)
-- ruff lint clean
+- Feature suite `test_opcua_fault.py` green every run (real asyncua client round-trips for all 4 fault types, clear→restore+subscription resume, reattach-on-add, live fault-type switch).
+- Full backend suite excluding the OPC UA server test files: **285 passed, 0 failures, 0 errors**. The full suite *including* them is nondeterministic due to a pre-existing asyncpg/event-loop teardown flake (errors only, 0 real failures) — tracked as [#37](https://github.com/kencoolguy/GhostMeter/issues/37).
+- ruff lint clean.
 
 ---
 
