@@ -21,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - WebSocket monitor_update payload 新增 `mqtt_broker_connected` 欄位
 - DeviceMonitorData 新增 `mqtt_stats`、`template_name` 欄位
 
+### Fixed
+- Quieted the `asyncua` logger to WARNING in `app/main.py`. Each `Server.init()` emits ~1100 INFO lines while loading the standard OPC UA address space; at root INFO this flooded startup logs, and in CI (~25 OPC UA server tests × ~1100 lines written to the slow per-line Actions log sink) inflated each test to ~11 min, exceeding the 6h job limit. Root cause of the CI hang previously mis-attributed to asyncpg in issue #37.
+
 ### Changed
 - `/` route 改導向 `/monitor`（原 `/templates`）
 - 側邊欄 Monitor 移到第一位

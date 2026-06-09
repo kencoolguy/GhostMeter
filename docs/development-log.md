@@ -1,5 +1,40 @@
 # Development Log
 
+## 2026-06-10 — Fix: CI 6h timeout root-caused to asyncua INFO logging
+
+### Problem
+PR #38's backend CI ran the full 6h job limit and was cancelled at ~64%. Every
+OPC UA server test passed but each took ~647s; non-OPC-UA tests were instant.
+
+### Investigation (systematic-debugging)
+- Ruled out, by measurement in a `python:3.12-slim` container: asyncua server
+  lifecycle (~1s), asyncua client connect/disconnect (~0s), asyncpg-after-asyncua
+  on a shared loop (~0s), SQLAlchemy engine-per-loop + asyncua (~0s). None
+  reproduced the 647s — so it was not reproducible outside CI.
+- Instrumented CI on a throwaway branch with `pytest-timeout --timeout=120
+  --timeout-method=thread`. The timeout stack dump landed inside
+  `OpcUaAdapter.start()` → `asyncua.Server.init()` → `load_standard_address_space`
+  → `fill_address_space` → `add_references`, preceded by thousands of
+  `asyncua.server.address_space INFO add_node ...` lines.
+
+### Root cause
+`asyncua` emits ~1100 INFO lines per `Server.init()` (standard address space
+load). `app/main.py` `logging.basicConfig(level=INFO)` sets the root logger to
+INFO; conftest imports `app.main`, so tests inherit it and those INFO records
+are written. ~25 server tests × ~1100 lines, each written to GitHub Actions'
+slow per-line log sink, ballooned each test to ~11 min. Local/probe runs were
+fast because asyncua defaults to WARNING with no app logging config.
+
+This **contradicts issue #37**, which attributed the failure to asyncpg
+`InterfaceError` on the shared event loop. The 6h timeout is the logging flood,
+not asyncpg.
+
+### Fix
+One line in `app/main.py` after `basicConfig`:
+`logging.getLogger("asyncua").setLevel(logging.WARNING)`. Confirmed in-container
+that address-space INFO lines drop from 1091 → 0 per init. Fixes production
+startup-log noise too, not just CI.
+
 ## 2026-06-03 — OPC UA Comm-layer Fault Simulation
 
 ### What was done
