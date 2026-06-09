@@ -1,5 +1,23 @@
 # Development Log
 
+## 2026-06-10 — Deployment tooling (Linode / Tailscale / Cloudflare)
+
+### What was done
+- Added `docker-compose.prod.yml` overlay: binds backend/frontend ports to `BIND_IP` and removes PostgreSQL's public port, using `!override` to replace (not merge) the base 0.0.0.0 bindings
+- Added `deploy.sh`: applies the prod overlay, waits for postgres health, runs `alembic upgrade head`, then starts all services
+- Added `docs/deployment.md` (concise Linode guide) and a `BIND_IP` entry in `.env.example`
+
+### Key decisions
+- **Prod overlay via explicit `-f`, not `docker-compose.override.yml`**: the auto-loaded override file would also apply during local development, where tests connect to PostgreSQL on `localhost:5434`; removing the postgres port there would break the existing host-test workflow
+- **`!override` instead of default list merge**: Compose concatenates `ports` lists across files, which would keep the public 0.0.0.0 bindings alongside the Tailscale ones — defeating the purpose. `!override` (Compose v2.24+) replaces the list outright
+- **Bind to Tailscale IP rather than Linode Cloud Firewall**: achieves "not public" with a file in the repo instead of console state; Docker bypasses ufw, so a host-side bind address is the reliable lever. `BIND_IP` defaults to `127.0.0.1` so a missing value fails safe to local-only rather than exposing everything
+- **Cloudflare Tunnel for the public frontend**: outbound-only, so no inbound ports need opening and protocol ports stay private
+
+### Notes
+- App startup only seeds data; tables come from Alembic — `deploy.sh` runs migrations before bringing the app up so a fresh deploy doesn't fail on missing tables
+
+---
+
 ## 2026-06-03 — OPC UA Server Adapter (4th protocol)
 
 ### What was done

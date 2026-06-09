@@ -166,6 +166,11 @@
 - [ ] Docker Hub image publish（deferred）
 - [ ] 在相關社群宣傳（deferred）
 
+### Milestone 7.4：正式部署工具 ✅ Complete (2026-06-10)
+- [x] `docker-compose.prod.yml`：port 綁定 `BIND_IP`、postgres 不對外（exposed host 安全部署）
+- [x] `deploy.sh`：套用 prod overlay + migration + 啟動 一鍵腳本
+- [x] `docs/deployment.md`：Linode（Tailscale + Cloudflare Tunnel）部署指南
+
 ---
 
 ## Phase 8：Post-MVP 功能擴充

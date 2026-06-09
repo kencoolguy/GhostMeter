@@ -1,0 +1,31 @@
+# Production overlay for exposed hosts (e.g. a public Linode VM).
+#
+# Apply it ON TOP of the base file — order matters:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Easier: just run ./deploy.sh, which bakes in both -f flags.
+#
+# Purpose: never publish service ports on the public network interface.
+#   - Every port is bound to BIND_IP (set this to the host's Tailscale IP in
+#     .env). Reachable over the tailnet, invisible from the public Internet.
+#   - PostgreSQL is not published at all — backend reaches it over the internal
+#     compose network (postgres:5432).
+#   - !override replaces the base port list instead of merging with it
+#     (merging would KEEP the public 0.0.0.0 bindings — defeating the point).
+#     Requires Docker Compose v2.24.0+.
+#
+# BIND_IP defaults to 127.0.0.1 (loopback) when unset, so a missing value
+# fails safe to "local only" rather than exposing everything publicly.
+services:
+  postgres:
+    ports: !override []
+
+  backend:
+    ports: !override
+      - "${BIND_IP:-127.0.0.1}:8000:8000"
+      - "${BIND_IP:-127.0.0.1}:502:502"
+      - "${BIND_IP:-127.0.0.1}:4840:4840"
+      - "${BIND_IP:-127.0.0.1}:161:10161/udp"
+
+  frontend:
+    ports: !override
+      - "${BIND_IP:-127.0.0.1}:3002:80"
