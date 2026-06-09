@@ -22,7 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - DeviceMonitorData 新增 `mqtt_stats`、`template_name` 欄位
 
 ### Fixed
-- Quieted the `asyncua` logger to WARNING in `app/main.py`. Each `Server.init()` emits ~1100 INFO lines while loading the standard OPC UA address space; at root INFO this flooded startup logs, and in CI (~25 OPC UA server tests × ~1100 lines written to the slow per-line Actions log sink) inflated each test to ~11 min, exceeding the 6h job limit. Root cause of the CI hang previously mis-attributed to asyncpg in issue #37.
+- **CI 6h timeout on OPC UA server tests** (root cause of issue #37, previously mis-attributed to asyncpg): coverage's default C trace function fires per-line on every module, and asyncua rebuilds its ~100k-line standard address space on each `Server.init()`. Under `pytest --cov` each OPC UA server test took ~11 min, blowing the 6h job limit. Fixed by `[tool.coverage.run] core = "sysmon"` (PEP 669 `sys.monitoring`), which skips instrumentation of non-`source` files — `Server.init()` drops from >240s to ~0.4s under coverage.
+- Quieted the `asyncua` logger to WARNING in `app/main.py` (secondary cleanup): each `Server.init()` emits ~1100 INFO lines loading the standard address space, spamming startup logs. Not the CI fix.
 
 ### Changed
 - `/` route 改導向 `/monitor`（原 `/templates`）

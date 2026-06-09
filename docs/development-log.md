@@ -29,11 +29,34 @@ This **contradicts issue #37**, which attributed the failure to asyncpg
 `InterfaceError` on the shared event loop. The 6h timeout is the logging flood,
 not asyncpg.
 
+### First (wrong) hypothesis — logging flood
+Initially blamed the ~1100 `asyncua.server.address_space` INFO lines emitted per
+`Server.init()` (root logger at INFO via `app/main.py` basicConfig). Quieted the
+asyncua logger to WARNING and re-ran CI. **It did not fix the timeout**: with the
+flood gone (0 address_space lines confirmed in the CI log), each OPC UA server
+test still took ~680s. The logging happened inside `fill_address_space` but was a
+coincidence, not the cause.
+
+### Real root cause — coverage C-tracer × asyncua's giant module
+CI runs `pytest --cov=app`. Coverage's default C trace function fires per-line on
+ALL modules. asyncua's `create_standard_address_space_Services` lives in a
+~100k-line generated file and runs on every `Server.init()`; each OPC UA server
+test creates a fresh Server, so coverage re-traces the whole address space build.
+Reproduced in a `python:3.12-slim` container (no GHA needed): baseline init()
+= 0.4s; under `coverage run` (default C core) init() did not finish in 240s;
+under `COVERAGE_CORE=sysmon` init() = 0.4s again. The slowness is coverage-
+specific — earlier probes were fast only because they ran without `--cov`.
+
 ### Fix
-One line in `app/main.py` after `basicConfig`:
-`logging.getLogger("asyncua").setLevel(logging.WARNING)`. Confirmed in-container
-that address-space INFO lines drop from 1091 → 0 per init. Fixes production
-startup-log noise too, not just CI.
+`pyproject.toml` `[tool.coverage.run] core = "sysmon"` (PEP 669 sys.monitoring,
+Python 3.12+) — coverage disables instrumentation for non-`source` files, so
+asyncua is no longer traced. The asyncua logger WARNING line stays as a minor
+startup-noise cleanup, but it is NOT the fix.
+
+### Lesson
+The stack dump correctly located the time (inside `fill_address_space`) but the
+visible symptom there (log flood) was not the cause. Should have varied the one
+known difference from the passing local probes — `--cov` — before concluding.
 
 ## 2026-06-03 — OPC UA Comm-layer Fault Simulation
 

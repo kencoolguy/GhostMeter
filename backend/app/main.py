@@ -43,8 +43,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 # asyncua logs ~1100 INFO lines per Server.init() while loading the standard
-# address space; at root INFO that floods startup logs (and made CI write tens
-# of thousands of lines, exceeding the 6h job limit — see issue #37). Quiet it.
+# address space, which spams startup logs at root INFO. Quiet it to WARNING.
+# (Noise reduction only — the CI 6h timeout was a coverage-tracer issue; see
+# pyproject [tool.coverage.run].)
 logging.getLogger("asyncua").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
