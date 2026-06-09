@@ -56,6 +56,25 @@ class ProtocolAdapter(ABC):
         if device_id in self._device_stats:
             self._device_stats[device_id] = DeviceStats()
 
+    # --- Fault hooks (concrete no-op default; protocol adapters may override) ---
+
+    async def apply_fault(self, device_id: UUID) -> None:
+        """A comm-layer fault became active for this device.
+
+        Presence toggle only — the active FaultConfig lives in
+        app.simulation.fault_simulator. Default no-op: Modbus polls
+        fault_simulator live in trace_pdu, so it needs no action here.
+        OPC UA overrides this to attach value callbacks.
+        """
+
+    async def remove_fault(self, device_id: UUID) -> None:
+        """The comm-layer fault was cleared for this device.
+
+        Mirror of apply_fault. Default no-op: Modbus stops applying the fault
+        automatically once fault_simulator no longer reports it. OPC UA overrides
+        this to detach the value callbacks attached in apply_fault.
+        """
+
     # --- Device lifecycle (template methods) ---
 
     async def add_device(

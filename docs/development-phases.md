@@ -242,6 +242,17 @@
 - [x] Post-review hardening: out-of-range value clamping, unique `(#slave_id)` node names, `_device_meta` cleanup
 - [x] Merged to `dev` via PR #33; follow-up PR #34 pinned `pymodbus<3.13`
 
+### Milestone 8.10：OPC UA Comm-layer Fault Simulation ✅ Complete (2026-06-03)
+- [x] `ProtocolAdapter` base gains no-op `apply_fault(device_id)` / `remove_fault(device_id)` hooks; Modbus inherits unchanged (pull-based via trace_pdu)
+- [x] `OpcUaAdapter` overrides hooks: `apply_fault` attaches per-node asyncua value callbacks (`set_attribute_value_callback`); `remove_fault` detaches by re-writing cached value (restores stored value, clears callback, resumes subscriptions atomically)
+- [x] Per-node last-value cache (`_last_values`); `update_register` skips `write_value` while device is in `_faulted` set
+- [x] Fault-type mapping: `exception` → `BadDeviceFailure`, `timeout` → `BadTimeout`, `delay` → bounded server-side `time.sleep` (cap 10 s) + cached value, `intermittent` → random `BadCommunicationError` by `failure_rate`
+- [x] Callback reads `fault_simulator` live on every client read (single source of truth; same model as Modbus trace_pdu)
+- [x] Auto-reattach on `add_device` if a fault is already active (parity with Modbus surviving stop/start)
+- [x] REST `PUT/DELETE /devices/{id}/fault` wired to adapter hook via `get_device_protocol` DB lookup
+- [x] 13 new tests: adapter-level fault tests (exception/timeout/delay/intermittent/cache/subscription restore) + REST e2e round-trip
+- **Note:** SNMP/MQTT adapters could reuse the same base hook pattern in the future (out of scope here; their fault semantics differ significantly)
+
 ### Milestone 8.7：Consolidation (in progress 🔄)
 - [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
 - [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)

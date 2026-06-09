@@ -38,6 +38,15 @@ async def _get_device_raw(
     return device
 
 
+async def get_device_protocol(
+    session: AsyncSession, device_id: uuid.UUID,
+) -> str:
+    """Resolve a device's protocol via its template. Raises 404 if absent."""
+    device = await _get_device_raw(session, device_id)
+    template = await get_template_with_registers(session, device.template_id)
+    return template.protocol
+
+
 async def _check_slave_id_available(
     session: AsyncSession,
     slave_id: int,

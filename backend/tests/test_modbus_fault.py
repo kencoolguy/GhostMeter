@@ -8,6 +8,19 @@ from app.protocols.base import RegisterInfo
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 
 
+class TestBaseFaultHooks:
+    """The base apply_fault/remove_fault hooks are no-ops; Modbus inherits them
+    unchanged (Modbus applies faults via trace_pdu polling, not via these hooks)."""
+
+    @pytest.mark.asyncio
+    async def test_modbus_fault_hooks_are_noops(self):
+        adapter = ModbusTcpAdapter(host="127.0.0.1", port=15598)
+        dev = uuid.uuid4()
+        # No start(), no device registered — pure no-ops must not raise.
+        await adapter.apply_fault(dev)
+        await adapter.remove_fault(dev)
+
+
 class TestReverseMapping:
     """Test slave_id to device_id reverse mapping."""
 

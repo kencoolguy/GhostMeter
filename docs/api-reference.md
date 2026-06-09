@@ -845,7 +845,23 @@ Set (or replace) the active communication fault on a device.
 **Response** `200 OK` — `ApiResponse[FaultConfigResponse]`
 
 **Error cases:**
+- `404` — device not found (`DEVICE_NOT_FOUND`)
 - `422` — unknown `fault_type`
+
+**Protocol-layer behavior:**
+
+For **Modbus TCP** devices the fault is applied pull-based (no adapter action on this call; `trace_pdu` polls `fault_simulator` on every request).
+
+For **OPC UA** devices the fault is applied push-based at the protocol layer immediately on this call by attaching a value callback to every Variable node of the device. Fault-type semantics:
+
+| `fault_type` | OPC UA client observation |
+|---|---|
+| `exception` | Every read returns `BadDeviceFailure` status code; no value |
+| `timeout` | Every read returns `BadTimeout` status code; no value |
+| `delay` | Read succeeds with a Good status after a server-side sleep of `delay_ms` ms (bounded to 10 000 ms); returns the latest cached register value |
+| `intermittent` | Each read randomly returns `BadCommunicationError` with probability `failure_rate`, or the latest cached value with Good status otherwise |
+
+While a fault is active, the simulation engine continues updating the per-node value cache; the cached value is served as-is once the fault is cleared. OPC UA subscriptions are paused during a fault (the value callback bypasses subscription notifications) and automatically resume on fault clear.
 
 ---
 
@@ -871,6 +887,11 @@ Clear the active fault for a device.
 ```json
 { "success": true, "data": null, "message": "Fault cleared successfully" }
 ```
+
+**Error cases:**
+- `404` — device not found (`DEVICE_NOT_FOUND`)
+
+**Protocol-layer behavior:** For OPC UA devices, clearing the fault detaches the value callbacks by re-writing the cached value to each Variable node (atomically restores the stored value, clears the callback, and resumes subscriptions). For Modbus devices this is a no-op at the adapter level.
 
 ---
 
