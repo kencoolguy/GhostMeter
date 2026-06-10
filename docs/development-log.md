@@ -1,5 +1,61 @@
 # Development Log
 
+## 2026-06-11 — SNMP / MQTT / BACnet 通訊層故障模擬
+
+### 做了什麼
+
+將通訊層故障模擬（`delay` / `timeout` / `exception` / `intermittent`）從 Modbus TCP + OPC UA 擴展到另外三個協議：BACnet、SNMP、MQTT。同時補強了 `fault_simulator.py` 的共用輔助函式。
+
+實作範圍：
+
+- **`fault_simulator.py`**：新增 `get_delay_seconds`（cap 10 s，NaN/inf → default 500 ms）與 `get_failure_rate`（clamp 0–1）兩個共用 helper，供各 adapter 呼叫。
+- **BACnet**：在 `_DeviceApplication` 的 `do_ReadPropertyRequest` / `do_ReadPropertyMultipleRequest` 加入 `_drop_for_fault` gate；`exception` 回傳 BACnet Error `device/operationalProblem`；`timeout` / `intermittent` 另外覆寫 `do_WhoIsRequest`，讓設備對 Who-Is 也不回應（完全隱形，如同實際斷電設備）。
+- **SNMP**：`exception` 在 `_DynamicMibController.read_variables` 拋出 `GenError` → pysnmp 回傳 `genErr` response；`timeout` / `intermittent` / `delay` 透過 `_FaultAwareResponderMixin` 覆寫各 command responder 的 `process_pdu`——drop 直接 return，delay 用 `loop.call_later` 延後整個 `process_pdu` 呼叫（非同步，不阻塞 event loop）。
+- **MQTT**：gate 在 `_publish_loop`——`timeout` 跳過整個 publish 迴圈週期、`intermittent` 以 `failure_rate` 機率隨機跳過、`delay` sleep 後再 publish；跳過的 publish 仍計入 request + error 統計。
+- **REST**：`PUT /devices/{id}/fault` 若 protocol 為 MQTT 且 `fault_type` 為 `exception`，返回 `422 VALIDATION_ERROR`，在狀態變更前就拒絕（不會留下孤兒故障）。
+
+### 架構決策：全面採 pull-based
+
+BACnet / SNMP / MQTT 全部採 pull-based（adapter 的 serving path 每次請求時自己讀 `fault_simulator` singleton），與 Modbus `trace_pdu` 相同。
+
+對比 OPC UA 當初被迫採 push-based（asyncua 的 `set_attribute_value_callback` 是在 read 時呼叫的 push hook，而 asyncua 沒有可攔截真正 read 呼叫的點位），pull-based 有三個優勢：
+1. Adapter 端無狀態快取——無需在 `apply_fault` / `remove_fault` 掛鉤維護 per-node 狀態。
+2. Stop / Start 後故障自動存活——重啟 adapter 不需要重新 apply。
+3. 單一資料源——`fault_simulator` 是唯一真相，adapter 不需要自己記錄「目前是否有 fault」。
+
+### 設計決定
+
+1. **MQTT 不支援 `exception`**：MQTT 是 publish-only 協議，無 request/response 通道，沒有地方可以回傳 protocol-level error。REST 層在 `PUT /devices/{id}/fault` 直接以 422 拒絕，API 文件同步說明理由。
+
+2. **BACnet `timeout`/`intermittent` 連 Who-Is 一起裝死**：EMS 用 Who-Is 探索設備；若只有 ReadProperty 不回應但 Who-Is 仍正常，裝死的語意不完整——實際斷電的設備不會回 I-Am。覆寫 `do_WhoIsRequest` 讓整台設備從 discovery 消失，更符合「網路上不存在」的語意。
+
+### 實作亮點 / 踩到的坑
+
+1. **pysnmp v7 responder 全同步**：pysnmp v7 的 command responders（`GetCommandResponder` 等）繼承自 `CommandResponderBase.process_pdu`，全部是同步呼叫。`delay` 不能直接 `await asyncio.sleep`。解法：`_FaultAwareResponderMixin.process_pdu` 拿到 running event loop，用 `loop.call_later(delay_s, self._original_process_pdu, snmp_engine, ...)` 延後整個 PDU 處理，process_pdu 本身立刻 return（不阻塞）。以 heartbeat 測試驗證：delay 期間其他設備仍能正常服務（event loop 未被佔用）。pysnmp state cache 壽命 ~60 s，遠大於 10 s delay cap，不會因快取過期導致亂序回應。
+
+2. **NaN 穿過 `min/max` clamp 的 bug**：review 發現原始 `get_delay_seconds` 實作 `max(0, min(10.0, delay_s))` 對 `float('nan')` 會靜默回傳 NaN（NaN 比較恆 False，min/max 不拒絕它）。修法：在 clamp 前加 `math.isfinite` guard，非有限值 fallback 到 default。對應新增了 NaN/inf 的測試案例。
+
+3. **bacpypes3 async handler 的 early-return 語意**：BACnet read handler 可以直接 `await asyncio.sleep`（handler 本身是 async）；不送回應直接 return，bacpypes3 runtime 不會補發任何預設回應——timeout 語意天然成立，不需要額外取消排隊的 response。執行期驗證：client 等待超時，server 端 log 無異常。
+
+### 測試
+
+| 檔案 | 測試數 | 說明 |
+|------|--------|------|
+| `tests/test_bacnet_fault.py` | 11 | 含真實 bacpypes3 client 做 REST e2e round-trip |
+| `tests/test_snmp_fault.py` | 8 | 含真實 SNMP GET/GETNEXT + heartbeat loop-responsiveness check |
+| `tests/test_mqtt_fault.py` | 5 | fake-client publish loop 驗證各 fault gate |
+| `tests/test_simulation_api.py` | +1 | MQTT + exception → 422 |
+| `tests/test_fault_simulator.py` | +9 | `get_delay_seconds` / `get_failure_rate` helpers（含 NaN/inf case）|
+
+全套 pytest 結果：詳見下方 Verification 段。
+
+### Verification
+
+- `ruff check app tests`：clean（All checks passed）。
+- `pytest -q`（全套）：**377 passed, 67 warnings in 198.76s**（0 failures；warnings 全為 pysnmp v7 deprecated API 名稱，pre-existing，非新增）。
+
+---
+
 ## 2026-06-10 — BACnet/IP Adapter (5th protocol)
 
 ### What was built

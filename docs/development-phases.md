@@ -269,7 +269,16 @@
 - [x] Built-in "Energy Meter (BACnet)" seed template + Normal Operation profile
 - [x] Frontend `bacnet` protocol option; docker-compose + prod overlay UDP 47808; config settings (`BACNET_NETWORK`, `BACNET_DEVICE_INSTANCE_BASE`)
 - [x] `backend/tests/test_bacnet_adapter.py`: 17 tests (lifecycle, device add/remove, register round-trip, stats, restart safety, VLAN-node zombie prevention)
-- **Deferred:** COV subscriptions, WriteProperty, comm-layer fault simulation, BBMD / Foreign Device registration
+- **Deferred:** COV subscriptions, WriteProperty, BBMD / Foreign Device registration
+
+### Milestone 8.12：SNMP / MQTT / BACnet 故障模擬 ✅ Complete (2026-06-11)
+- [x] Shared fault-param helpers in `fault_simulator.py` (`get_delay_seconds` cap 10 s + NaN/inf guard, `get_failure_rate` clamp 0–1)
+- [x] BACnet: pull-based fault gate in `_DeviceApplication` (ReadProperty / RPM); `exception` → Error `device/operationalProblem`; timeout/intermittent also suppress Who-Is (device goes fully dark)
+- [x] SNMP: fault-aware command responders (timeout/intermittent drop, delay deferred via `loop.call_later` — non-blocking); `exception` → `genErr` via `_DynamicMibController`
+- [x] MQTT: `_publish_loop` gate — timeout stops publishing, intermittent skips probabilistically, delay publishes late; `exception` rejected at REST (422)
+- [x] REST: `PUT /devices/{id}/fault` validates MQTT + exception → 422; API otherwise unchanged
+- [x] Tests: `test_bacnet_fault.py` (real bacpypes3 client incl. REST e2e), `test_snmp_fault.py` (real GET/GETNEXT incl. loop-responsiveness check), `test_mqtt_fault.py` (fake-client publish loop), `test_simulation_api.py` 422 case
+- **Result:** comm-layer fault simulation now at parity across all 5 protocols (Modbus / OPC UA / SNMP / MQTT / BACnet)
 
 ### Milestone 8.7：Consolidation (in progress 🔄)
 - [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
