@@ -134,6 +134,22 @@ class _DeviceApplication(Application):
         engine. bacpypes3's local objects would otherwise accept the write."""
         raise ExecutionError(errorClass="property", errorCode="writeAccessDenied")
 
+    async def do_WhoIsRequest(self, apdu) -> None:
+        """A device under timeout/intermittent fault goes fully dark (no I-Am),
+        like a real dead device. delay/exception only affect reads."""
+        from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import get_failure_rate
+
+        fault = fault_simulator.get_fault(self._ghost_device_id)
+        if fault is not None:
+            if fault.fault_type == "timeout":
+                return
+            if fault.fault_type == "intermittent" and random.random() < get_failure_rate(
+                fault.params
+            ):
+                return
+        await super().do_WhoIsRequest(apdu)
+
     def _count(self, t0: float, success: bool) -> None:
         if self._ghost_adapter is None or self._ghost_device_id is None:
             return

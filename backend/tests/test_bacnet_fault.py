@@ -229,3 +229,48 @@ class TestBacnetReadFaults:
                         ),
                         timeout=2,
                     )
+
+
+class TestBacnetWhoIsFault:
+    async def test_whois_suppressed_under_timeout(self):
+        from bacpypes3.pdu import Address
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            _set_fault(device_id, "timeout")
+            async with _client_app() as client:
+                addr = Address(f"{NETWORK}:*@127.0.0.1:{adapter._port}")
+                # who_is resolves on first I-Am for low==high, else waits its
+                # internal window (~3 s) and returns whatever arrived: nothing.
+                i_ams = await client.who_is(100001, 100001, addr)
+                assert i_ams == []
+
+    async def test_whois_recovers_after_clear(self):
+        from bacpypes3.pdu import Address
+
+        from app.simulation import fault_simulator
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            _set_fault(device_id, "timeout")
+            fault_simulator.clear_fault(device_id)
+            async with _client_app() as client:
+                addr = Address(f"{NETWORK}:*@127.0.0.1:{adapter._port}")
+                i_ams = await client.who_is(100001, 100001, addr)
+                assert len(i_ams) == 1
+                assert i_ams[0].iAmDeviceIdentifier[1] == 100001
+
+    async def test_whois_unaffected_by_delay_fault(self):
+        """Only timeout/intermittent make the device go dark; delay applies to reads."""
+        from bacpypes3.pdu import Address
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            _set_fault(device_id, "delay", {"delay_ms": 5000})
+            async with _client_app() as client:
+                addr = Address(f"{NETWORK}:*@127.0.0.1:{adapter._port}")
+                i_ams = await asyncio.wait_for(client.who_is(100001, 100001, addr), timeout=4)
+                assert len(i_ams) == 1
