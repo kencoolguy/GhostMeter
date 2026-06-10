@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     OPCUA_SERVER_NAME: str = "GhostMeter OPC UA Server"
     OPCUA_NAMESPACE_URI: str = "http://ghostmeter.local/opcua/"
 
+    # BACnet/IP
+    BACNET_ADDRESS: str = "0.0.0.0/0"  # CIDR; subnet mask needed for broadcast calc
+    BACNET_PORT: int = 47808
+    BACNET_DEVICE_INSTANCE_BASE: int = 100000  # device instance = base + slave_id; router = base
+    BACNET_NETWORK: int = 100  # virtual (VLAN) network number
+
     # Direct override (takes precedence if set)
     DATABASE_URL: str | None = None
 
