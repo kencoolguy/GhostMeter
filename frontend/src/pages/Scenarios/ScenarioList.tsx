@@ -12,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { scenarioApi } from "../../services/scenarioApi";
 import { useScenarioStore } from "../../stores/scenarioStore";
 import type { ScenarioSummary } from "../../types/scenario";
+import { downloadJson } from "../../utils/download";
 
 export function ScenarioList() {
   const navigate = useNavigate();
@@ -29,13 +30,7 @@ export function ScenarioList() {
   const handleExport = async (id: string, name: string) => {
     try {
       const resp = await scenarioApi.export(id);
-      const blob = new Blob([JSON.stringify(resp.data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${name.replace(/\s+/g, "_").toLowerCase()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadJson(resp.data, `${name.replace(/\s+/g, "_").toLowerCase()}.json`);
     } catch {
       message.error("Failed to export scenario");
     }
