@@ -44,7 +44,7 @@ DEBUG=false
 
 `deploy.sh` 會依序:套用 `docker-compose.prod.yml` overlay → build image → 起 postgres 並等 healthy → 跑 `alembic upgrade head` → 啟動全部服務 → 顯示狀態。
 
-更新版本時(`git pull` 後)重跑 `./deploy.sh` 即可,有新 migration 也會一併套用。
+更新版本時直接跑 `./update.sh` —— 它會 `git pull` 最新 `dev`、檢查 `.env` 有 `BIND_IP`,再呼叫 `deploy.sh`(含新 migration)。
 
 ## 4. 驗證(在已連 Tailscale 的電腦)
 
@@ -77,4 +77,5 @@ services:
 
 - `docker-compose.prod.yml` — 部署 overlay,把 port 綁到 `BIND_IP`、postgres 不對外
 - `deploy.sh` — build + migration + 啟動的一鍵腳本
+- `update.sh` — `git pull` 最新 dev + 檢查 `.env` + 呼叫 `deploy.sh` 的更新腳本
 - `.env.example` — `BIND_IP` 欄位說明

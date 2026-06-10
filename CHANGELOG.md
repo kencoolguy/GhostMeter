@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Deployment tooling for exposed hosts: `docker-compose.prod.yml` overlay binds all published ports to `BIND_IP` (Tailscale IP) and stops publishing PostgreSQL, so nothing is exposed on the public network interface
 - `deploy.sh` one-shot deploy script (applies prod overlay, runs Alembic migrations before startup, brings services up)
+- `update.sh` one-shot update script (pulls latest `dev`, checks `.env` has `BIND_IP`, then runs `deploy.sh`)
 - `docs/deployment.md` — concise Linode deployment guide (Tailscale + Cloudflare Tunnel)
 - `.env.example`: new `BIND_IP` setting (defaults to 127.0.0.1 when unset, failing safe to local-only)
 - OPC UA comm-layer fault simulation: delay / timeout / exception / intermittent now
