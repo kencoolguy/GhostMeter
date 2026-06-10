@@ -10,6 +10,7 @@ const PROTOCOL_OPTIONS = [
   { value: "modbus_tcp", label: "Modbus TCP" },
   { value: "snmp", label: "SNMP" },
   { value: "opcua", label: "OPC UA" },
+  { value: "bacnet", label: "BACnet/IP" },
 ];
 
 export default function TemplateForm() {
