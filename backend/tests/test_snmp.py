@@ -1,6 +1,7 @@
 """Tests for SNMP adapter OID mapping, conflict detection, and template CRUD with OID."""
 
 import json
+import re
 import uuid
 from pathlib import Path
 
@@ -283,3 +284,82 @@ class TestSnmpSeedValidation:
         assert data["name"] == "Normal Operation"
         assert data["is_default"] is True
         assert len(data["configs"]) == 10
+        # Regression: computed expressions must reference registers with {braces};
+        # bare names parse as an AST Name node and crash the value generator.
+        for cfg in data["configs"]:
+            if cfg["data_mode"] == "computed":
+                expr = cfg["mode_params"]["expression"]
+                bare = re.findall(r"(?<![{\w])[A-Za-z_]\w*", expr)
+                assert not bare, f"computed expr has unbraced variable(s) {bare}: {expr!r}"
+
+
+class TestSnmpAgentServesValues:
+    """Integration: a real SNMP GET/GETNEXT must return register values.
+
+    Regression for the missing MIB-controller wiring — the agent previously used
+    pysnmp's default (empty) MIB context, so every query returned noSuchObject
+    even though OIDs were registered and resolve_oid() worked in isolation.
+    """
+
+    async def test_get_and_getnext_return_values(self, monkeypatch):
+        import socket as _socket
+
+        from pysnmp.hlapi.v3arch.asyncio import (
+            CommunityData,
+            ContextData,
+            ObjectIdentity,
+            ObjectType,
+            SnmpEngine,
+            UdpTransportTarget,
+            get_cmd,
+            next_cmd,
+        )
+
+        from app.protocols.base import RegisterInfo
+        from app.protocols.snmp_agent import SnmpAdapter
+        from app.simulation import simulation_engine
+
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+
+        oid = "1.3.6.1.2.1.33.1.3.3.1.3.1"
+        device_id = uuid.uuid4()
+        monkeypatch.setattr(
+            simulation_engine,
+            "get_current_values",
+            lambda did: {"input_voltage": 221.5} if did == device_id else {},
+        )
+
+        adapter = SnmpAdapter(port=port)
+        await adapter.start()
+        try:
+            regs = [
+                RegisterInfo(0, 4, "float32", "big_endian", oid=oid, name="input_voltage"),
+            ]
+            await adapter.add_device(device_id, 1, regs)
+            adapter.set_register_names(device_id, {oid: "input_voltage"})
+
+            eng = SnmpEngine()
+            tgt = await UdpTransportTarget.create(("127.0.0.1", port))
+
+            # GET
+            ei, es, _ix, vbs = await get_cmd(
+                eng, CommunityData("public", mpModel=1), tgt, ContextData(),
+                ObjectType(ObjectIdentity(oid)),
+            )
+            assert ei is None and int(es) == 0
+            assert len(vbs) == 1
+            assert "221.5" in vbs[0][1].prettyPrint()
+
+            # GETNEXT from just below the OID should land on it
+            ei, es, _ix, vbs = await next_cmd(
+                eng, CommunityData("public", mpModel=1), tgt, ContextData(),
+                ObjectType(ObjectIdentity("1.3.6.1.2.1.33.1.3.3.1.3.0")),
+            )
+            assert ei is None and int(es) == 0
+            assert str(vbs[0][0].getOid()) == oid
+            assert "221.5" in vbs[0][1].prettyPrint()
+        finally:
+            await adapter.stop()

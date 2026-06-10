@@ -1,5 +1,42 @@
 # Development Log
 
+## 2026-06-10 — Fix: SNMP never served values + UPS computed-profile crash
+
+### Discovered while seeding SNMP/OPC UA test devices
+OPC UA test devices worked immediately. SNMP devices were created and OIDs
+registered, but every real `snmpget`/`snmpwalk` returned `noSuchObject`.
+
+### Bug A — SNMP agent not wired to its OID resolver
+`SnmpAdapter.start()` created command responders against pysnmp's **default**
+`SnmpContext` MIB controller (static, empty). The adapter's `resolve_oid` /
+`get_next_oid` / `_oid_map` were never consulted by pysnmp — only the unit tests
+called `resolve_oid` directly, so the suite was green while the agent served
+nothing over the wire. This affected every environment (local + Linode); SNMP
+had never actually worked end-to-end.
+- Fix: `_DynamicMibController(AbstractMibInstrumController)` overriding
+  `read_variables` / `read_next_variables` / `write_variables` to bridge to the
+  adapter; registered on the null context (`register_context_name(b"", ...)`)
+  after `unregister_context_name(b"")`. Added `to_snmp_object` (wraps floats as
+  `OctetString`). Added an integration test doing a real GET + GETNEXT through
+  the running agent — the regression test the suite was missing.
+
+### Bug B — UPS profile computed expression syntax
+`snmp_ups_normal.json` `output_power` used `output_voltage * output_current`
+(bare names). The expression parser only substitutes `{braced}` variables; bare
+identifiers parse as `ast.Name` and raise, so the device stopped after 5
+consecutive generation errors. Fixed the seed to `{output_voltage} *
+{output_current}`; added a seed assertion that computed expressions are braced.
+
+### Multi-device SNMP note
+The SNMP agent keys values by absolute OID, so two devices from the same
+template collide (`OID_CONFLICT`). Distinct SNMP devices need distinct OIDs —
+for the 3 test devices, two OID-offset clone templates were used.
+
+### Verification
+- `pytest -q`: 324 passed (new integration test included), no regressions.
+- Live local: SNMP GET on 3 devices returns values (input_voltage ~220V) and
+  computed `output_power` (~1045) with no AST errors; OPC UA ×3 still reads live.
+
 ## 2026-06-10 — Deployment tooling (Linode / Tailscale / Cloudflare)
 
 ### What was done
