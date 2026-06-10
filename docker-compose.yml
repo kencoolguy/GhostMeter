@@ -30,6 +30,7 @@ services:
       - "502:502"
       - "161:10161/udp"
       - "4840:4840"
+      - "47808:47808/udp"
     depends_on:
       postgres:
         condition: service_healthy

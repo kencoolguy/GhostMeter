@@ -351,6 +351,12 @@ async def start_device(
         if opcua_adapter is not None:
             opcua_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
 
+    # BACnet needs the device display name before the device object is created
+    if template.protocol == "bacnet" and protocol_manager.is_running:
+        bacnet_adapter = protocol_manager.get_adapter("bacnet")
+        if bacnet_adapter is not None:
+            bacnet_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
+
     # Register device in protocol adapter
     if protocol_manager.is_running:
         try:

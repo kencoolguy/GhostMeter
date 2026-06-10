@@ -116,6 +116,8 @@ class MonitorService:
                 "avg_response_ms": 0.0,
             }
             stats = protocol_manager.get_stats("modbus_tcp", device_id)
+            if stats is None:
+                stats = protocol_manager.get_stats("bacnet", device_id)
             if stats:
                 stats_data = {
                     "request_count": stats.request_count,

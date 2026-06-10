@@ -26,6 +26,7 @@ from app.exceptions import (
 )
 from app.models.device import DeviceInstance
 from app.protocols import protocol_manager
+from app.protocols.bacnet_agent import BacnetAdapter
 from app.protocols.base import RegisterInfo
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.mqtt_adapter import MqttAdapter
@@ -98,6 +99,15 @@ async def lifespan(app: FastAPI):
         namespace_uri=settings.OPCUA_NAMESPACE_URI,
     )
     protocol_manager.register_adapter("opcua", opcua_adapter)
+
+    # Register BACnet adapter
+    bacnet_adapter = BacnetAdapter(
+        address=settings.BACNET_ADDRESS,
+        port=settings.BACNET_PORT,
+        device_instance_base=settings.BACNET_DEVICE_INSTANCE_BASE,
+        network=settings.BACNET_NETWORK,
+    )
+    protocol_manager.register_adapter("bacnet", bacnet_adapter)
 
     await protocol_manager.start_all()
     logger.info("Protocol manager started")
