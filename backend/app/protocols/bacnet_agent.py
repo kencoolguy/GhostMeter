@@ -241,6 +241,17 @@ class BacnetAdapter(ProtocolAdapter):
                 error_code="BACNET_INSTANCE_CONFLICT",
             )
 
+        # Defensive: re-adding an already-registered device_id would overwrite
+        # its app and strand the old VLAN node. Unreachable via the service
+        # layer (start requires status "stopped"), but cheap to guard.
+        stale_app = self._device_apps.pop(device_id, None)
+        if stale_app is not None:
+            self._detach_vlan_nodes(stale_app)
+            try:
+                stale_app.close()
+            except Exception:
+                logger.debug("Error closing stale BACnet device app", exc_info=True)
+
         display_name = self._device_meta.get(device_id) or f"Device_{slave_id}"
         core_objs: list[Object] = [
             DeviceObject(

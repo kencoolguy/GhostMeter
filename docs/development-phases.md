@@ -268,7 +268,7 @@
 - [x] `base.py` fix: stats entry no longer leaked when `_do_add_device` raises (affects all adapters)
 - [x] Built-in "Energy Meter (BACnet)" seed template + Normal Operation profile
 - [x] Frontend `bacnet` protocol option; docker-compose + prod overlay UDP 47808; config settings (`BACNET_NETWORK`, `BACNET_DEVICE_INSTANCE_BASE`)
-- [x] `backend/tests/test_bacnet_adapter.py`: 17 tests (lifecycle, device add/remove, register round-trip, stats, restart safety, OID zombie prevention)
+- [x] `backend/tests/test_bacnet_adapter.py`: 17 tests (lifecycle, device add/remove, register round-trip, stats, restart safety, VLAN-node zombie prevention)
 - **Deferred:** COV subscriptions, WriteProperty, comm-layer fault simulation, BBMD / Foreign Device registration
 
 ### Milestone 8.7：Consolidation (in progress 🔄)
