@@ -760,7 +760,7 @@ For higher-level reusable parameter sets, see [Simulation Profiles](#simulation-
 
 | `fault_type` | Expected params |
 |--------------|-----------------|
-| `delay` | `delay_ms` (integer, default `500`) — extra latency added to each response |
+| `delay` | `delay_ms` (integer, default `500`, capped at `10000`) — extra latency added to each response |
 | `timeout` | — (no params) — responses are suppressed so the client hits its own timeout |
 | `exception` | `exception_code` (integer Modbus exception code, default `0x04` SLAVE_DEVICE_FAILURE) |
 | `intermittent` | `failure_rate` (float between 0 and 1, default `0.5`) — probability of suppressing each request |
