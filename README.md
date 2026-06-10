@@ -2,7 +2,7 @@
 
 > Multi-protocol device simulator for energy management systems.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)]()
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)]()
 [![Python](https://img.shields.io/badge/python-3.12+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
@@ -18,7 +18,8 @@
 - **Profile management**: Export, import, and blank template download for easy sharing
 - **5 data generation modes**: static, random, daily curve, computed, accumulator
 - **Anomaly injection**: spike, drift, flatline, out-of-range, data loss (real-time + scheduled)
-- **Fault simulation**: delay, timeout, exception, intermittent communication
+- **Scenario mode**: reusable anomaly timelines per template with a drag-and-drop editor, built-in scenario presets, and per-device execution with live progress
+- **Fault simulation**: delay, timeout, exception, intermittent communication — supported across all five protocols
 - **Real-time monitoring**: WebSocket dashboard with charts and event log
 - **Batch operations**: Start, stop, and delete multiple devices at once
 - **Config export/import**: Full system snapshot including MQTT settings and simulation profiles

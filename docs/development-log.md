@@ -1,5 +1,25 @@
 # Development Log
 
+## 2026-06-11 — Cut release 0.4.0 準備（Milestone 8.7）
+
+### 做了什麼
+
+- **版本號對齊 0.4.0**：原本三處版本各自為政——README badge 0.3.0、backend
+  `APP_VERSION` 0.1.0（從未 bump 過）、frontend `package.json` 0.1.0。
+  選 0.4.0 是因為自 0.3.0 後是大量向後相容的功能新增（SNMP/OPC UA/BACnet 三個
+  協議、5 協議 fault parity、Scenario mode、Monitor 改版），尚未到 1.0。
+- **CHANGELOG cut**：`[Unreleased]` 整段移入 `[0.4.0] - 2026-06-11`，並把歷次
+  push 累積的重複章節標題（兩個 Previously Added、多個 Changed/Fixed）依
+  keep-a-changelog 慣例機械式合併（條目逐字保留，僅重新分組），留下空的
+  `[Unreleased]`。
+- README features 補上 Scenario mode（0.4.0 主打功能漏列）。
+- 後端 full suite 健康檢查：**380 passed、0 skipped**。
+
+### 待人工執行
+
+兩個 PR（#47 /simplify 清理、release prep）審查合併進 dev 後，開 dev→main PR
+並在 merge 後打 `v0.4.0` tag。
+
 ## 2026-06-11 — Pre-release /simplify 清理（Milestone 8.7）
 
 ### 做了什麼
