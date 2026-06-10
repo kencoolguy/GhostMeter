@@ -285,6 +285,7 @@
 - [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)
 - [x] API reference drift fix: document 18 previously undocumented endpoints (anomaly, simulation config, fault, simulation-profile import/export/blank)
 - [x] `RegisterValue` schema: document `oid` field and update stale `value` description
+- [x] Pre-release /simplify cleanup pass over `main...dev`: 14 behavior-preserving fixes applied (adapter fault-type capability, shared device-runtime registration, SNMP one-phase name map, frontend anomaly constants, monitor history/render perf, CSS-variable theming, test helper consolidation) — see dev log 2026-06-11; 5 findings deferred (OPC UA blocking delay, scenario param validation semantics, monitor DB cache, fault-action resolver, adapter_status generalization)
 - [ ] Push feature branch and verify CI pipeline runs green
 - [ ] Backend test health check (`pytest` full run, confirm no skipped/flaky tests)
 - [ ] Cut release (resolve README 0.3.0 vs. current unreleased feature gap)

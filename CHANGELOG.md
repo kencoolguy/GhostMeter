@@ -45,6 +45,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Monitor service 不再 filter 掉 stopped 設備（卡片網格會淡化顯示）
 - DeviceCard 點擊行為改為跳轉 `/devices/{id}`（取代同頁展開 detail panel）
 - ProtocolManager.get_adapter() 改為回傳 Optional（呼叫端統一加 None check + RuntimeError）
+- **Pre-release /simplify 清理**（行為不變的內部重構 + 兩處小幅 UX 補完）：
+  - Fault 能力改由 adapter 以 class 屬性 `supported_fault_types` 宣告，REST 層改為泛用檢查（原本是 route 內寫死的 MQTT 字串判斷）；422 訊息文字改為通用格式，`error_code` 不變
+  - 設備啟動與重啟自動恢復共用 `device_service.register_device_runtime()`（原本 `app/main.py` 複製了一份註冊流程，兩邊已出現 drift）；SNMP 改為在 `add_device` 直接寫入 OID→register name 對照，移除兩段式的 `set_register_names`
+  - `get_device_protocol` 由 3 個 query（含整組 register selectinload）縮成單一 JOIN scalar query（fault set/clear 路徑）
+  - OPC UA fault callback 改用共用的 `get_delay_seconds` / `get_failure_rate`（五協議中最後一個 inline 寫死 clamp 的）
+  - 前端 anomaly 型別中繼資料（選項、參數欄位 schema、顏色）統一到 `constants/anomaly.ts`；StepPopover 原本宣告卻從未套用的預設值改為套用 AnomalyTab 的版本（spike: multiplier 2.0 / probability 0.1），timeline 與 scenario badge 顏色統一
+  - monitorStore 的 register history 只累積 running 設備的 primary register（sparkline 是唯一消費者；原本每秒為所有 register 複製 300 點陣列）
+  - DeviceDetail 收到 1 Hz broadcast 時若值未變不再 setState（整頁不再每秒重繪）
+  - `/monitor?device={id}` 參數補上消費端：Monitor 頁會捲動到對應設備卡（原本參數寫了沒人讀）
+  - Monitor 元件改用 global.css 既有的 `--gm-*` CSS 變數（原本同一份色票 inline 硬編碼 ~25 處）
+  - 共用 `utils/download.ts`（downloadBlob/downloadJson）、`services/ws.ts`（MONITOR_WS_URL）；ScenarioEditor 改走 `templateApi`
+  - 移除死代碼：SimulationEngine `_device_tasks` 相容 property、從未被讀取的 `last_restart`；BACnet 兩個 byte-identical read handler 合併；scenario step 欄位清單三份手抄合併為 helper
+  - 測試:`tests/netutil.py` 共用 free-port helpers（原本 5 個檔案各自定義）、`clean_faults` 改為 conftest 全域 autouse fixture
 
 ### Removed
 - `pages/Monitor/DeviceDetailPanel.tsx`、`RegisterChart.tsx`、`StatsPanel.tsx`、`EventLog.tsx`
