@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- BACnet/IP protocol adapter (5th protocol): Who-Is/I-Am discovery, ReadProperty / ReadPropertyMultiple. One UDP port (47808) with a virtual-network router topology — each device is an independent BACnet device instance (`100000 + slave_id`); registers map to read-only analog-input objects with engineering units. Per-device read statistics included.
+- Builtin template "Energy Meter (BACnet)" with Normal Operation profile.
 - Deployment tooling for exposed hosts: `docker-compose.prod.yml` overlay binds all published ports to `BIND_IP` (Tailscale IP) and stops publishing PostgreSQL, so nothing is exposed on the public network interface
 - `deploy.sh` one-shot deploy script (applies prod overlay, runs Alembic migrations before startup, brings services up)
 - `update.sh` one-shot update script (pulls latest `dev`, checks `.env` has `BIND_IP`, then runs `deploy.sh`)

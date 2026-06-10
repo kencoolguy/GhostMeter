@@ -11,7 +11,9 @@
 - **Modbus TCP** protocol simulation (FC03 + FC04, multi slave ID)
 - **MQTT publish** to external broker (batch or per-register, configurable topic/QoS)
 - **SNMP agent** (SNMPv2c GET/GETNEXT/WALK) with OID mapping for UPS and other devices
-- **Built-in templates**: Three-Phase Meter, Single-Phase Meter, Solar Inverter, UPS (SNMP)
+- **OPC UA server** (Anonymous/None security; browsable Variable nodes, Read + Subscribe)
+- **BACnet/IP** (UDP 47808; Who-Is/I-Am discovery, ReadProperty / ReadPropertyMultiple; each device is an independent BACnet device instance)
+- **Built-in templates**: Three-Phase Meter, Single-Phase Meter, Solar Inverter, UPS (SNMP), Energy Meter (OPC UA), Energy Meter (BACnet)
 - **Simulation profiles**: Reusable parameter sets with per-register config, auto-applied on device creation
 - **Profile management**: Export, import, and blank template download for easy sharing
 - **5 data generation modes**: static, random, daily curve, computed, accumulator
@@ -36,6 +38,8 @@ docker compose up -d
 - **Web UI**: http://localhost:3002
 - **API**: http://localhost:8000/api/v1/
 - **Modbus TCP**: localhost:502
+- **OPC UA**: opc.tcp://localhost:4840/ghostmeter/server/
+- **BACnet/IP**: UDP localhost:47808
 - **Health**: http://localhost:8000/health
 
 To also start a local MQTT broker for development:
@@ -156,7 +160,7 @@ Cloudflare Tunnel).
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Python 3.12+ / FastAPI / pymodbus / aiomqtt / SQLAlchemy 2.0 / PostgreSQL 16 |
+| Backend | Python 3.12+ / FastAPI / pymodbus / aiomqtt / asyncua / bacpypes3 / SQLAlchemy 2.0 / PostgreSQL 16 |
 | Frontend | React 18 / TypeScript / Ant Design 5 / Zustand / Recharts |
 | Infrastructure | Docker Compose / Alembic / Nginx |
 
@@ -190,6 +194,13 @@ Modbus TCP → localhost:502
 
 MQTT → configurable external broker
   └── Publishes device telemetry (batch or per-register)
+
+OPC UA → opc.tcp://localhost:4840/ghostmeter/server/
+  └── Browsable Variable nodes (Read + Subscribe, Anonymous/None)
+
+BACnet/IP → UDP localhost:47808
+  ├── Device 100001: Energy Meter (instance = 100000 + slave_id)
+  └── Registers → read-only analog-input objects with engineering units
 ```
 
 - Supports FC03 (Holding Registers) and FC04 (Input Registers)
@@ -197,6 +208,15 @@ MQTT → configurable external broker
 - Register values updated by simulation engine at configurable intervals
 - MQTT publish with configurable topic templates, QoS, and retain flag
 - Anomaly injection and fault simulation for testing edge cases
+
+### BACnet/IP discovery note
+
+BACnet Who-Is discovery uses UDP broadcast and **does not traverse docker bridge networks or routed subnets** (e.g. Tailscale). If your EMS client is on a different L2 segment from the simulator:
+
+- Configure the simulator's IP as a static BACnet device address in your client — **unicast ReadProperty and directed Who-Is work fine** without broadcast reachability.
+- Alternatively, run the client on the same docker network or host network as the simulator.
+
+BBMD (BACnet Broadcast Management Device) / Foreign Device registration is deferred. I-Am announcements are skipped on /31 and /32 binds (no broadcast address).
 
 ## Project Structure
 
@@ -208,7 +228,7 @@ ghostmeter/
 │   │   ├── models/      # SQLAlchemy ORM models
 │   │   ├── schemas/     # Pydantic schemas
 │   │   ├── services/    # Business logic
-│   │   ├── protocols/   # Protocol adapters (Modbus TCP, MQTT)
+│   │   ├── protocols/   # Protocol adapters (Modbus TCP, MQTT, SNMP, OPC UA, BACnet/IP)
 │   │   ├── simulation/  # Data generation + anomaly engine
 │   │   └── seed/        # Built-in templates + profiles
 │   ├── alembic/         # DB migrations
