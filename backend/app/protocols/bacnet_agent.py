@@ -17,6 +17,7 @@ Values are pushed in via update_register() (same model as OPC UA).
 
 import ipaddress
 import logging
+import math
 import time
 from uuid import UUID
 
@@ -49,6 +50,20 @@ _UNIT_MAP: dict[str, str] = {
 
 _ROUTER_VLAN_MAC = 254  # router node address on the VLAN; slave_ids are 1-247
 _VENDOR_ID = 999  # bacpypes3 sample/local-object vendor id
+_FLOAT32_MAX = 3.4028234663852886e38  # BACnet Real is float32 on the wire
+
+
+def _clamp_to_real(value: float) -> float:
+    """Clamp to the float32-representable range.
+
+    Out-of-range values (reachable via anomaly injection) raise OverflowError
+    when bacpypes3 encodes the Real response, turning every client read into
+    an operational-problem error. NaN/inf are valid float32 patterns and pass
+    through unchanged.
+    """
+    if math.isnan(value) or math.isinf(value):
+        return value
+    return max(-_FLOAT32_MAX, min(_FLOAT32_MAX, value))
 
 
 class _DeviceApplication(Application):
@@ -342,7 +357,7 @@ class BacnetAdapter(ProtocolAdapter):
                 "BACnet: no object for device %s addr %d", device_id, address,
             )
             return
-        obj.presentValue = float(value)
+        obj.presentValue = _clamp_to_real(float(value))
 
     def set_device_meta(self, device_id: UUID, device_name: str) -> None:
         """Set the BACnet objectName used for a device.

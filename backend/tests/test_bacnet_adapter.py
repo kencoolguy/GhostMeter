@@ -249,3 +249,23 @@ class TestBacnetUpdateRegister:
             await adapter.update_register(
                 device_id, 99, 3, 1.0, "float32", "big_endian"
             )
+
+    async def test_out_of_range_value_clamped_to_float32(self):
+        """Anomaly injection can produce values beyond float32 range; they
+        must be clamped so client reads keep succeeding (BACnet Real is
+        float32 on the wire — unclamped 1e40 raises OverflowError during
+        response encoding)."""
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            await adapter.update_register(
+                device_id, 0, 3, 1e40, "float32", "big_endian"
+            )
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                value = await client.read_property(
+                    addr, ObjectIdentifier(("analog-input", 0)), "present-value"
+                )
+                assert float(value) == pytest.approx(3.4028234663852886e38)
