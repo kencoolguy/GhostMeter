@@ -13,7 +13,7 @@ Implementation order within the single PR: BACnet → SNMP → MQTT.
 ## Decisions (user-approved)
 
 1. **One PR, three protocols** — single feature branch and spec; shared fault semantics reviewed once.
-2. **MQTT does not support `exception`** — publish-only protocols have no request/response channel to return an error on. `PUT /devices/{id}/fault` with `fault_type=exception` on an MQTT device returns **400 VALIDATION_ERROR**. The other three types map naturally.
+2. **MQTT does not support `exception`** — publish-only protocols have no request/response channel to return an error on. `PUT /devices/{id}/fault` with `fault_type=exception` on an MQTT device returns **422 VALIDATION_ERROR** (the project's `ValidationException` convention). The other three types map naturally.
 3. **BACnet `timeout`/`intermittent` also suppress Who-Is** — a faulted device goes fully dark (no I-Am), matching how a real dead device behaves on a BACnet network.
 4. **Architecture: pull-based everywhere (Approach A, the Modbus model)** — each adapter checks `fault_simulator.get_fault(device_id)` live on its serving path. No `apply_fault`/`remove_fault` overrides; base no-op hooks remain. OPC UA keeps its existing push-based implementation (it was forced into that model by asyncua's lack of a read-interception hook; these three all have natural interception points).
 
@@ -25,7 +25,7 @@ Why pull-based: single source of truth (`fault_simulator`), no fault-state cachi
 |---|---|---|---|
 | `delay` (`delay_ms`, default 500, cap 10 000) | `await asyncio.sleep` then respond normally | `loop.call_later` defers the whole `process_pdu` (non-blocking) | `await asyncio.sleep` then publish normally |
 | `timeout` | No response (reads **and** Who-Is) | No response | Skip publish (data flow stops) |
-| `exception` | BACnet Error `device` / `operationalProblem` | `genErr` error response | **Rejected at REST with 400** |
+| `exception` | BACnet Error `device` / `operationalProblem` | `genErr` error response | **Rejected at REST with 422** |
 | `intermittent` (`failure_rate`, default 0.5) | Probabilistic no-response (reads **and** Who-Is) | Probabilistic no-response | Probabilistic skip of publish |
 
 The 10 s delay cap matches the existing OPC UA implementation.
@@ -68,7 +68,7 @@ Hook: inside `_publish_loop`, after the interval sleep and before building the p
 
 ### REST validation (`backend/app/api/routes/simulation.py`)
 
-`set_fault` already resolves the device's protocol to find the adapter. Add: if protocol is `mqtt` and `fault_type == "exception"` → raise the existing validation exception type (HTTP 400, `error_code=VALIDATION_ERROR`, detail explaining MQTT has no request/response channel). No schema changes; `GET`/`DELETE /fault` unchanged.
+`set_fault` already resolves the device's protocol to find the adapter. Add: if protocol is `mqtt` and `fault_type == "exception"` → raise the existing validation exception type (HTTP 422, `error_code=VALIDATION_ERROR`, detail explaining MQTT has no request/response channel). No schema changes; `GET`/`DELETE /fault` unchanged.
 
 ## Stats convention
 
@@ -86,7 +86,7 @@ Follow the existing real-client integration-test pattern (`test_bacnet_adapter.p
 
 - **BACnet** (`test_bacnet_adapter.py`): per fault type with a real bacpypes3 client on loopback — `exception` → `ErrorRejectAbortNack` with `operational-problem`; `timeout` → client read raises timeout; `delay` → elapsed ≥ delay_ms; `intermittent` (rate 1.0) → timeout, (rate 0.0) → serves; Who-Is suppressed under timeout; fault cleared → reads recover.
 - **SNMP** (`test_snmp_adapter.py`): real GET/GETNEXT through the agent — `timeout` → no response; `exception` → `errorStatus == genErr`; `delay` → elapsed ≥ delay_ms and event loop stays responsive during the wait; `intermittent` boundary rates; fault cleared → recovers.
-- **MQTT**: follow existing MQTT test patterns — assert publish skipped under timeout/intermittent (stats error counted), delayed under delay; REST e2e: `PUT /fault` `exception` on an MQTT device → 400.
+- **MQTT**: follow existing MQTT test patterns — assert publish skipped under timeout/intermittent (stats error counted), delayed under delay; REST e2e: `PUT /fault` `exception` on an MQTT device → 422.
 - **REST e2e** for one protocol (BACnet): set fault via API → behavior observed by real client → clear via API → recovery.
 
 ## Out of scope
@@ -98,4 +98,4 @@ Follow the existing real-client integration-test pattern (`test_bacnet_adapter.p
 
 ## Docs to update before push
 
-`CHANGELOG.md`, `docs/development-log.md`, `docs/development-phases.md` (new milestone), `docs/api-reference.md` (fault endpoint: MQTT exception 400 note). `docs/database-schema.md` unaffected (no DB changes).
+`CHANGELOG.md`, `docs/development-log.md`, `docs/development-phases.md` (new milestone), `docs/api-reference.md` (fault endpoint: MQTT exception 422 note). `docs/database-schema.md` unaffected (no DB changes).
