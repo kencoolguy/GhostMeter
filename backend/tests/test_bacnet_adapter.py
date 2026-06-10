@@ -142,6 +142,22 @@ class TestBacnetLifecycle:
         finally:
             await adapter.stop()
 
+    async def test_start_fails_when_port_occupied(self):
+        """bacpypes3 binds asynchronously with infinite retry — without a
+        pre-bind probe, start() would report running=True with a dead socket."""
+        from app.protocols.bacnet_agent import BacnetAdapter
+
+        port = _free_udp_port()
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        blocker.bind(("127.0.0.1", port))
+        try:
+            adapter = BacnetAdapter(address="127.0.0.1/32", port=port)
+            await adapter.start()
+            assert adapter.get_status()["running"] is False
+        finally:
+            blocker.close()
+            await adapter.stop()
+
 
 class TestBacnetAddRemoveDevice:
     async def test_add_device_creates_objects(self):
@@ -349,3 +365,4 @@ class TestBacnetDiscoveryAndRpm:
                 }
                 assert abs(float(values[("analog-input,0", "present-value")]) - 220.0) < 0.01
                 assert str(values[("analog-input,0", "object-name")]) == "voltage_l1"
+                assert float(values[("analog-input,2", "present-value")]) == 0.0

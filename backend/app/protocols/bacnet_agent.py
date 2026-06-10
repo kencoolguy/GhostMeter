@@ -18,6 +18,7 @@ Values are pushed in via update_register() (same model as OPC UA).
 import ipaddress
 import logging
 import math
+import socket
 import time
 from uuid import UUID
 
@@ -129,6 +130,19 @@ class BacnetAdapter(ProtocolAdapter):
     async def start(self) -> None:
         """Create the VLAN and start the IPv4 router application."""
         try:
+            # bacpypes3 binds its UDP socket in a background task that retries
+            # forever on OSError, so Application.from_object_list() returns
+            # successfully even when the port is already taken. Probe-bind a
+            # throwaway socket first so a port conflict fails loudly here
+            # (running=False) instead of silently serving nothing.
+            # SO_REUSEADDR lets bacpypes3 rebind immediately after the probe
+            # closes; it does NOT let the probe bind over a foreign socket on
+            # macOS/Linux unless that socket also set it, so the check holds.
+            bind_host = self._address.split("/", 1)[0]
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind((bind_host, self._port))
+
             self._vlan = VirtualNetwork(self._vlan_name)
 
             router_device = DeviceObject(
@@ -186,14 +200,19 @@ class BacnetAdapter(ProtocolAdapter):
                 logger.debug("Error closing BACnet device app", exc_info=True)
         self._device_apps.clear()
         if self._router_app is not None:
+            self._cancel_transport_tasks(self._router_app)
             try:
                 self._router_app.close()
             except Exception:
                 logger.debug("Error closing BACnet router app", exc_info=True)
             self._router_app = None
         # VirtualNetwork keeps a global name registry; release our entry so
-        # restart (and the test suite) can re-create the network.
-        VirtualNetwork._networks.pop(self._vlan_name, None)
+        # restart (and the test suite) can re-create the network. Guarded so
+        # that a failed start() caused by ANOTHER adapter owning this VLAN
+        # name (ValueError from VirtualNetwork()) does not remove the other
+        # instance's registry entry — in that case self._vlan is still None.
+        if VirtualNetwork._networks.get(self._vlan_name) is self._vlan:
+            VirtualNetwork._networks.pop(self._vlan_name, None)
         self._vlan = None
         self._objects.clear()
         self._instance_owner.clear()
@@ -306,6 +325,32 @@ class BacnetAdapter(ProtocolAdapter):
             "BACnet: added device %s (instance %d, %d objects)",
             display_name, instance, len(analog_objs),
         )
+
+    @staticmethod
+    def _cancel_transport_tasks(app: Application) -> None:
+        """Cancel pending UDP bind tasks on the app's IPv4 link layers.
+
+        bacpypes3's IPv4DatagramServer binds in a background task that
+        retries forever on OSError, and its close() only closes already-bound
+        transports — a still-retrying task survives stop() and would bind an
+        orphan socket if the port later frees up. Best-effort: link layers
+        without a .server / _transport_tasks (e.g. VLAN) are skipped.
+
+        Cancelling a still-pending task may log a harmless "Exception in
+        callback ... CancelledError" traceback: bacpypes3's own done-callback
+        (set_local_transport_protocol) calls task.result() unguarded. Noise
+        only; the alternative is leaking the orphan bind task.
+        """
+        for link_layer in getattr(app, "link_layers", {}).values():
+            server = getattr(link_layer, "server", None)
+            for task in getattr(server, "_transport_tasks", None) or []:
+                try:
+                    if not task.done():
+                        task.cancel()
+                except Exception:
+                    logger.debug(
+                        "Error cancelling BACnet transport task", exc_info=True,
+                    )
 
     @staticmethod
     def _detach_vlan_nodes(app: Application) -> None:
