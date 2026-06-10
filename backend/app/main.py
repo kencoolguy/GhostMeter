@@ -131,6 +131,19 @@ async def lifespan(app: FastAPI):
                     template.protocol, device.id, device.slave_id, register_infos,
                 )
                 await simulation_engine.start_device(device.id)
+                # SNMP needs its OID→register-name map rebuilt so resolve_oid can
+                # look values up by name (mirrors device_service.start_device).
+                # Without this, resumed SNMP devices serve noSuchObject after a
+                # restart even though their OIDs are registered.
+                if template.protocol == "snmp":
+                    snmp_adapter = protocol_manager.get_adapter("snmp")
+                    if snmp_adapter is not None:
+                        oid_to_name = {
+                            reg.oid: reg.name
+                            for reg in template.registers
+                            if reg.oid
+                        }
+                        snmp_adapter.set_register_names(device.id, oid_to_name)
                 resumed += 1
             except Exception:
                 logger.error(
