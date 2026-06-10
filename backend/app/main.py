@@ -137,6 +137,10 @@ async def lifespan(app: FastAPI):
                 ]
                 if template.protocol == "opcua":
                     opcua_adapter.set_device_meta(device.id, device.name)
+                if template.protocol == "bacnet":
+                    bacnet_adapter = protocol_manager.get_adapter("bacnet")
+                    if bacnet_adapter is not None:
+                        bacnet_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
                 await protocol_manager.add_device(
                     template.protocol, device.id, device.slave_id, register_infos,
                 )
