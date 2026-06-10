@@ -1,16 +1,10 @@
 import { PlayCircleOutlined, StopOutlined } from "@ant-design/icons";
 import { Badge, Button, Card, List, Progress, Select, Space, Typography, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ANOMALY_COLORS, ANOMALY_FALLBACK_COLOR } from "../../constants/anomaly";
 import { scenarioApi } from "../../services/scenarioApi";
+import type { AnomalyType } from "../../types";
 import type { ScenarioExecutionStatus, ScenarioSummary } from "../../types/scenario";
-
-const ANOMALY_BADGE_COLORS: Record<string, string> = {
-  spike: "orange",
-  drift: "blue",
-  flatline: "default",
-  out_of_range: "red",
-  data_loss: "purple",
-};
 
 interface ScenarioCardProps {
   deviceId: string;
@@ -123,7 +117,7 @@ export function ScenarioCard({ deviceId, templateId, deviceStatus }: ScenarioCar
               renderItem={(item) => (
                 <List.Item>
                   <span>{item.register_name}</span>
-                  <Badge color={ANOMALY_BADGE_COLORS[item.anomaly_type] ?? "default"} text={item.anomaly_type} />
+                  <Badge color={ANOMALY_COLORS[item.anomaly_type as AnomalyType] ?? ANOMALY_FALLBACK_COLOR} text={item.anomaly_type} />
                   <Typography.Text type="secondary">{item.remaining_seconds}s remaining</Typography.Text>
                 </List.Item>
               )}

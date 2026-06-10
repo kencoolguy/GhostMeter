@@ -11,6 +11,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
+import { ANOMALY_PARAM_FIELDS, ANOMALY_TYPE_OPTIONS } from "../../constants/anomaly";
 import { deviceApi } from "../../services/deviceApi";
 import { useSimulationStore } from "../../stores/simulationStore";
 import type {
@@ -19,43 +20,6 @@ import type {
   AnomalyType,
   RegisterValue,
 } from "../../types";
-
-const ANOMALY_TYPE_OPTIONS: { value: AnomalyType; label: string }[] = [
-  { value: "spike", label: "Spike" },
-  { value: "drift", label: "Drift" },
-  { value: "flatline", label: "Flatline" },
-  { value: "out_of_range", label: "Out of Range" },
-  { value: "data_loss", label: "Data Loss" },
-];
-
-interface AnomalyParamField {
-  name: string;
-  label: string;
-  required: boolean;
-  default?: number;
-  min?: number;
-  max?: number;
-  step?: number;
-  placeholder?: string;
-}
-
-const ANOMALY_PARAM_FIELDS: Record<AnomalyType, AnomalyParamField[]> = {
-  spike: [
-    { name: "multiplier", label: "Multiplier", required: true, default: 2.0, min: 0.01, step: 0.5 },
-    { name: "probability", label: "Probability", required: true, default: 0.1, min: 0, max: 1, step: 0.1 },
-  ],
-  drift: [
-    { name: "drift_per_second", label: "Drift/sec", required: true, step: 1, placeholder: "e.g. 10" },
-    { name: "max_drift", label: "Max drift", required: true, min: 0.01, step: 10, placeholder: "e.g. 500" },
-  ],
-  flatline: [
-    { name: "value", label: "Freeze value", required: false, placeholder: "Empty = freeze current" },
-  ],
-  out_of_range: [
-    { name: "value", label: "Value", required: true, placeholder: "e.g. 99999" },
-  ],
-  data_loss: [],
-};
 
 export function AnomalyTab({ deviceId }: { deviceId: string }) {
   const {

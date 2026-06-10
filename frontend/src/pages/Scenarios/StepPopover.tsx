@@ -1,27 +1,7 @@
 import { Button, Form, InputNumber, Select, Space } from "antd";
+import { ANOMALY_PARAM_FIELDS, ANOMALY_TYPE_OPTIONS } from "../../constants/anomaly";
+import type { AnomalyType } from "../../types";
 import type { ScenarioStepCreate } from "../../types/scenario";
-
-const ANOMALY_TYPES = [
-  { value: "spike", label: "Spike" },
-  { value: "drift", label: "Drift" },
-  { value: "flatline", label: "Flatline" },
-  { value: "out_of_range", label: "Out of Range" },
-  { value: "data_loss", label: "Data Loss" },
-];
-
-const ANOMALY_PARAM_FIELDS: Record<string, { label: string; key: string; default: number }[]> = {
-  spike: [
-    { label: "Probability", key: "probability", default: 0.8 },
-    { label: "Multiplier", key: "multiplier", default: 1.5 },
-  ],
-  drift: [
-    { label: "Drift/sec", key: "drift_per_second", default: 2 },
-    { label: "Max Drift", key: "max_drift", default: 30 },
-  ],
-  flatline: [{ label: "Value", key: "value", default: 0 }],
-  out_of_range: [{ label: "Value", key: "value", default: 0 }],
-  data_loss: [],
-};
 
 interface StepPopoverProps {
   registerName: string;
@@ -33,14 +13,14 @@ interface StepPopoverProps {
 
 export function StepPopover({ registerName, initialValues, onSave, onDelete, onCancel }: StepPopoverProps) {
   const [form] = Form.useForm();
-  const anomalyType = Form.useWatch("anomaly_type", form);
+  const anomalyType = Form.useWatch("anomaly_type", form) as AnomalyType | undefined;
 
   const handleSave = () => {
     form.validateFields().then((values) => {
       const params: Record<string, number> = {};
-      const fields = ANOMALY_PARAM_FIELDS[values.anomaly_type] ?? [];
+      const fields = ANOMALY_PARAM_FIELDS[values.anomaly_type as AnomalyType] ?? [];
       for (const f of fields) {
-        if (values[f.key] !== undefined) params[f.key] = values[f.key];
+        if (values[f.name] !== undefined && values[f.name] !== null) params[f.name] = values[f.name];
       }
       onSave({
         register_name: registerName,
@@ -53,7 +33,7 @@ export function StepPopover({ registerName, initialValues, onSave, onDelete, onC
     });
   };
 
-  const paramFields = ANOMALY_PARAM_FIELDS[anomalyType] ?? [];
+  const paramFields = anomalyType ? ANOMALY_PARAM_FIELDS[anomalyType] ?? [] : [];
 
   return (
     <Form
@@ -69,11 +49,23 @@ export function StepPopover({ registerName, initialValues, onSave, onDelete, onC
       }}
     >
       <Form.Item name="anomaly_type" label="Anomaly Type" rules={[{ required: true }]}>
-        <Select options={ANOMALY_TYPES} />
+        <Select options={ANOMALY_TYPE_OPTIONS} />
       </Form.Item>
       {paramFields.map((f) => (
-        <Form.Item key={f.key} name={f.key} label={f.label} rules={[{ required: true }]}>
-          <InputNumber style={{ width: "100%" }} step={f.key === "probability" ? 0.1 : 1} />
+        <Form.Item
+          key={f.name}
+          name={f.name}
+          label={f.label}
+          rules={f.required ? [{ required: true }] : []}
+          initialValue={f.default}
+        >
+          <InputNumber
+            min={f.min}
+            max={f.max}
+            step={f.step}
+            placeholder={f.placeholder}
+            style={{ width: "100%" }}
+          />
         </Form.Item>
       ))}
       <Form.Item name="trigger_at_seconds" label="Start (seconds)" rules={[{ required: true }]}>
