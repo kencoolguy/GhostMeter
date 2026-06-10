@@ -344,6 +344,8 @@ class SnmpAdapter(ProtocolAdapter):
         try:
             var_binds = v2c.apiPDU.get_varbinds(pdu)
         except Exception:
+            # Unresolvable PDU → treat as no-device (serve normally, no fault)
+            logger.debug("Failed to extract varbinds from PDU", exc_info=True)
             return None
         for name, _value in var_binds:
             oid = ".".join(str(x) for x in name)
