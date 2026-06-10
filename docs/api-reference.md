@@ -873,7 +873,7 @@ For **SNMP** devices the fault is applied pull-based; the `_DynamicMibController
 
 For **BACnet** devices the fault is applied pull-based; `_DeviceApplication` read handlers (`do_ReadPropertyRequest` / `do_ReadPropertyMultipleRequest`) poll `fault_simulator` on every inbound request. `exception` returns a BACnet Error `device/operationalProblem`; `timeout`/`intermittent` additionally suppress Who-Is replies, making the device fully invisible to discovery clients.
 
-For **MQTT** devices the fault gate runs inside `_publish_loop`. `timeout` stops all publishes; `intermittent` randomly skips publishes with probability `failure_rate`; `delay` publishes after sleeping `delay_ms` ms (bounded to 10 000 ms). Skipped/delayed publishes are counted in per-device request and error statistics.
+For **MQTT** devices the fault gate runs inside `_publish_loop`. `timeout` stops all publishes; `intermittent` randomly skips publishes with probability `failure_rate`; `delay` publishes after sleeping `delay_ms` ms (bounded to 10 000 ms). Skipped publishes (timeout/intermittent) are counted as request + error in per-device statistics; delayed publishes proceed normally and count as success.
 
 ---
 
