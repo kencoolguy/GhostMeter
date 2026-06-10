@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Deployment tooling for exposed hosts: `docker-compose.prod.yml` overlay binds all published ports to `BIND_IP` (Tailscale IP) and stops publishing PostgreSQL, so nothing is exposed on the public network interface
+- `deploy.sh` one-shot deploy script (applies prod overlay, runs Alembic migrations before startup, brings services up)
+- `docs/deployment.md` — concise Linode deployment guide (Tailscale + Cloudflare Tunnel)
+- `.env.example`: new `BIND_IP` setting (defaults to 127.0.0.1 when unset, failing safe to local-only)
 - OPC UA comm-layer fault simulation: delay / timeout / exception / intermittent now
   apply to OPC UA devices via per-node value callbacks (push-based; attaches on fault set,
   detaches on clear). Modbus behavior unchanged.
