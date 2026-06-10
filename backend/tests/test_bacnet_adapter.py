@@ -8,6 +8,8 @@ import uuid
 import pytest
 from bacpypes3.settings import settings as bp3_settings
 
+from tests.netutil import free_udp_port
+
 NETWORK = 100
 
 pytestmark = pytest.mark.asyncio
@@ -26,13 +28,6 @@ def _route_aware():
     bp3_settings.route_aware = previous
 
 
-def _free_udp_port() -> int:
-    """Return an unused UDP port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @contextlib.asynccontextmanager
 async def _client_app():
     """A standalone bacpypes3 client application bound to loopback."""
@@ -40,7 +35,7 @@ async def _client_app():
     from bacpypes3.local.device import DeviceObject
     from bacpypes3.local.networkport import NetworkPortObject
 
-    port = _free_udp_port()
+    port = free_udp_port()
     app = Application.from_object_list([
         DeviceObject(
             objectIdentifier=("device", 4194302),
@@ -72,7 +67,7 @@ async def _running_adapter():
 
     adapter = BacnetAdapter(
         address="127.0.0.1/32",
-        port=_free_udp_port(),
+        port=free_udp_port(),
         device_instance_base=100000,
         network=NETWORK,
     )
@@ -109,7 +104,7 @@ class TestBacnetLifecycle:
     async def test_initial_status(self):
         from app.protocols.bacnet_agent import BacnetAdapter
 
-        adapter = BacnetAdapter(address="127.0.0.1/32", port=_free_udp_port())
+        adapter = BacnetAdapter(address="127.0.0.1/32", port=free_udp_port())
         status = adapter.get_status()
         assert status["running"] is False
         assert status["device_count"] == 0
@@ -118,7 +113,7 @@ class TestBacnetLifecycle:
     async def test_start_stop(self):
         from app.protocols.bacnet_agent import BacnetAdapter
 
-        adapter = BacnetAdapter(address="127.0.0.1/32", port=_free_udp_port())
+        adapter = BacnetAdapter(address="127.0.0.1/32", port=free_udp_port())
         await adapter.start()
         try:
             status = adapter.get_status()
@@ -132,7 +127,7 @@ class TestBacnetLifecycle:
         """VLAN name must be released on stop (VirtualNetwork._networks is global)."""
         from app.protocols.bacnet_agent import BacnetAdapter
 
-        port = _free_udp_port()
+        port = free_udp_port()
         adapter = BacnetAdapter(address="127.0.0.1/32", port=port)
         await adapter.start()
         await adapter.stop()
@@ -148,7 +143,7 @@ class TestBacnetLifecycle:
         pre-bind probe, start() would report running=True with a dead socket."""
         from app.protocols.bacnet_agent import BacnetAdapter
 
-        port = _free_udp_port()
+        port = free_udp_port()
         blocker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         blocker.bind(("127.0.0.1", port))
         try:
@@ -175,7 +170,7 @@ class TestBacnetLifecycle:
 
         from app.protocols.bacnet_agent import BacnetAdapter
 
-        port = _free_udp_port()
+        port = free_udp_port()
         adapter = BacnetAdapter(address="0.0.0.0/0", port=port)
         await adapter.start()
         client = None
@@ -188,7 +183,7 @@ class TestBacnetLifecycle:
                     vendorIdentifier=999,
                 ),
                 NetworkPortObject(
-                    f"127.0.0.1/32:{_free_udp_port()}",
+                    f"127.0.0.1/32:{free_udp_port()}",
                     objectIdentifier=("network-port", 1),
                     objectName="probe-port",
                 ),

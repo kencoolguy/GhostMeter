@@ -1,19 +1,14 @@
 """Tests for OPC UA comm-layer fault simulation (real asyncua client round-trips)."""
 
 import asyncio
-import socket
 import time
 import uuid
 
 import pytest
 
+from tests.netutil import free_tcp_port
+
 pytestmark = pytest.mark.asyncio
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 class TestOpcUaFaultCache:
@@ -21,7 +16,7 @@ class TestOpcUaFaultCache:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        adapter = OpcUaAdapter(host="127.0.0.1", port=_free_port())
+        adapter = OpcUaAdapter(host="127.0.0.1", port=free_tcp_port())
         await adapter.start()
         dev = uuid.uuid4()
         regs = [RegisterInfo(0, 3, "float32", "big_endian", name="v")]
@@ -39,7 +34,7 @@ class TestOpcUaFaultCache:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        adapter = OpcUaAdapter(host="127.0.0.1", port=_free_port())
+        adapter = OpcUaAdapter(host="127.0.0.1", port=free_tcp_port())
         await adapter.start()
         dev = uuid.uuid4()
         regs = [RegisterInfo(0, 3, "float32", "big_endian", name="v")]
@@ -94,7 +89,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("exception", {}))
@@ -109,7 +104,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("timeout", {}))
@@ -124,7 +119,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("delay", {"delay_ms": 400}))
@@ -143,7 +138,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("intermittent", {"failure_rate": 1.0}))
@@ -159,7 +154,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("intermittent", {"failure_rate": 0.0}))
@@ -175,7 +170,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("exception", {}))
@@ -196,7 +191,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("exception", {}))
@@ -233,7 +228,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         dev = uuid.uuid4()
@@ -256,7 +251,7 @@ class TestOpcUaFaultApplication:
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter, dev, url = await _make_running_device(port)
         try:
             fault_simulator.set_fault(dev, FaultConfig("exception", {}))
@@ -281,7 +276,7 @@ class TestOpcUaFaultRestWiring:
         from app.protocols.opcua_agent import OpcUaAdapter
         from app.simulation import fault_simulator
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         protocol_manager.register_adapter("opcua", adapter)
         await protocol_manager.start_all()
