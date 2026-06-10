@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `deploy.sh` one-shot deploy script (applies prod overlay, runs Alembic migrations before startup, brings services up)
 - `docs/deployment.md` — concise Linode deployment guide (Tailscale + Cloudflare Tunnel)
 - `.env.example`: new `BIND_IP` setting (defaults to 127.0.0.1 when unset, failing safe to local-only)
+- OPC UA comm-layer fault simulation: delay / timeout / exception / intermittent now
+  apply to OPC UA devices via per-node value callbacks (push-based; attaches on fault set,
+  detaches on clear). Modbus behavior unchanged.
 - OPC UA server adapter: exposes simulated devices as browsable Variable nodes (Read + Subscribe, Anonymous + SecurityPolicy None) via asyncua
 - Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile
 - OPC UA protocol option in template creation
@@ -21,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 完全沒設備時的引導空狀態（內建模板捷徑）
 - WebSocket monitor_update payload 新增 `mqtt_broker_connected` 欄位
 - DeviceMonitorData 新增 `mqtt_stats`、`template_name` 欄位
+
+### Fixed
+- **CI 6h timeout on OPC UA server tests** (root cause of issue #37, previously mis-attributed to asyncpg): coverage's default C trace function fires per-line on every module, and asyncua rebuilds its ~100k-line standard address space on each `Server.init()`. Under `pytest --cov` each OPC UA server test took ~11 min, blowing the 6h job limit. Fixed by `[tool.coverage.run] core = "sysmon"` (PEP 669 `sys.monitoring`), which skips instrumentation of non-`source` files — `Server.init()` drops from >240s to ~0.4s under coverage.
+- Quieted the `asyncua` logger to WARNING in `app/main.py` (secondary cleanup): each `Server.init()` emits ~1100 INFO lines loading the standard address space, spamming startup logs. Not the CI fix.
 
 ### Changed
 - `/` route 改導向 `/monitor`（原 `/templates`）

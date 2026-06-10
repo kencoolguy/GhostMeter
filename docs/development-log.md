@@ -16,6 +16,102 @@
 ### Notes
 - App startup only seeds data; tables come from Alembic — `deploy.sh` runs migrations before bringing the app up so a fresh deploy doesn't fail on missing tables
 
+## 2026-06-10 — Fix: CI 6h timeout root-caused to coverage C-tracer (× asyncua)
+
+### Problem
+PR #38's backend CI ran the full 6h job limit and was cancelled at ~64%. Every
+OPC UA server test passed but each took ~647s; non-OPC-UA tests were instant.
+
+### Investigation (systematic-debugging)
+- Ruled out, by measurement in a `python:3.12-slim` container: asyncua server
+  lifecycle (~1s), asyncua client connect/disconnect (~0s), asyncpg-after-asyncua
+  on a shared loop (~0s), SQLAlchemy engine-per-loop + asyncua (~0s). None
+  reproduced the 647s — so it was not reproducible outside CI.
+- Instrumented CI on a throwaway branch with `pytest-timeout --timeout=120
+  --timeout-method=thread`. The timeout stack dump landed inside
+  `OpcUaAdapter.start()` → `asyncua.Server.init()` → `load_standard_address_space`
+  → `fill_address_space` → `add_references`, preceded by thousands of
+  `asyncua.server.address_space INFO add_node ...` lines.
+
+### Root cause
+`asyncua` emits ~1100 INFO lines per `Server.init()` (standard address space
+load). `app/main.py` `logging.basicConfig(level=INFO)` sets the root logger to
+INFO; conftest imports `app.main`, so tests inherit it and those INFO records
+are written. ~25 server tests × ~1100 lines, each written to GitHub Actions'
+slow per-line log sink, ballooned each test to ~11 min. Local/probe runs were
+fast because asyncua defaults to WARNING with no app logging config.
+
+This **contradicts issue #37**, which attributed the failure to asyncpg
+`InterfaceError` on the shared event loop. The 6h timeout is the logging flood,
+not asyncpg.
+
+### First (wrong) hypothesis — logging flood
+Initially blamed the ~1100 `asyncua.server.address_space` INFO lines emitted per
+`Server.init()` (root logger at INFO via `app/main.py` basicConfig). Quieted the
+asyncua logger to WARNING and re-ran CI. **It did not fix the timeout**: with the
+flood gone (0 address_space lines confirmed in the CI log), each OPC UA server
+test still took ~680s. The logging happened inside `fill_address_space` but was a
+coincidence, not the cause.
+
+### Real root cause — coverage C-tracer × asyncua's giant module
+CI runs `pytest --cov=app`. Coverage's default C trace function fires per-line on
+ALL modules. asyncua's `create_standard_address_space_Services` lives in a
+~100k-line generated file and runs on every `Server.init()`; each OPC UA server
+test creates a fresh Server, so coverage re-traces the whole address space build.
+Reproduced in a `python:3.12-slim` container (no GHA needed): baseline init()
+= 0.4s; under `coverage run` (default C core) init() did not finish in 240s;
+under `COVERAGE_CORE=sysmon` init() = 0.4s again. The slowness is coverage-
+specific — earlier probes were fast only because they ran without `--cov`.
+
+### Fix
+`pyproject.toml` `[tool.coverage.run] core = "sysmon"` (PEP 669 sys.monitoring,
+Python 3.12+) — coverage disables instrumentation for non-`source` files, so
+asyncua is no longer traced. The asyncua logger WARNING line stays as a minor
+startup-noise cleanup, but it is NOT the fix.
+
+### Lesson
+The stack dump correctly located the time (inside `fill_address_space`) but the
+visible symptom there (log flood) was not the cause. Should have varied the one
+known difference from the passing local probes — `--cov` — before concluding.
+
+## 2026-06-03 — OPC UA Comm-layer Fault Simulation
+
+### What was done
+- Added `apply_fault(device_id)` / `remove_fault(device_id)` no-op hooks to `ProtocolAdapter` base class. Modbus inherits these unchanged (Modbus applies faults via `trace_pdu` polling; no action needed at hook time).
+- `OpcUaAdapter` overrides the hooks to attach/detach per-node asyncua value callbacks (`set_attribute_value_callback`). The callback reads `fault_simulator.get_fault(device_id)` live on every client read — same single-source-of-truth model as Modbus trace_pdu polling.
+- Added per-node last-value cache (`_last_values`) and faulted-device tracking set (`_faulted`). While a fault is active, `update_register` updates the cache but skips `node.write_value` (which would clear the callback and silently disable the fault). `remove_fault` restores the node by re-writing the cached value, which simultaneously restores the stored value, clears the callback, and resumes OPC UA subscriptions.
+- Fault type mapping: `exception` → `BadDeviceFailure` status code, `timeout` → `BadTimeout` status code, `delay` → bounded `time.sleep` (capped 10 s) then returns cached value, `intermittent` → random `BadCommunicationError` by `failure_rate` param.
+- Auto-reattach: `_do_add_device` checks `fault_simulator` after registering nodes and re-calls `apply_fault` if a fault is already active, giving parity with Modbus (fault survives device stop/start).
+- REST wiring: `PUT/DELETE /api/v1/devices/{id}/fault` now resolves the device's protocol via `device_service.get_device_protocol(session, device_id)` and calls the adapter hook. Modbus uses the inherited no-ops (still pull-based). No request/response schema change.
+
+### Key design decisions
+- **Push-based (callback) vs. pull-based:** asyncua clients read directly from the node's stored value; there is no request-intercept hook equivalent to Modbus's `trace_pdu`. The only way to inject a Bad status or a delayed response into every client read is to attach a value callback that overrides what the stored value returns. The callback is called synchronously by asyncua's address space on each `ReadRequest`.
+- **asyncua callback constraint:** `set_attribute_value_callback` replaces the node's stored value reads and sets the stored value to `None`. There is no API to clear the callback directly with `None`; the only way to detach is via a `write_value` call, which sets the stored value, clears the callback, and fires subscription change notifications in one atomic operation.
+- **Per-node cache necessity:** because the callback returns the last-known value for `delay`/`intermittent`, and `write_value` is suppressed while faulted, the adapter needs its own cache — the asyncua node's stored value is `None` while a callback is active.
+- **Single source of truth:** the callback reads `fault_simulator` live. The hook (`apply_fault`/`remove_fault`) is a presence toggle only; the active `FaultConfig` always lives in `fault_simulator`, exactly like Modbus trace_pdu.
+
+### Known caveat / deferred work
+- **`delay` blocks the event loop:** the callback is synchronous (asyncua calls it without `await`). A `delay` fault's `time.sleep` briefly blocks the shared asyncio event loop for the sleep duration (capped at 10 s). This mirrors Modbus's synchronous delay approach (trace_pdu runs in a thread context) but is more impactful in a shared single-server setup. Mitigation: cap enforced; out of scope to convert to async for MVP.
+- **`timeout` is a Bad status, not a true dropped connection:** the shared single-session server cannot drop an individual device's response at the TCP level. `BadTimeout` conveys the semantic intent; a real dropped connection would require a per-device server instance.
+- **Resolved during review — `test_fault_api_roundtrip`:** after Task 4 wired `get_device_protocol` (a DB lookup), `PUT/DELETE /fault` correctly returns 404 for a non-existent device (you can't fault a device that doesn't exist). The old test used a hardcoded fake UUID and broke; it was rewritten to create a real Modbus device, and a `test_set_fault_on_unknown_device_returns_404` was added. `set_fault` was also reordered to resolve the protocol (validate) **before** mutating `fault_simulator`, so a rejected request leaves no orphan fault entry.
+- **Resolved during review — fault param validation:** `FaultConfigSet` now validates type-specific params (`delay_ms` int ≥ 0; `failure_rate` float in [0,1]) → clean 422 instead of a `BadInternalError` raised deep in the value callback; the callback also clamps defensively.
+- **Deferred follow-up — test-infra flake ([#37](https://github.com/kencoolguy/GhostMeter/issues/37)):** the OPC UA server tests share the asyncio event loop with the per-test asyncpg DB fixture; under load (and the `delay` test's blocking `time.sleep`) the connection can enter a bad state, cascading `asyncpg.InterfaceError` into later tests' fixture setup/teardown (errors only, never assertion failures). Pre-existing since the 8.9 adapter; aggravated here. Excluding the two OPC UA server test files the suite is clean (285 passed). Fix tracked separately.
+
+### Files changed
+- `backend/app/protocols/base.py` — `apply_fault`/`remove_fault` no-op hooks on `ProtocolAdapter`
+- `backend/app/protocols/opcua_agent.py` — `_last_values` cache, `_faulted` set, `_make_fault_callback`, `apply_fault`, `remove_fault`, `update_register` skip, `_do_add_device` re-attach, `stop` cleanup
+- `backend/app/services/device_service.py` — `get_device_protocol` helper
+- `backend/app/api/routes/simulation.py` — `set_fault` / `clear_fault` wired to adapter hook via `get_device_protocol`
+- `backend/app/schemas/simulation.py` — `FaultConfigSet` param validation (delay_ms / failure_rate)
+- `backend/tests/test_opcua_fault.py` — new: adapter-level fault tests + REST wiring e2e test
+- `backend/tests/test_modbus_fault.py` — added `TestBaseFaultHooks` to assert Modbus inherits no-op base hooks
+- `backend/tests/test_device_simulation_integration.py` — fault roundtrip uses a real device; added 404 + invalid-param (422) tests
+
+### Verification
+- Feature suite `test_opcua_fault.py` green every run (real asyncua client round-trips for all 4 fault types, clear→restore+subscription resume, reattach-on-add, live fault-type switch).
+- Full backend suite excluding the OPC UA server test files: **285 passed, 0 failures, 0 errors**. The full suite *including* them is nondeterministic due to a pre-existing asyncpg/event-loop teardown flake (errors only, 0 real failures) — tracked as [#37](https://github.com/kencoolguy/GhostMeter/issues/37).
+- ruff lint clean.
+
 ---
 
 ## 2026-06-03 — OPC UA Server Adapter (4th protocol)
