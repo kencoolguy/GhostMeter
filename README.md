@@ -133,6 +133,25 @@ npm run build
 npx playwright test
 ```
 
+## Deployment
+
+On a server (e.g. a Linode VM running Docker), deploy with the prod overlay so
+service ports bind to a private interface (set `BIND_IP` in `.env`) instead of
+the public network:
+
+```bash
+# First deploy
+cp .env.example .env          # then set POSTGRES_PASSWORD + BIND_IP
+./deploy.sh                   # prod overlay + migrations + start
+
+# Update to the latest dev and redeploy (one shot)
+cd ~/ghostmeter && ./update.sh
+```
+
+`update.sh` pulls the latest `dev`, checks `.env`, then runs `deploy.sh`. See
+[`docs/deployment.md`](docs/deployment.md) for the full guide (Tailscale +
+Cloudflare Tunnel).
+
 ## Tech Stack
 
 | Layer | Technology |
