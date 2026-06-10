@@ -850,6 +850,12 @@ Set (or replace) the active communication fault on a device.
 
 **Protocol-layer behavior:**
 
+> **Protocol support:** all fault types apply to Modbus TCP, OPC UA, SNMP, and BACnet.
+> MQTT supports `delay` / `timeout` / `intermittent` only — `exception` returns
+> `422 VALIDATION_ERROR` because MQTT is publish-only (no request/response channel
+> to return a protocol error on). For BACnet, `timeout` / `intermittent` also
+> suppress Who-Is replies (the device disappears from discovery while faulted).
+
 For **Modbus TCP** devices the fault is applied pull-based (no adapter action on this call; `trace_pdu` polls `fault_simulator` on every request).
 
 For **OPC UA** devices the fault is applied push-based at the protocol layer immediately on this call by attaching a value callback to every Variable node of the device. Fault-type semantics:
@@ -862,6 +868,12 @@ For **OPC UA** devices the fault is applied push-based at the protocol layer imm
 | `intermittent` | Each read randomly returns `BadCommunicationError` with probability `failure_rate`, or the latest cached value with Good status otherwise |
 
 While a fault is active, the simulation engine continues updating the per-node value cache; the cached value is served as-is once the fault is cleared. OPC UA subscriptions are paused during a fault (the value callback bypasses subscription notifications) and automatically resume on fault clear.
+
+For **SNMP** devices the fault is applied pull-based; the `_DynamicMibController` and fault-aware command responders poll `fault_simulator` on every GET/GETNEXT/GETBULK. `exception` returns a `genErr` response; `delay` defers the entire response via `loop.call_later` (non-blocking); `timeout`/`intermittent` drop the response entirely.
+
+For **BACnet** devices the fault is applied pull-based; `_DeviceApplication` read handlers (`do_ReadPropertyRequest` / `do_ReadPropertyMultipleRequest`) poll `fault_simulator` on every inbound request. `exception` returns a BACnet Error `device/operationalProblem`; `timeout`/`intermittent` additionally suppress Who-Is replies, making the device fully invisible to discovery clients.
+
+For **MQTT** devices the fault gate runs inside `_publish_loop`. `timeout` stops all publishes; `intermittent` randomly skips publishes with probability `failure_rate`; `delay` publishes after sleeping `delay_ms` ms (bounded to 10 000 ms). Skipped publishes (timeout/intermittent) are counted as request + error in per-device statistics; delayed publishes proceed normally and count as success.
 
 ---
 

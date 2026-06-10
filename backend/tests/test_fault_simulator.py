@@ -2,7 +2,12 @@ import uuid
 
 import pytest
 
-from app.simulation.fault_simulator import FaultConfig, FaultSimulator
+from app.simulation.fault_simulator import (
+    FaultConfig,
+    FaultSimulator,
+    get_delay_seconds,
+    get_failure_rate,
+)
 
 
 @pytest.fixture
@@ -66,3 +71,38 @@ class TestFaultConfig:
         for ft in ("delay", "timeout", "exception", "intermittent"):
             config = FaultConfig(fault_type=ft, params={})
             assert config.fault_type == ft
+
+
+class TestFaultParamHelpers:
+    """Clamping helpers shared by the BACnet/SNMP/MQTT fault gates."""
+
+    def test_delay_default_is_500ms(self):
+        assert get_delay_seconds({}) == 0.5
+
+    def test_delay_clamps_to_10s_cap(self):
+        assert get_delay_seconds({"delay_ms": 99_999}) == 10.0
+
+    def test_delay_negative_clamps_to_zero(self):
+        assert get_delay_seconds({"delay_ms": -5}) == 0.0
+
+    def test_delay_malformed_falls_back_to_default(self):
+        assert get_delay_seconds({"delay_ms": "abc"}) == 0.5
+        assert get_delay_seconds({"delay_ms": None}) == 0.5
+
+    def test_delay_nan_falls_back_to_default(self):
+        assert get_delay_seconds({"delay_ms": float("nan")}) == 0.5
+        assert get_delay_seconds({"delay_ms": float("inf")}) == 0.5
+
+    def test_rate_default_is_half(self):
+        assert get_failure_rate({}) == 0.5
+
+    def test_rate_clamped_to_unit_interval(self):
+        assert get_failure_rate({"failure_rate": 1.7}) == 1.0
+        assert get_failure_rate({"failure_rate": -0.2}) == 0.0
+
+    def test_rate_malformed_falls_back_to_default(self):
+        assert get_failure_rate({"failure_rate": "x"}) == 0.5
+
+    def test_rate_nan_falls_back_to_default(self):
+        assert get_failure_rate({"failure_rate": float("nan")}) == 0.5
+        assert get_failure_rate({"failure_rate": float("inf")}) == 0.5

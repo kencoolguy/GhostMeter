@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Comm-layer fault simulation for BACnet, SNMP, and MQTT — all five protocols now support `delay` / `timeout` / `intermittent` faults through `PUT /devices/{id}/fault` (pull-based, same model as Modbus). BACnet: faulted devices also stop answering Who-Is (fully dark, like a real dead device); `exception` maps to BACnet Error `device/operationalProblem`. SNMP: `exception` maps to `genErr`; delayed responses are deferred without blocking the event loop. MQTT: `timeout` stops publishing, `intermittent` randomly skips publishes, `delay` publishes late; `exception` is rejected with 422 (publish-only protocols have no request/response channel to return an error on).
 - BACnet/IP protocol adapter (5th protocol): Who-Is/I-Am discovery, ReadProperty / ReadPropertyMultiple. One UDP port (47808) with a virtual-network router topology — each device is an independent BACnet device instance (`100000 + slave_id`); registers map to read-only analog-input objects with engineering units. Per-device read statistics included.
 - Builtin template "Energy Meter (BACnet)" with Normal Operation profile.
 - Deployment tooling for exposed hosts: `docker-compose.prod.yml` overlay binds all published ports to `BIND_IP` (Tailscale IP) and stops publishing PostgreSQL, so nothing is exposed on the public network interface

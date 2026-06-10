@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -197,7 +198,8 @@ class MqttAdapter(ProtocolAdapter):
 
     async def _publish_loop(self, device_id: UUID) -> None:
         """Per-device publish loop."""
-        from app.simulation import simulation_engine
+        from app.simulation import fault_simulator, simulation_engine
+        from app.simulation.fault_simulator import get_delay_seconds, get_failure_rate
 
         config = self._publish_configs.get(device_id)
         if not config:
@@ -209,6 +211,21 @@ class MqttAdapter(ProtocolAdapter):
         while True:
             try:
                 await asyncio.sleep(interval)
+
+                fault = fault_simulator.get_fault(device_id)
+                if fault is not None:
+                    if fault.fault_type == "timeout" or (
+                        fault.fault_type == "intermittent"
+                        and random.random() < get_failure_rate(fault.params)
+                    ):
+                        stats = self._device_stats.get(device_id)
+                        if stats:
+                            stats.request_count += 1
+                            stats.error_count += 1
+                        continue
+                    if fault.fault_type == "delay":
+                        await asyncio.sleep(get_delay_seconds(fault.params))
+                    # "exception" is rejected at the REST layer for MQTT devices
 
                 if not self._connected or not self._client:
                     stats = self._device_stats.get(device_id)
