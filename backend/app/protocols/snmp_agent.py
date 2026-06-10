@@ -7,7 +7,9 @@ from uuid import UUID
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdrsp, context
-from pysnmp.proto.rfc1902 import Gauge32, Integer32
+from pysnmp.proto import rfc1905
+from pysnmp.proto.rfc1902 import Gauge32, Integer32, ObjectName, OctetString
+from pysnmp.smi.instrum import AbstractMibInstrumController
 
 from app.exceptions import ConflictException
 from app.protocols.base import ProtocolAdapter, RegisterInfo
@@ -18,6 +20,54 @@ logger = logging.getLogger(__name__)
 def _oid_sort_key(oid_str: str) -> tuple[int, ...]:
     """Parse OID string into a tuple of ints for sorting/comparison."""
     return tuple(int(x) for x in oid_str.split("."))
+
+
+class _DynamicMibController(AbstractMibInstrumController):
+    """Bridge pysnmp's command responders to the adapter's dynamic OID map.
+
+    pysnmp's default MIB controller only serves statically-registered MIB
+    objects. Our register values live in a runtime dict resolved per query, so
+    we override the read paths to consult the adapter (resolve_oid /
+    get_next_oid) instead. Without this, GET/GETNEXT hit the empty default MIB
+    and every query returns noSuchObject.
+    """
+
+    def __init__(self, adapter: "SnmpAdapter") -> None:
+        self._adapter = adapter
+
+    def read_variables(self, *var_binds, **context):
+        """Resolve each requested OID to its current value (GET)."""
+        result = []
+        for name, _ in var_binds:
+            oid = ".".join(str(x) for x in name)
+            value, data_type = self._adapter.resolve_oid(oid)
+            if value is None:
+                result.append((name, rfc1905.NoSuchObject()))
+            else:
+                result.append((name, self._adapter.to_snmp_object(value, data_type)))
+        return result
+
+    def read_next_variables(self, *var_binds, **context):
+        """Return the next resolvable OID after each request (GETNEXT/WALK)."""
+        result = []
+        for name, _ in var_binds:
+            oid = ".".join(str(x) for x in name) if len(name) else ""
+            nxt = self._adapter.get_next_oid(oid)
+            while nxt is not None:
+                value, data_type = self._adapter.resolve_oid(nxt)
+                if value is not None:
+                    result.append(
+                        (ObjectName(nxt), self._adapter.to_snmp_object(value, data_type))
+                    )
+                    break
+                nxt = self._adapter.get_next_oid(nxt)
+            else:
+                result.append((name, rfc1905.endOfMibView))
+        return result
+
+    def write_variables(self, *var_binds, **context):
+        """Read-only agent: reject writes."""
+        return [(name, rfc1905.NoSuchObject()) for name, _ in var_binds]
 
 
 class SnmpAdapter(ProtocolAdapter):
@@ -65,6 +115,11 @@ class SnmpAdapter(ProtocolAdapter):
             )
 
             snmp_context = context.SnmpContext(self._snmp_engine)
+            # Replace the default (static, empty) null-context MIB controller
+            # with one backed by our dynamic OID map so GET/GETNEXT actually
+            # return register values.
+            snmp_context.unregister_context_name(b"")
+            snmp_context.register_context_name(b"", _DynamicMibController(self))
             cmdrsp.GetCommandResponder(self._snmp_engine, snmp_context)
             cmdrsp.NextCommandResponder(self._snmp_engine, snmp_context)
             cmdrsp.BulkCommandResponder(self._snmp_engine, snmp_context)
@@ -229,3 +284,15 @@ class SnmpAdapter(ProtocolAdapter):
             return Gauge32(int(value))
         else:
             return str(round(value, 4))
+
+    @classmethod
+    def to_snmp_object(cls, value: float, data_type: str) -> Integer32 | Gauge32 | OctetString:
+        """Wrap a register value as an rfc1902 SNMP object for agent responses.
+
+        Floats have no native SNMP type, so they are returned as an OctetString
+        of the formatted number (matching `to_snmp_value`'s string output).
+        """
+        snmp_val = cls.to_snmp_value(value, data_type)
+        if isinstance(snmp_val, str):
+            return OctetString(snmp_val)
+        return snmp_val
