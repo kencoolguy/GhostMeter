@@ -274,3 +274,63 @@ class TestBacnetWhoIsFault:
                 addr = Address(f"{NETWORK}:*@127.0.0.1:{adapter._port}")
                 i_ams = await asyncio.wait_for(client.who_is(100001, 100001, addr), timeout=4)
                 assert len(i_ams) == 1
+
+
+BACNET_TEMPLATE_PAYLOAD = {
+    "name": "BACnet Fault E2E Meter",
+    "protocol": "bacnet",
+    "registers": [
+        {
+            "name": "voltage",
+            "address": 0,
+            "function_code": 3,
+            "data_type": "float32",
+            "byte_order": "big_endian",
+            "scale_factor": 1.0,
+            "unit": "V",
+            "description": "Voltage",
+            "sort_order": 0,
+        },
+    ],
+}
+
+
+class TestBacnetFaultRestE2E:
+    async def test_set_and_clear_fault_via_api(self, client):
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        resp = await client.post("/api/v1/templates", json=BACNET_TEMPLATE_PAYLOAD)
+        assert resp.status_code == 201
+        template_id = resp.json()["data"]["id"]
+
+        resp = await client.post(
+            "/api/v1/devices",
+            json={"template_id": template_id, "name": "E2E BACnet", "slave_id": 60},
+        )
+        assert resp.status_code == 201
+        device_id = uuid.UUID(resp.json()["data"]["id"])
+
+        async with _running_adapter() as adapter:
+            await adapter.add_device(device_id, 60, _regs())
+            async with _client_app() as bn_client:
+                addr = _device_addr(adapter._port, 60)
+                ai0 = ObjectIdentifier(("analog-input", 0))
+
+                # Healthy read first
+                assert await bn_client.read_property(addr, ai0, "present-value") is not None
+
+                # Set timeout fault through the REST API
+                resp = await client.put(
+                    f"/api/v1/devices/{device_id}/fault",
+                    json={"fault_type": "timeout", "params": {}},
+                )
+                assert resp.status_code == 200
+                with pytest.raises(asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        bn_client.read_property(addr, ai0, "present-value"), timeout=2
+                    )
+
+                # Clear through the REST API → recovers
+                resp = await client.delete(f"/api/v1/devices/{device_id}/fault")
+                assert resp.status_code == 200
+                assert await bn_client.read_property(addr, ai0, "present-value") is not None
