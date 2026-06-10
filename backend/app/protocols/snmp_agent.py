@@ -1,7 +1,9 @@
 """SNMPv2c agent adapter using pysnmp v7."""
 
+import asyncio
 import bisect
 import logging
+import random
 from uuid import UUID
 
 from pysnmp.carrier.asyncio.dgram import udp
@@ -89,6 +91,82 @@ class _DynamicMibController(AbstractMibInstrumController):
         return [(name, rfc1905.NoSuchObject()) for name, _ in var_binds]
 
 
+class _FaultAwareResponderMixin:
+    """process_pdu override that consults fault_simulator before responding.
+
+    timeout / intermittent → drop the request (no response datagram; the
+    client times out). delay → defer the entire synchronous response pipeline
+    with call_later (process_pdu and everything below it is sync and ends in
+    a sendto, so deferring the whole call never blocks the event loop).
+    exception → falls through; _DynamicMibController raises GenError → genErr.
+    """
+
+    _ghost_adapter: "SnmpAdapter | None" = None
+
+    def process_pdu(
+        self,
+        snmpEngine,
+        messageProcessingModel,
+        securityModel,
+        securityName,
+        securityLevel,
+        contextEngineId,
+        contextName,
+        pduVersion,
+        PDU,
+        maxSizeResponseScopedPDU,
+        stateReference,
+    ):
+        from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import get_delay_seconds, get_failure_rate
+
+        adapter = self._ghost_adapter
+        device_id = adapter.resolve_pdu_device(PDU) if adapter is not None else None
+        fault = fault_simulator.get_fault(device_id)
+        parent_process_pdu = super().process_pdu
+        args = (
+            snmpEngine, messageProcessingModel, securityModel, securityName,
+            securityLevel, contextEngineId, contextName, pduVersion, PDU,
+            maxSizeResponseScopedPDU, stateReference,
+        )
+        if fault is not None:
+            if fault.fault_type == "timeout":
+                logger.debug("SNMP timeout fault: dropping request for device %s", device_id)
+                return
+            if fault.fault_type == "intermittent" and random.random() < get_failure_rate(
+                fault.params
+            ):
+                logger.debug("SNMP intermittent fault: dropping request for device %s", device_id)
+                return
+            if fault.fault_type == "delay":
+
+                def _deferred() -> None:
+                    try:
+                        parent_process_pdu(*args)
+                    except Exception:
+                        logger.exception(
+                            "Deferred SNMP response failed for device %s", device_id
+                        )
+
+                asyncio.get_running_loop().call_later(
+                    get_delay_seconds(fault.params), _deferred
+                )
+                return
+        parent_process_pdu(*args)
+
+
+class _FaultAwareGetCommandResponder(_FaultAwareResponderMixin, cmdrsp.GetCommandResponder):
+    pass
+
+
+class _FaultAwareNextCommandResponder(_FaultAwareResponderMixin, cmdrsp.NextCommandResponder):
+    pass
+
+
+class _FaultAwareBulkCommandResponder(_FaultAwareResponderMixin, cmdrsp.BulkCommandResponder):
+    pass
+
+
 class SnmpAdapter(ProtocolAdapter):
     """SNMPv2c command responder (agent). Responds to GET/GETNEXT/WALK."""
 
@@ -139,9 +217,13 @@ class SnmpAdapter(ProtocolAdapter):
             # return register values.
             snmp_context.unregister_context_name(b"")
             snmp_context.register_context_name(b"", _DynamicMibController(self))
-            cmdrsp.GetCommandResponder(self._snmp_engine, snmp_context)
-            cmdrsp.NextCommandResponder(self._snmp_engine, snmp_context)
-            cmdrsp.BulkCommandResponder(self._snmp_engine, snmp_context)
+            responders = (
+                _FaultAwareGetCommandResponder(self._snmp_engine, snmp_context),
+                _FaultAwareNextCommandResponder(self._snmp_engine, snmp_context),
+                _FaultAwareBulkCommandResponder(self._snmp_engine, snmp_context),
+            )
+            for responder in responders:
+                responder._ghost_adapter = self
 
             self._running = True
             logger.info(
@@ -248,6 +330,30 @@ class SnmpAdapter(ProtocolAdapter):
         for oid, name in oid_to_name.items():
             if oid in self._oid_map:
                 self._oid_map[oid] = (device_id, name)
+
+    def resolve_pdu_device(self, pdu) -> UUID | None:
+        """Map a request PDU to a device via its first resolvable varbind OID.
+
+        GETNEXT/GETBULK requests name a predecessor OID, so fall back to the
+        next registered OID. Drop/delay faults act on the whole datagram, so
+        the first resolvable device wins (documented limitation for PDUs that
+        mix OIDs of multiple devices).
+        """
+        from pysnmp.proto.api import v2c
+
+        try:
+            var_binds = v2c.apiPDU.get_varbinds(pdu)
+        except Exception:
+            return None
+        for name, _value in var_binds:
+            oid = ".".join(str(x) for x in name)
+            entry = self._oid_map.get(oid)
+            if entry is None:
+                nxt = self.get_next_oid(oid)
+                entry = self._oid_map.get(nxt) if nxt else None
+            if entry is not None:
+                return entry[0]
+        return None
 
     def resolve_oid(self, oid_str: str) -> tuple[float | None, str]:
         """Resolve an OID to a value from SimulationEngine.

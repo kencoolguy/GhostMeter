@@ -1,6 +1,8 @@
 """Tests for SNMP comm-layer fault simulation (real GET/GETNEXT through the agent)."""
 
+import asyncio
 import socket
+import time
 import uuid
 
 import pytest
@@ -98,5 +100,101 @@ class TestSnmpExceptionFault:
             ei, es, vbs = await _snmp_get(port)
             assert ei is None and int(es) == 0
             assert "221.5" in vbs[0][1].prettyPrint()
+        finally:
+            await adapter.stop()
+
+
+class TestSnmpDropAndDelayFaults:
+    async def test_timeout_fault_no_response(self, monkeypatch):
+        adapter, device_id, port = await _running_agent(monkeypatch)
+        try:
+            _set_fault(device_id, "timeout")
+            ei, _es, _vbs = await _snmp_get(port)
+            assert ei is not None  # request timed out, no response
+        finally:
+            await adapter.stop()
+
+    async def test_getnext_also_dropped(self, monkeypatch):
+        """GETNEXT names a predecessor OID — device resolution must still work."""
+        from pysnmp.hlapi.v3arch.asyncio import (
+            CommunityData,
+            ContextData,
+            ObjectIdentity,
+            ObjectType,
+            SnmpEngine,
+            UdpTransportTarget,
+            next_cmd,
+        )
+
+        adapter, device_id, port = await _running_agent(monkeypatch)
+        try:
+            _set_fault(device_id, "timeout")
+            eng = SnmpEngine()
+            tgt = await UdpTransportTarget.create(("127.0.0.1", port), timeout=1, retries=0)
+            ei, _es, _ix, _vbs = await next_cmd(
+                eng, CommunityData("public", mpModel=1), tgt, ContextData(),
+                ObjectType(ObjectIdentity("1.3.6.1.2.1.33.1.3.3.1.3.0")),
+            )
+            assert ei is not None
+        finally:
+            await adapter.stop()
+
+    async def test_delay_fault_defers_response_without_blocking(self, monkeypatch):
+        adapter, device_id, port = await _running_agent(monkeypatch)
+        try:
+            _set_fault(device_id, "delay", {"delay_ms": 1200})
+
+            ticks = 0
+
+            async def _heartbeat():
+                nonlocal ticks
+                while True:
+                    await asyncio.sleep(0.05)
+                    ticks += 1
+
+            hb = asyncio.create_task(_heartbeat())
+            t0 = time.monotonic()
+            ei, es, vbs = await _snmp_get(port, timeout=5)
+            elapsed = time.monotonic() - t0
+            hb.cancel()
+
+            assert ei is None and int(es) == 0
+            assert "221.5" in vbs[0][1].prettyPrint()
+            assert elapsed >= 1.2
+            # call_later must not block the loop; the heartbeat kept ticking
+            assert ticks >= 10
+        finally:
+            await adapter.stop()
+
+    async def test_intermittent_rate_one_drops(self, monkeypatch):
+        adapter, device_id, port = await _running_agent(monkeypatch)
+        try:
+            _set_fault(device_id, "intermittent", {"failure_rate": 1.0})
+            ei, _es, _vbs = await _snmp_get(port)
+            assert ei is not None
+        finally:
+            await adapter.stop()
+
+    async def test_intermittent_rate_zero_serves(self, monkeypatch):
+        adapter, device_id, port = await _running_agent(monkeypatch)
+        try:
+            _set_fault(device_id, "intermittent", {"failure_rate": 0.0})
+            ei, es, vbs = await _snmp_get(port)
+            assert ei is None and int(es) == 0
+            assert "221.5" in vbs[0][1].prettyPrint()
+        finally:
+            await adapter.stop()
+
+    async def test_timeout_cleared_recovers(self, monkeypatch):
+        from app.simulation import fault_simulator
+
+        adapter, device_id, port = await _running_agent(monkeypatch)
+        try:
+            _set_fault(device_id, "timeout")
+            ei, _es, _vbs = await _snmp_get(port)
+            assert ei is not None
+            fault_simulator.clear_fault(device_id)
+            ei, es, vbs = await _snmp_get(port)
+            assert ei is None and int(es) == 0
         finally:
             await adapter.stop()
