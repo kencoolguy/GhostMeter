@@ -269,3 +269,42 @@ class TestBacnetUpdateRegister:
                     addr, ObjectIdentifier(("analog-input", 0)), "present-value"
                 )
                 assert float(value) == pytest.approx(3.4028234663852886e38)
+
+
+class TestBacnetStats:
+    async def test_read_property_counts_stats(self):
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                await client.read_property(
+                    addr, ObjectIdentifier(("analog-input", 0)), "present-value"
+                )
+                await client.read_property(
+                    addr, ObjectIdentifier(("analog-input", 1)), "present-value"
+                )
+
+            # client reads completed → responses already sent → stats recorded
+            stats = adapter.get_stats(device_id)
+            assert stats is not None
+            assert stats.request_count == 2
+            assert stats.success_count == 2
+            assert stats.error_count == 0
+            assert stats.avg_response_ms >= 0.0
+
+    async def test_reset_stats(self):
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                await client.read_property(
+                    addr, ObjectIdentifier(("analog-input", 0)), "present-value"
+                )
+            adapter.reset_stats(device_id)
+            assert adapter.get_stats(device_id).request_count == 0
