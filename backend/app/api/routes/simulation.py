@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.exceptions import ValidationException
 from app.protocols import protocol_manager
 from app.schemas.common import ApiResponse
 from app.schemas.simulation import (
@@ -103,6 +104,13 @@ async def set_fault(
     # Resolve the device's protocol first — this 404s on an unknown device, so we
     # validate before mutating any state (no orphan fault entry on a bad request).
     protocol = await device_service.get_device_protocol(session, device_id)
+
+    if protocol == "mqtt" and data.fault_type == "exception":
+        raise ValidationException(
+            detail="Fault type 'exception' is not supported for MQTT devices: "
+            "MQTT is publish-only, so there is no request/response channel to "
+            "return a protocol error on. Use delay, timeout, or intermittent.",
+        )
 
     fault = FaultConfig(fault_type=data.fault_type, params=data.params)
     fault_simulator.set_fault(device_id, fault)
