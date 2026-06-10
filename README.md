@@ -218,6 +218,8 @@ BACnet Who-Is discovery uses UDP broadcast and **does not traverse docker bridge
 
 BBMD (BACnet Broadcast Management Device) / Foreign Device registration is deferred. I-Am announcements are skipped on /31 and /32 binds (no broadcast address).
 
+With the default `BACNET_ADDRESS=0.0.0.0/0` the adapter serves **unicast only** and logs a warning at startup; set a concrete interface CIDR (e.g. `192.168.1.10/24`) to enable broadcast Who-Is discovery on that subnet.
+
 ## Project Structure
 
 ```

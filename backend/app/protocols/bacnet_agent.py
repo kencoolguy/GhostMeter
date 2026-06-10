@@ -23,6 +23,7 @@ import time
 from uuid import UUID
 
 from bacpypes3.app import Application
+from bacpypes3.errors import ExecutionError
 from bacpypes3.local.analog import AnalogInputObject
 from bacpypes3.local.device import DeviceObject
 from bacpypes3.local.networkport import NetworkPortObject
@@ -94,6 +95,11 @@ class _DeviceApplication(Application):
             self._count(t0, success=False)
             raise
         self._count(t0, success=True)
+
+    async def do_WritePropertyRequest(self, apdu) -> None:
+        """Simulated devices are read-only; values come from the simulation
+        engine. bacpypes3's local objects would otherwise accept the write."""
+        raise ExecutionError(errorClass="property", errorCode="writeAccessDenied")
 
     def _count(self, t0: float, success: bool) -> None:
         if self._ghost_adapter is None or self._ghost_device_id is None:
@@ -178,6 +184,14 @@ class BacnetAdapter(ProtocolAdapter):
             self._router_app = Application.from_object_list(
                 [router_device, ipv4_port, vlan_port]
             )
+            if ipaddress.ip_network(self._address, strict=False).prefixlen == 0:
+                self._disable_broadcast_endpoints(self._router_app)
+                logger.warning(
+                    "BACNET_ADDRESS %s has no usable subnet broadcast; broadcast "
+                    "endpoint disabled (unicast reads work; Who-Is broadcast "
+                    "discovery requires a concrete interface CIDR, e.g. 192.168.1.10/24)",
+                    self._address,
+                )
             self._running = True
             logger.info(
                 "BACnet router started on %s:%d (VLAN network %d, router instance %d)",
@@ -321,7 +335,10 @@ class BacnetAdapter(ProtocolAdapter):
         # (loopback tests, single-IP Tailscale deploys) the prefix has no
         # broadcast address and i_am() would raise RuntimeError("no broadcast")
         # in a background task on every device start — skip it entirely.
-        if ipaddress.ip_network(self._address, strict=False).prefixlen >= 31:
+        # Same for /0 (wildcard): its broadcast endpoint is disabled in
+        # start(), so a broadcast I-Am cannot work there either.
+        prefixlen = ipaddress.ip_network(self._address, strict=False).prefixlen
+        if prefixlen >= 31 or prefixlen == 0:
             logger.debug(
                 "BACnet: skipping I-Am broadcast (no broadcast address on %s)",
                 self._address,
@@ -336,6 +353,28 @@ class BacnetAdapter(ProtocolAdapter):
             "BACnet: added device %s (instance %d, %d objects)",
             display_name, instance, len(analog_objs),
         )
+
+    @staticmethod
+    def _disable_broadcast_endpoints(app: Application) -> None:
+        """Remove the doomed broadcast-bind task so replies are not blocked.
+
+        With a wildcard bind (0.0.0.0/0) the subnet broadcast is
+        255.255.255.255, which cannot be bound on macOS; bacpypes3 retries
+        that bind forever AND awaits it before sending any reply
+        (IPv4DatagramServer.indication gathers _transport_tasks), so every
+        response would hang. Dropping the task unblocks unicast traffic.
+        Cancelling triggers one harmless "Exception in callback ...
+        CancelledError" log line from bacpypes3's done-callback.
+        """
+        for link_layer in getattr(app, "link_layers", {}).values():
+            server = getattr(link_layer, "server", None)
+            tasks = getattr(server, "_transport_tasks", None)
+            if not tasks or len(tasks) < 2:
+                continue
+            # _transport_tasks = [local_endpoint_task, broadcast_endpoint_task]
+            broadcast_task = tasks.pop(1)
+            broadcast_task.cancel()
+            server.broadcast_address = None  # LocalBroadcast sends now fail fast
 
     @staticmethod
     def _cancel_transport_tasks(app: Application) -> None:

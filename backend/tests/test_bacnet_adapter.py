@@ -1,5 +1,6 @@
 """Tests for the BACnet/IP adapter (real bacpypes3 client round-trips on loopback)."""
 
+import asyncio
 import contextlib
 import socket
 import uuid
@@ -158,6 +159,54 @@ class TestBacnetLifecycle:
             blocker.close()
             await adapter.stop()
 
+    async def test_wildcard_bind_serves_unicast(self):
+        """0.0.0.0/0 (production default) must answer unicast reads — bacpypes3's
+        un-bindable 255.255.255.255 broadcast endpoint would otherwise block
+        every reply on macOS (indication() gathers _transport_tasks).
+
+        Note: regression guard for macOS dev hosts; Linux allows binding
+        255.255.255.255, so this would pass there even without the fix.
+        """
+        from bacpypes3.app import Application
+        from bacpypes3.local.device import DeviceObject
+        from bacpypes3.local.networkport import NetworkPortObject
+        from bacpypes3.pdu import Address
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        from app.protocols.bacnet_agent import BacnetAdapter
+
+        port = _free_udp_port()
+        adapter = BacnetAdapter(address="0.0.0.0/0", port=port)
+        await adapter.start()
+        client = None
+        try:
+            assert adapter.get_status()["running"] is True
+            client = Application.from_object_list([
+                DeviceObject(
+                    objectIdentifier=("device", 4194301),
+                    objectName="wildcard-probe",
+                    vendorIdentifier=999,
+                ),
+                NetworkPortObject(
+                    f"127.0.0.1/32:{_free_udp_port()}",
+                    objectIdentifier=("network-port", 1),
+                    objectName="probe-port",
+                ),
+            ])
+            name = await asyncio.wait_for(
+                client.read_property(
+                    Address(f"127.0.0.1:{port}"),
+                    ObjectIdentifier(("device", 100000)),
+                    "object-name",
+                ),
+                timeout=5,
+            )
+            assert str(name) == "GhostMeter BACnet Router"
+        finally:
+            if client is not None:
+                client.close()
+            await adapter.stop()
+
 
 class TestBacnetAddRemoveDevice:
     async def test_add_device_creates_objects(self):
@@ -265,6 +314,28 @@ class TestBacnetUpdateRegister:
             await adapter.update_register(
                 device_id, 99, 3, 1.0, "float32", "big_endian"
             )
+
+    async def test_write_property_rejected(self):
+        """Read-only contract: WriteProperty must return writeAccessDenied and
+        the simulated value must remain unchanged."""
+        from bacpypes3.apdu import ErrorRejectAbortNack
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            await adapter.update_register(device_id, 0, 3, 220.0, "float32", "big_endian")
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                with pytest.raises(ErrorRejectAbortNack) as exc_info:
+                    await client.write_property(
+                        addr, ObjectIdentifier(("analog-input", 0)), "present-value", 999.0
+                    )
+                assert "write-access-denied" in str(exc_info.value)
+                value = await client.read_property(
+                    addr, ObjectIdentifier(("analog-input", 0)), "present-value"
+                )
+                assert abs(float(value) - 220.0) < 0.01
 
     async def test_out_of_range_value_clamped_to_float32(self):
         """Anomaly injection can produce values beyond float32 range; they

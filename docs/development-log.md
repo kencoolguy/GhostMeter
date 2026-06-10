@@ -43,6 +43,38 @@ COV subscriptions, WriteProperty, comm-layer fault simulation, BBMD/Foreign Devi
 - `ruff check .`: clean.
 - `npm run build`: clean (chunk size warning pre-existing, tracked as issue #23).
 
+### Follow-up (same day) — two runtime-verified bugs fixed
+
+1. **Wildcard bind (`0.0.0.0/0`, production default) deadlocked ALL replies on macOS.**
+   Root cause (bacpypes3 0.0.106, `ipv4/__init__.py`): `IPv4DatagramServer.__init__`
+   creates a SECOND endpoint task to bind the subnet broadcast address. For `/0`
+   that is 255.255.255.255, which fails `bind()` on macOS (errno 49) and
+   `retrying_create_datagram_endpoint` retries forever. Critically,
+   `IPv4DatagramServer.indication()` — the path every outbound reply takes —
+   starts with `await asyncio.gather(*self._transport_tasks)`, so every response
+   hung. Inbound worked; replies never left. The `/32` test binds skip the second
+   endpoint (broadcast == local tuple), which is why all 17 integration tests
+   passed. Fix: when the configured prefix has prefixlen 0, `start()` removes the
+   doomed broadcast endpoint task (`_disable_broadcast_endpoints`), sets
+   `broadcast_address = None`, and logs a warning. I-Am broadcast is also skipped
+   on `/0` (extended the existing /31–/32 guard). Regression test
+   `test_wildcard_bind_serves_unicast` (fails with a 5 s timeout on macOS before
+   the fix; would pass on Linux even unfixed since 255.255.255.255 binds there —
+   it is a mac-dev regression guard).
+
+2. **WriteProperty was accepted (spec violation).** The plan assumed bacpypes3
+   rejects writes to non-commandable AnalogInputObject presentValue — wrong;
+   runtime-verified: wrote 999.0, re-read 999.0. Fix:
+   `_DeviceApplication.do_WritePropertyRequest` raises
+   `ExecutionError(errorClass="property", errorCode="writeAccessDenied")`;
+   bacpypes3's `Application.indication()` converts the raise into a proper BACnet
+   Error PDU (verified in `bacpypes3/app.py`). Regression test
+   `test_write_property_rejected` (failed with DID NOT RAISE before the fix)
+   asserts the error and that the simulated value is unchanged.
+
+Verification: `tests/test_bacnet_adapter.py` 19 passed; full suite
+`pytest -q` 343 passed; `ruff check .` clean.
+
 ---
 
 ## 2026-06-10 — Fix: SNMP never served values + UPS computed-profile crash
