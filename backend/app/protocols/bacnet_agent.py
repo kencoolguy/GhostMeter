@@ -15,9 +15,11 @@ Numbering (deterministic, no DB changes):
 Values are pushed in via update_register() (same model as OPC UA).
 """
 
+import asyncio
 import ipaddress
 import logging
 import math
+import random
 import socket
 import time
 from uuid import UUID
@@ -78,9 +80,37 @@ class _DeviceApplication(Application):
     _ghost_adapter: "BacnetAdapter | None" = None
     _ghost_device_id: UUID | None = None
 
+    async def _drop_for_fault(self) -> bool:
+        """Pull-based comm-fault gate for confirmed read requests.
+
+        Returns True when the request must be dropped (timeout / intermittent
+        — the client sees a timeout). Sleeps for delay faults and raises
+        ExecutionError for exception faults (bacpypes3 converts it to a BACnet
+        Error APDU, same path as the WriteProperty rejection).
+        """
+        from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import get_delay_seconds, get_failure_rate
+
+        fault = fault_simulator.get_fault(self._ghost_device_id)
+        if fault is None:
+            return False
+        if fault.fault_type == "timeout":
+            return True
+        if fault.fault_type == "intermittent":
+            return random.random() < get_failure_rate(fault.params)
+        if fault.fault_type == "delay":
+            await asyncio.sleep(get_delay_seconds(fault.params))
+            return False
+        if fault.fault_type == "exception":
+            raise ExecutionError(errorClass="device", errorCode="operationalProblem")
+        return False
+
     async def do_ReadPropertyRequest(self, apdu) -> None:
         t0 = time.monotonic()
         try:
+            if await self._drop_for_fault():
+                self._count(t0, success=False)
+                return
             await super().do_ReadPropertyRequest(apdu)
         except Exception:
             self._count(t0, success=False)
@@ -90,6 +120,9 @@ class _DeviceApplication(Application):
     async def do_ReadPropertyMultipleRequest(self, apdu) -> None:
         t0 = time.monotonic()
         try:
+            if await self._drop_for_fault():
+                self._count(t0, success=False)
+                return
             await super().do_ReadPropertyMultipleRequest(apdu)
         except Exception:
             self._count(t0, success=False)
