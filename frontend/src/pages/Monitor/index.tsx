@@ -1,6 +1,8 @@
 import { Badge, Button, Typography } from "antd";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { MONITOR_WS_URL } from "../../services/ws";
 import { useMonitorStore } from "../../stores/monitorStore";
 import type { MonitorUpdate } from "../../types";
 import { DeviceCardGrid } from "./DeviceCardGrid";
@@ -9,8 +11,6 @@ import { EventDrawer } from "./EventDrawer";
 import { EventToast } from "./EventToast";
 import { KpiPanel } from "./KpiPanel";
 import "./monitor.css";
-
-const WS_URL = `ws://${window.location.hostname}:8000/ws/monitor`;
 
 export default function MonitorPage() {
   const {
@@ -37,7 +37,21 @@ export default function MonitorPage() {
     [handleMonitorUpdate],
   );
 
-  const { connected } = useWebSocket({ url: WS_URL, onMessage });
+  const { connected } = useWebSocket({ url: MONITOR_WS_URL, onMessage });
+
+  // "Open in Monitor" from DeviceDetail passes ?device=<id>: scroll the
+  // matching card into view once it arrives in the broadcast, then drop
+  // the param so refreshes don't re-scroll.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusDeviceId = searchParams.get("device");
+  useEffect(() => {
+    if (!focusDeviceId || devices.length === 0) return;
+    const el = document.getElementById(`gm-device-card-${focusDeviceId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setSearchParams({}, { replace: true });
+    }
+  }, [focusDeviceId, devices, setSearchParams]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -51,7 +65,7 @@ export default function MonitorPage() {
           />
         </Typography.Title>
         <Button onClick={openEventDrawer}>
-          📋 Events <span style={{ marginLeft: 4, color: "#9aa5b8" }}>({events.length})</span>
+          📋 Events <span style={{ marginLeft: 4, color: "var(--gm-text-2)" }}>({events.length})</span>
         </Button>
       </div>
 

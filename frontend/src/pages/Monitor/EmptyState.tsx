@@ -33,11 +33,11 @@ export function EmptyState() {
       style={{
         textAlign: "center",
         padding: "60px 20px",
-        color: "#9aa5b8",
+        color: "var(--gm-text-2)",
       }}
     >
       <div style={{ fontSize: 48, opacity: 0.4, marginBottom: 12 }}>⚡</div>
-      <div style={{ color: "#e6edf5", fontSize: 18, fontWeight: 600, marginBottom: 6 }}>
+      <div style={{ color: "var(--gm-text-1)", fontSize: 18, fontWeight: 600, marginBottom: 6 }}>
         還沒有設備
       </div>
       <div style={{ fontSize: 13, marginBottom: 18 }}>
@@ -60,11 +60,11 @@ export function EmptyState() {
               onClick={() => navigate("/devices")}
               style={{
                 padding: "6px 12px",
-                background: "#121826",
+                background: "var(--gm-bg-1)",
                 border: "1px solid rgba(34,211,238,0.3)",
                 borderRadius: 6,
                 fontSize: 11,
-                color: "#22d3ee",
+                color: "var(--gm-cyan)",
                 cursor: "pointer",
               }}
             >

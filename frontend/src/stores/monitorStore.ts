@@ -5,6 +5,7 @@ import type {
   MonitorUpdate,
   RegisterHistoryPoint,
 } from "../types";
+import { pickPrimaryName } from "../utils/pickPrimary";
 
 const MAX_HISTORY_POINTS = 300; // 5 minutes at 1Hz
 const TOAST_EVENT_TYPES = new Set([
@@ -64,16 +65,21 @@ export const useMonitorStore = create<MonitorState>((set) => ({
       const now = Date.now();
       const newHistory = { ...state.registerHistory };
 
+      // Only the primary register of running devices feeds a sparkline;
+      // tracking every register would copy N×300-point arrays each second
+      // for data nothing reads.
       for (const device of update.devices) {
-        for (const reg of device.registers) {
-          const key = `${device.device_id}:${reg.name}`;
-          const existing = newHistory[key] ?? [];
-          const updated = [...existing, { timestamp: now, value: reg.value }];
-          newHistory[key] =
-            updated.length > MAX_HISTORY_POINTS
-              ? updated.slice(updated.length - MAX_HISTORY_POINTS)
-              : updated;
-        }
+        if (device.status !== "running") continue;
+        const primaryName = pickPrimaryName(device);
+        const reg = device.registers.find((r) => r.name === primaryName);
+        if (!reg) continue;
+        const key = `${device.device_id}:${reg.name}`;
+        const existing = newHistory[key] ?? [];
+        const updated = [...existing, { timestamp: now, value: reg.value }];
+        newHistory[key] =
+          updated.length > MAX_HISTORY_POINTS
+            ? updated.slice(updated.length - MAX_HISTORY_POINTS)
+            : updated;
       }
 
       const newToast = findNewestEventNotIn(update.events, state.events);

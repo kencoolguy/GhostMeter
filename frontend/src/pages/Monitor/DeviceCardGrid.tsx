@@ -1,6 +1,6 @@
 import type { DeviceMonitorData, RegisterHistoryPoint } from "../../types";
 import { DeviceCard } from "./DeviceCard";
-import { pickPrimaryName } from "./pickPrimary";
+import { pickPrimaryName } from "../../utils/pickPrimary";
 
 interface DeviceCardGridProps {
   devices: DeviceMonitorData[];

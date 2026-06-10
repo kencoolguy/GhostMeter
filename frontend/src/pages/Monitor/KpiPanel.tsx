@@ -16,11 +16,11 @@ interface KpiTileProps {
 
 function KpiTile({ label, value, tone = "default", sub }: KpiTileProps) {
   const valueColor =
-    tone === "ok" ? "#34d399" : tone === "err" ? "#fb7185" : "#e6edf5";
+    tone === "ok" ? "var(--gm-emerald)" : tone === "err" ? "var(--gm-coral)" : "var(--gm-text-1)";
   return (
     <div
       style={{
-        background: "#121826",
+        background: "var(--gm-bg-1)",
         border: "1px solid rgba(148,163,184,0.08)",
         borderRadius: 8,
         padding: "12px 14px",
@@ -29,7 +29,7 @@ function KpiTile({ label, value, tone = "default", sub }: KpiTileProps) {
       <div
         style={{
           fontSize: 10,
-          color: "#5f6b80",
+          color: "var(--gm-text-3)",
           textTransform: "uppercase",
           letterSpacing: 0.5,
         }}
@@ -40,14 +40,14 @@ function KpiTile({ label, value, tone = "default", sub }: KpiTileProps) {
         style={{
           fontSize: 24,
           color: valueColor,
-          fontFamily: "'JetBrains Mono', monospace",
+          fontFamily: "var(--gm-mono)",
           fontWeight: 600,
           marginTop: 2,
         }}
       >
         {value}
       </div>
-      {sub && <div style={{ fontSize: 9, color: "#5f6b80", marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 9, color: "var(--gm-text-3)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -59,15 +59,15 @@ interface PillProps {
 
 function Pill({ text, tone }: PillProps) {
   const palette = {
-    warn: { border: "rgba(251,191,36,0.4)", color: "#fbbf24", dot: "#fbbf24" },
-    danger: { border: "rgba(251,113,133,0.4)", color: "#fb7185", dot: "#fb7185" },
-    ok: { border: "rgba(52,211,153,0.4)", color: "#34d399", dot: "#34d399" },
-    muted: { border: "rgba(148,163,184,0.25)", color: "#9aa5b8", dot: "#5f6b80" },
+    warn: { border: "rgba(251,191,36,0.4)", color: "var(--gm-amber)", dot: "var(--gm-amber)" },
+    danger: { border: "rgba(251,113,133,0.4)", color: "var(--gm-coral)", dot: "var(--gm-coral)" },
+    ok: { border: "rgba(52,211,153,0.4)", color: "var(--gm-emerald)", dot: "var(--gm-emerald)" },
+    muted: { border: "rgba(148,163,184,0.25)", color: "var(--gm-text-2)", dot: "var(--gm-text-3)" },
   }[tone];
   return (
     <span
       style={{
-        background: "#121826",
+        background: "var(--gm-bg-1)",
         border: `1px solid ${palette.border}`,
         borderRadius: 14,
         padding: "4px 10px",

@@ -2,7 +2,7 @@ import { App, Tag } from "antd";
 import { useNavigate } from "react-router-dom";
 import { deviceApi } from "../../services/deviceApi";
 import type { DeviceMonitorData, RegisterHistoryPoint } from "../../types";
-import { pickPrimaryAndSecondary } from "./pickPrimary";
+import { pickPrimaryAndSecondary } from "../../utils/pickPrimary";
 import { Sparkline } from "./Sparkline";
 
 interface DeviceCardProps {
@@ -27,7 +27,7 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
       : "gm-mon-dot-stopped");
 
   const cardStyle: React.CSSProperties = {
-    background: "#121826",
+    background: "var(--gm-bg-1)",
     border: `1px solid ${isError ? "rgba(251,113,133,0.3)" : "rgba(148,163,184,0.12)"}`,
     borderRadius: 10,
     padding: 14,
@@ -55,20 +55,25 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
     typeof v === "number" ? v.toFixed(1) : "—";
 
   return (
-    <div className="gm-mon-card" style={cardStyle} onClick={onCardClick}>
-      <span style={{ position: "absolute", top: 12, right: 12, color: "#5f6b80", fontSize: 14 }}>
+    <div
+      id={`gm-device-card-${device.device_id}`}
+      className="gm-mon-card"
+      style={cardStyle}
+      onClick={onCardClick}
+    >
+      <span style={{ position: "absolute", top: 12, right: 12, color: "var(--gm-text-3)", fontSize: 14 }}>
         →
       </span>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ display: "flex", alignItems: "center", color: "#e6edf5", fontWeight: 600, fontSize: 14 }}>
+        <span style={{ display: "flex", alignItems: "center", color: "var(--gm-text-1)", fontWeight: 600, fontSize: 14 }}>
           <span className={dotClass} />
           {device.name}
         </span>
-        <span style={{ color: "#5f6b80", fontSize: 10 }}>slv {device.slave_id}</span>
+        <span style={{ color: "var(--gm-text-3)", fontSize: 10 }}>slv {device.slave_id}</span>
       </div>
       {device.template_name && (
-        <div style={{ color: "#5f6b80", fontSize: 10, marginTop: 2 }}>
+        <div style={{ color: "var(--gm-text-3)", fontSize: 10, marginTop: 2 }}>
           {device.template_name}
         </div>
       )}
@@ -76,21 +81,21 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
       {primary ? (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 10 }}>
-            <span style={{ color: "#9aa5b8", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>
+            <span style={{ color: "var(--gm-text-2)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>
               {primary.name}
             </span>
             <span
               key={primary.value}
               className="gm-mon-value-flash"
               style={{
-                color: isError ? "#fb7185" : "#22d3ee",
-                fontFamily: "'JetBrains Mono', monospace",
+                color: isError ? "var(--gm-coral)" : "var(--gm-cyan)",
+                fontFamily: "var(--gm-mono)",
                 fontSize: 18,
                 fontWeight: 600,
               }}
             >
               {valueDisplay(primary.value)}
-              <span style={{ color: "#9aa5b8", fontSize: 11, marginLeft: 3, fontFamily: "Inter, sans-serif", fontWeight: 400 }}>
+              <span style={{ color: "var(--gm-text-2)", fontSize: 11, marginLeft: 3, fontFamily: "Inter, sans-serif", fontWeight: 400 }}>
                 {primary.unit}
               </span>
             </span>
@@ -98,15 +103,15 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
           <Sparkline data={history} />
           {secondary && (
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-              <span style={{ color: "#5f6b80", fontSize: 10 }}>{secondary.name}</span>
-              <span style={{ color: "#9aa5b8", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+              <span style={{ color: "var(--gm-text-3)", fontSize: 10 }}>{secondary.name}</span>
+              <span style={{ color: "var(--gm-text-2)", fontSize: 11, fontFamily: "var(--gm-mono)" }}>
                 {valueDisplay(secondary.value)} {secondary.unit}
               </span>
             </div>
           )}
         </>
       ) : (
-        <div style={{ color: "#5f6b80", fontSize: 11, marginTop: 10 }}>No registers</div>
+        <div style={{ color: "var(--gm-text-3)", fontSize: 11, marginTop: 10 }}>No registers</div>
       )}
 
       <div style={{ display: "flex", gap: 5, marginTop: 10, flexWrap: "wrap" }}>
@@ -136,7 +141,7 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
             padding: "4px 10px",
             borderRadius: 4,
             background: "rgba(52,211,153,0.12)",
-            color: "#34d399",
+            color: "var(--gm-emerald)",
             fontSize: 11,
             border: "1px solid rgba(52,211,153,0.3)",
             cursor: "pointer",
