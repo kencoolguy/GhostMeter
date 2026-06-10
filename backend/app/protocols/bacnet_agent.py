@@ -15,6 +15,7 @@ Numbering (deterministic, no DB changes):
 Values are pushed in via update_register() (same model as OPC UA).
 """
 
+import ipaddress
 import logging
 import time
 from uuid import UUID
@@ -23,6 +24,7 @@ from bacpypes3.app import Application
 from bacpypes3.local.analog import AnalogInputObject
 from bacpypes3.local.device import DeviceObject
 from bacpypes3.local.networkport import NetworkPortObject
+from bacpypes3.object import Object
 from bacpypes3.vlan import VirtualNetwork
 
 from app.exceptions import ConflictException
@@ -206,7 +208,7 @@ class BacnetAdapter(ProtocolAdapter):
             )
 
         display_name = self._device_meta.get(device_id) or f"Device_{slave_id}"
-        objs: list = [
+        core_objs: list[Object] = [
             DeviceObject(
                 objectIdentifier=("device", instance),
                 objectName=display_name,
@@ -226,27 +228,43 @@ class BacnetAdapter(ProtocolAdapter):
             ),
         ]
 
-        analog_objs: dict[int, AnalogInputObject] = {}
-        for reg in registers:
-            if reg.address in analog_objs:
-                logger.warning(
-                    "BACnet: duplicate register address %d on device %s; skipping %r",
-                    reg.address, device_id, reg.name,
-                )
-                continue
-            ai = AnalogInputObject(
-                objectIdentifier=("analog-input", reg.address),
-                objectName=reg.name or f"reg_{reg.address}",
-                presentValue=0.0,
-                outOfService=False,
-                units=_UNIT_MAP.get(reg.unit or "", "no-units"),
-            )
-            analog_objs[reg.address] = ai
-            objs.append(ai)
-
-        app = _DeviceApplication.from_object_list(objs)
+        # Build the app from the device + VLAN port first (this attaches the
+        # app's VirtualNode to the VLAN), then add the analog inputs one by
+        # one. If any add_object raises (e.g. a register name colliding with
+        # an internal object name → duplicate objectName RuntimeError), the
+        # half-built app must be fully torn down — otherwise its VLAN node
+        # lingers and a retried slave_id would create a duplicate-MAC node.
+        app = _DeviceApplication.from_object_list(core_objs)
         app._ghost_adapter = self
         app._ghost_device_id = device_id
+
+        analog_objs: dict[int, AnalogInputObject] = {}
+        try:
+            for reg in registers:
+                if reg.address in analog_objs:
+                    logger.warning(
+                        "BACnet: duplicate register address %d on device %s; skipping %r",
+                        reg.address, device_id, reg.name,
+                    )
+                    continue
+                ai = AnalogInputObject(
+                    objectIdentifier=("analog-input", reg.address),
+                    objectName=reg.name or f"reg_{reg.address}",
+                    presentValue=0.0,
+                    outOfService=False,
+                    units=_UNIT_MAP.get(reg.unit or "", "no-units"),
+                )
+                app.add_object(ai)
+                analog_objs[reg.address] = ai
+        except Exception:
+            self._detach_vlan_nodes(app)
+            try:
+                app.close()
+            except Exception:
+                logger.debug(
+                    "Error closing half-built BACnet device app", exc_info=True,
+                )
+            raise
 
         self._device_apps[device_id] = app
         self._instance_owner[instance] = device_id
@@ -254,16 +272,39 @@ class BacnetAdapter(ProtocolAdapter):
             self._objects[(device_id, addr)] = ai
 
         # Announce on the network (best-effort; broadcast may not leave a
-        # docker bridge — unicast reads are unaffected).
-        try:
-            app.i_am()
-        except Exception:
-            logger.debug("BACnet: I-Am broadcast failed", exc_info=True)
+        # docker bridge — unicast reads are unaffected). On /31 and /32 binds
+        # (loopback tests, single-IP Tailscale deploys) the prefix has no
+        # broadcast address and i_am() would raise RuntimeError("no broadcast")
+        # in a background task on every device start — skip it entirely.
+        if ipaddress.ip_network(self._address, strict=False).prefixlen >= 31:
+            logger.debug(
+                "BACnet: skipping I-Am broadcast (no broadcast address on %s)",
+                self._address,
+            )
+        else:
+            try:
+                app.i_am()
+            except Exception:
+                logger.debug("BACnet: I-Am broadcast failed", exc_info=True)
 
         logger.info(
             "BACnet: added device %s (instance %d, %d objects)",
             display_name, instance, len(analog_objs),
         )
+
+    @staticmethod
+    def _detach_vlan_nodes(app: Application) -> None:
+        """Detach the app's VirtualNode(s) from the VLAN.
+
+        Application.close() does NOT do this (VirtualLinkLayer.close() is a
+        no-op in bacpypes3 0.0.106), so without it a removed/failed device
+        keeps answering on the VLAN and a re-added slave_id would create a
+        duplicate-MAC node.
+        """
+        for link_layer in getattr(app, "link_layers", {}).values():
+            node = getattr(link_layer, "node", None)
+            if node is not None and node.lan is not None:
+                node.lan.remove_node(node)
 
     async def _do_remove_device(self, device_id: UUID) -> None:
         """Close and remove the device's BACnet application."""
@@ -273,14 +314,7 @@ class BacnetAdapter(ProtocolAdapter):
                 app.close()
             except Exception:
                 logger.debug("Error closing BACnet device app", exc_info=True)
-            # Application.close() does NOT detach the app's VirtualNode from
-            # the VLAN (VirtualLinkLayer.close() is a no-op), so without this
-            # the removed device keeps answering and re-adding the same
-            # slave_id would create a duplicate-MAC node. Detach explicitly.
-            for link_layer in app.link_layers.values():
-                node = getattr(link_layer, "node", None)
-                if node is not None and node.lan is not None:
-                    node.lan.remove_node(node)
+            self._detach_vlan_nodes(app)
         self._objects = {
             key: obj for key, obj in self._objects.items() if key[0] != device_id
         }

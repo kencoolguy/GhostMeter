@@ -7,13 +7,22 @@ import uuid
 import pytest
 from bacpypes3.settings import settings as bp3_settings
 
-# Route-aware addresses ("net:mac@router-ip:port") let the test client reach
-# VLAN devices through the router on loopback without any broadcasts.
-bp3_settings.route_aware = True
-
 NETWORK = 100
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _route_aware():
+    """Enable route-aware addresses for this module; restore on teardown.
+
+    Route-aware addresses ("net:mac@router-ip:port") let the test client reach
+    VLAN devices through the router on loopback without any broadcasts.
+    """
+    previous = bp3_settings.route_aware
+    bp3_settings.route_aware = True
+    yield
+    bp3_settings.route_aware = previous
 
 
 def _free_udp_port() -> int:
@@ -187,5 +196,29 @@ class TestBacnetAddRemoveDevice:
             # Only the router's own VLAN node may remain.
             assert len(adapter._vlan.nodes) == 1
             # Same slave_id can be re-added after removal
+            await adapter.add_device(uuid.uuid4(), 1, _regs())
+            assert len(adapter._vlan.nodes) == 2
+
+    async def test_failed_add_does_not_leak_vlan_node(self):
+        """A register name colliding with an internal object name aborts the
+        add — the half-built app's VLAN node must be detached so the same
+        slave_id can be re-added cleanly."""
+        from app.protocols.base import RegisterInfo
+
+        async with _running_adapter() as adapter:
+            bad_regs = _regs() + [
+                RegisterInfo(5, 3, "float32", "big_endian", name="NetworkPort-VLAN"),
+            ]
+            failed_device_id = uuid.uuid4()
+            with pytest.raises(Exception):
+                await adapter.add_device(failed_device_id, 1, bad_regs)
+            # Only the router node remains on the VLAN
+            assert len(adapter._vlan.nodes) == 1
+            assert adapter.get_status()["device_count"] == 0
+            assert adapter.get_status()["object_count"] == 0
+            # The stats entry created by the base template method must be
+            # rolled back on failure
+            assert adapter.get_stats(failed_device_id) is None
+            # Same slave_id can be added cleanly afterwards
             await adapter.add_device(uuid.uuid4(), 1, _regs())
             assert len(adapter._vlan.nodes) == 2
