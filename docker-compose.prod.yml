@@ -25,6 +25,7 @@ services:
       - "${BIND_IP:-127.0.0.1}:502:502"
       - "${BIND_IP:-127.0.0.1}:4840:4840"
       - "${BIND_IP:-127.0.0.1}:161:10161/udp"
+      - "${BIND_IP:-127.0.0.1}:47808:47808/udp"
 
   frontend:
     ports: !override

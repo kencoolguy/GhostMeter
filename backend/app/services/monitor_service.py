@@ -115,7 +115,9 @@ class MonitorService:
                 "error_count": 0,
                 "avg_response_ms": 0.0,
             }
-            stats = protocol_manager.get_stats("modbus_tcp", device_id)
+            # Stats live in the device's own protocol adapter
+            protocol = device.template.protocol if device.template else "modbus_tcp"
+            stats = protocol_manager.get_stats(protocol, device_id)
             if stats:
                 stats_data = {
                     "request_count": stats.request_count,

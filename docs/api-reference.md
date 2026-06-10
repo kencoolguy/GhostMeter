@@ -54,7 +54,7 @@ Base path: `/api/v1/templates`
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Template name (must be unique) |
-| `protocol` | string | no | `"modbus_tcp"` | Protocol identifier |
+| `protocol` | string | no | `"modbus_tcp"` | Protocol identifier. Accepted values: `"modbus_tcp"`, `"mqtt"`, `"snmp"`, `"opcua"`, `"bacnet"` |
 | `description` | string\|null | no | `null` | Human-readable description |
 | `registers` | array | yes | — | At least one `RegisterDefinitionCreate` required |
 

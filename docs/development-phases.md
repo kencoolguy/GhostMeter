@@ -258,6 +258,19 @@
 - [x] 13 new tests: adapter-level fault tests (exception/timeout/delay/intermittent/cache/subscription restore) + REST e2e round-trip
 - **Note:** SNMP/MQTT adapters could reuse the same base hook pattern in the future (out of scope here; their fault semantics differ significantly)
 
+### Milestone 8.11：BACnet/IP Adapter ✅ Complete (2026-06-10)
+- [x] `BacnetAdapter` in `backend/app/protocols/bacnet_agent.py` (bacpypes3 0.0.106)
+- [x] Router + VLAN topology: one IPv4 Application on UDP 47808 + `VirtualNetwork` (network 100); each simulated device = independent BACnet Application on the VLAN (instance = `100000 + slave_id`)
+- [x] Services: Who-Is/I-Am discovery, ReadProperty, ReadPropertyMultiple; read-only
+- [x] Registers map to analog-input objects (instance = register address, objectName = name, EngineeringUnits from unit string)
+- [x] Per-device read statistics (request / success / error / avg ms) via overridden ReadProperty handlers
+- [x] Push value sync: `update_register` writes `presentValue`, clamped to float32 range (prevents operational-problem errors from anomaly spikes)
+- [x] `base.py` fix: stats entry no longer leaked when `_do_add_device` raises (affects all adapters)
+- [x] Built-in "Energy Meter (BACnet)" seed template + Normal Operation profile
+- [x] Frontend `bacnet` protocol option; docker-compose + prod overlay UDP 47808; config settings (`BACNET_NETWORK`, `BACNET_DEVICE_INSTANCE_BASE`)
+- [x] `backend/tests/test_bacnet_adapter.py`: 17 tests (lifecycle, device add/remove, register round-trip, stats, restart safety, VLAN-node zombie prevention)
+- **Deferred:** COV subscriptions, WriteProperty, comm-layer fault simulation, BBMD / Foreign Device registration
+
 ### Milestone 8.7：Consolidation (in progress 🔄)
 - [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
 - [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)

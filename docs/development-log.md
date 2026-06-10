@@ -1,5 +1,82 @@
 # Development Log
 
+## 2026-06-10 — BACnet/IP Adapter (5th protocol)
+
+### What was built
+BACnet/IP protocol adapter (`backend/app/protocols/bacnet_agent.py`) using bacpypes3 0.0.106. Implements Who-Is/I-Am device discovery, ReadProperty, and ReadPropertyMultiple — read-only for MVP.
+
+Built-in seed template "Energy Meter (BACnet)" (`backend/app/seed/bacnet_energy_meter.json`) + Normal Operation profile. Frontend protocol option added; docker-compose + prod overlay expose UDP 47808; 17 integration tests in `backend/tests/test_bacnet_adapter.py`.
+
+### Topology decision — router + VLAN (virtual network)
+One IPv4 router Application binds UDP 47808 and bridges to a `VirtualNetwork` (VLAN, network number `BACNET_NETWORK`=100). Each GhostMeter device runs as an independent BACnet device Application on the VLAN.
+
+- Router reserves VLAN MAC 254 and device instance = `BACNET_DEVICE_INSTANCE_BASE` (100000).
+- Each simulated device: instance = base + slave_id; VLAN MAC = slave_id.
+- EMS clients see N independent BACnet devices on one UDP socket.
+
+Registers map to read-only analog-input objects: object instance = register address, objectName = register name, EngineeringUnits mapped from unit strings. Per-device read stats (request / success / error / avg ms) tracked via overridden ReadProperty handlers — more granular than OPC UA which has no per-request hooks.
+
+### Notable implementation discoveries
+
+1. **`VirtualNetwork._networks` class-level registry never cleaned** (`bacnet_agent.py` `stop()`): bacpypes3 keeps a class-level dict of all VirtualNetworks, and it's never cleared. On adapter restart the new VLAN can't register (name collision). `stop()` must explicitly pop the old entry — no public API exists; identity check used to guard against removing someone else's entry.
+
+2. **bacpypes3 UDP bind is a silent background retry loop** (`bacnet_agent.py` `start()`): bacpypes3 schedules the UDP bind as a background asyncio task with infinite retry on `OSError`. A port conflict doesn't raise at `start()` — the adapter appears "running" while actually unbound. Fixed: pre-bind probe socket before starting bacpypes3 (failure is caught and logged, leaving the adapter stopped with `running=False`); pending transport tasks are cancelled at teardown.
+
+3. **`Application.close()` does NOT detach VirtualNodes from the VLAN** (`bacnet_agent.py` `_detach_vlan_node()`): `VirtualLinkLayer.close()` is a no-op in bacpypes3. If not explicitly detached, a stopped device's VLAN node keeps answering — its I-Am responses collide with the new node's MAC on re-add (duplicate MAC address). Explicit detach helper used on both device removal and on partial add-failure (zombie node otherwise answers indefinitely).
+
+4. **Router IPv4 network-port needs its own `networkNumber`** (`bacnet_agent.py` `start()`): without it, NPDU SADR construction crashes when routing a request from the IPv4 interface to the VLAN, because bacpypes3 can't compute the source address for the routed reply.
+
+5. **`ProtocolAdapter.add_device` base method leaked stats entry on `_do_add_device` failure** (`backend/app/protocols/base.py`): the base template method inserted into `_device_stats` before calling `_do_add_device`; an exception left an orphan entry. Fixed in `base.py` (affects all adapters).
+
+6. **Test reachability via route-aware addresses** (`backend/tests/test_bacnet_adapter.py`): tests reach VLAN devices on loopback using bacpypes3 route-aware address syntax (`"100:1@127.0.0.1:port"`). No broadcast dependency — CI-safe.
+
+### Known limitation (documented in README)
+BACnet discovery (Who-Is) relies on UDP broadcast, which doesn't cross docker bridge or routed subnets (e.g. Tailscale). EMS clients on a different L2 must configure the simulator's IP statically; unicast ReadProperty and directed Who-Is work fine. BBMD / Foreign Device support is deferred.
+
+I-Am announcements are skipped on /31 and /32 binds (no broadcast address).
+
+### Out of scope (deferred)
+COV subscriptions, WriteProperty, comm-layer fault simulation, BBMD/Foreign Device registration.
+
+### Verification
+- `pytest -q`: 341 passed, 11 warnings — no regressions.
+- `ruff check .`: clean.
+- `npm run build`: clean (chunk size warning pre-existing, tracked as issue #23).
+
+### Follow-up (same day) — two runtime-verified bugs fixed
+
+1. **Wildcard bind (`0.0.0.0/0`, production default) deadlocked ALL replies on macOS.**
+   Root cause (bacpypes3 0.0.106, `ipv4/__init__.py`): `IPv4DatagramServer.__init__`
+   creates a SECOND endpoint task to bind the subnet broadcast address. For `/0`
+   that is 255.255.255.255, which fails `bind()` on macOS (errno 49) and
+   `retrying_create_datagram_endpoint` retries forever. Critically,
+   `IPv4DatagramServer.indication()` — the path every outbound reply takes —
+   starts with `await asyncio.gather(*self._transport_tasks)`, so every response
+   hung. Inbound worked; replies never left. The `/32` test binds skip the second
+   endpoint (broadcast == local tuple), which is why all 17 integration tests
+   passed. Fix: when the configured prefix has prefixlen 0, `start()` removes the
+   doomed broadcast endpoint task (`_disable_broadcast_endpoints`), sets
+   `broadcast_address = None`, and logs a warning. I-Am broadcast is also skipped
+   on `/0` (extended the existing /31–/32 guard). Regression test
+   `test_wildcard_bind_serves_unicast` (fails with a 5 s timeout on macOS before
+   the fix; would pass on Linux even unfixed since 255.255.255.255 binds there —
+   it is a mac-dev regression guard).
+
+2. **WriteProperty was accepted (spec violation).** The plan assumed bacpypes3
+   rejects writes to non-commandable AnalogInputObject presentValue — wrong;
+   runtime-verified: wrote 999.0, re-read 999.0. Fix:
+   `_DeviceApplication.do_WritePropertyRequest` raises
+   `ExecutionError(errorClass="property", errorCode="writeAccessDenied")`;
+   bacpypes3's `Application.indication()` converts the raise into a proper BACnet
+   Error PDU (verified in `bacpypes3/app.py`). Regression test
+   `test_write_property_rejected` (failed with DID NOT RAISE before the fix)
+   asserts the error and that the simulated value is unchanged.
+
+Verification: `tests/test_bacnet_adapter.py` 19 passed; full suite
+`pytest -q` 343 passed; `ruff check .` clean.
+
+---
+
 ## 2026-06-10 — Fix: SNMP never served values + UPS computed-profile crash
 
 ### Discovered while seeding SNMP/OPC UA test devices

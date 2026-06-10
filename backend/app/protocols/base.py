@@ -83,9 +83,17 @@ class ProtocolAdapter(ABC):
         slave_id: int,
         registers: list[RegisterInfo],
     ) -> None:
-        """Register a device — creates stats entry, then delegates to subclass."""
+        """Register a device — creates stats entry, then delegates to subclass.
+
+        If the subclass registration fails, the stats entry is rolled back so
+        a failed add leaves no trace.
+        """
         self._device_stats[device_id] = DeviceStats()
-        await self._do_add_device(device_id, slave_id, registers)
+        try:
+            await self._do_add_device(device_id, slave_id, registers)
+        except Exception:
+            self._device_stats.pop(device_id, None)
+            raise
 
     async def remove_device(self, device_id: UUID) -> None:
         """Unregister a device — delegates to subclass, then cleans up stats.
