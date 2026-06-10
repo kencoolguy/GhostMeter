@@ -308,3 +308,44 @@ class TestBacnetStats:
                 )
             adapter.reset_stats(device_id)
             assert adapter.get_stats(device_id).request_count == 0
+
+
+class TestBacnetDiscoveryAndRpm:
+    async def test_directed_whois_returns_i_am(self):
+        from bacpypes3.pdu import Address
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            async with _client_app() as client:
+                # Remote-broadcast Who-Is on the VLAN, routed via the router.
+                # who_is() drops the source-address filter for broadcast
+                # destinations and low==high makes it resolve on the first
+                # matching I-Am, so this returns immediately (no 3 s timeout).
+                addr = Address(f"{NETWORK}:*@127.0.0.1:{adapter._port}")
+                i_ams = await client.who_is(100001, 100001, addr)
+                assert len(i_ams) == 1
+                assert i_ams[0].iAmDeviceIdentifier[1] == 100001
+
+    async def test_read_property_multiple(self):
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            await adapter.update_register(
+                device_id, 0, 3, 220.0, "float32", "big_endian"
+            )
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                results = await client.read_property_multiple(
+                    addr,
+                    [
+                        "analog-input,0", ["present-value", "object-name"],
+                        "analog-input,2", ["present-value"],
+                    ],
+                )
+                values = {
+                    (str(objid), str(propid)): value
+                    for objid, propid, _aidx, value in results
+                }
+                assert abs(float(values[("analog-input,0", "present-value")]) - 220.0) < 0.01
+                assert str(values[("analog-input,0", "object-name")]) == "voltage_l1"
