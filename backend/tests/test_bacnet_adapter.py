@@ -222,3 +222,30 @@ class TestBacnetAddRemoveDevice:
             # Same slave_id can be added cleanly afterwards
             await adapter.add_device(uuid.uuid4(), 1, _regs())
             assert len(adapter._vlan.nodes) == 2
+
+
+class TestBacnetUpdateRegister:
+    async def test_update_then_client_reads_new_value(self):
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            await adapter.update_register(
+                device_id, 0, 3, 231.5, "float32", "big_endian"
+            )
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                value = await client.read_property(
+                    addr, ObjectIdentifier(("analog-input", 0)), "present-value"
+                )
+                assert abs(float(value) - 231.5) < 0.01
+
+    async def test_update_unknown_register_is_noop(self):
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            # Unknown address: must not raise
+            await adapter.update_register(
+                device_id, 99, 3, 1.0, "float32", "big_endian"
+            )

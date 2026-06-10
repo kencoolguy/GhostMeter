@@ -334,7 +334,15 @@ class BacnetAdapter(ProtocolAdapter):
         data_type: str,
         byte_order: str,
     ) -> None:
-        raise NotImplementedError  # Task 4
+        """Push a value into the analog-input object (function_code/byte_order
+        are irrelevant for BACnet; presentValue is always Real)."""
+        obj = self._objects.get((device_id, address))
+        if obj is None:
+            logger.debug(
+                "BACnet: no object for device %s addr %d", device_id, address,
+            )
+            return
+        obj.presentValue = float(value)
 
     def set_device_meta(self, device_id: UUID, device_name: str) -> None:
         """Set the BACnet objectName used for a device.
