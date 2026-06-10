@@ -1,30 +1,16 @@
 """Tests for SNMP comm-layer fault simulation (real GET/GETNEXT through the agent)."""
 
 import asyncio
-import socket
 import time
 import uuid
 
 import pytest
 
+from tests.netutil import free_udp_port
+
 pytestmark = pytest.mark.asyncio
 
 OID = "1.3.6.1.2.1.33.1.3.3.1.3.1"
-
-
-@pytest.fixture(autouse=True)
-def _clean_faults():
-    from app.simulation import fault_simulator
-
-    fault_simulator.clear_all()
-    yield
-    fault_simulator.clear_all()
-
-
-def _free_udp_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def _set_fault(device_id, fault_type: str, params: dict | None = None) -> None:
@@ -43,7 +29,7 @@ async def _running_agent(monkeypatch):
     from app.protocols.snmp_agent import SnmpAdapter
     from app.simulation import simulation_engine
 
-    port = _free_udp_port()
+    port = free_udp_port()
     device_id = uuid.uuid4()
     monkeypatch.setattr(
         simulation_engine,
@@ -54,7 +40,6 @@ async def _running_agent(monkeypatch):
     await adapter.start()
     regs = [RegisterInfo(0, 4, "float32", "big_endian", oid=OID, name="input_voltage")]
     await adapter.add_device(device_id, 1, regs)
-    adapter.set_register_names(device_id, {OID: "input_voltage"})
     return adapter, device_id, port
 
 

@@ -105,6 +105,16 @@ async def setup_database():
     app.dependency_overrides.pop(get_session, None)
 
 
+@pytest.fixture(autouse=True)
+def clean_faults():
+    """Fault state is process-global; never leak it between tests."""
+    from app.simulation import fault_simulator
+
+    fault_simulator.clear_all()
+    yield
+    fault_simulator.clear_all()
+
+
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """Async HTTP client for testing FastAPI app."""

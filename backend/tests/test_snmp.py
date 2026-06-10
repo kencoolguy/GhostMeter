@@ -186,26 +186,31 @@ class TestSnmpAdapterUnit:
         assert sorted_oids[0] == "1.3.6.1.2.1.33.1.2.1.0"
         assert sorted_oids[1] == "1.3.6.1.2.1.33.1.4.4.1.2.1"
 
-    async def test_set_register_names(self):
-        """set_register_names updates OID→name mapping."""
+    async def test_add_device_stores_register_names(self):
+        """add_device stores the OID→register-name mapping from RegisterInfo.
+
+        Registers without a name fall back to the OID string."""
         from app.protocols.base import RegisterInfo
         from app.protocols.snmp_agent import SnmpAdapter
 
         adapter = SnmpAdapter()
         device_id = uuid.uuid4()
         regs = [
-            RegisterInfo(0, 4, "float32", "big_endian", oid="1.3.6.1.2.1.33.1.2.1.0"),
+            RegisterInfo(
+                0, 4, "float32", "big_endian",
+                oid="1.3.6.1.2.1.33.1.2.1.0", name="battery_status",
+            ),
+            RegisterInfo(1, 4, "float32", "big_endian", oid="1.3.6.1.2.1.33.1.2.2.0"),
         ]
         await adapter.add_device(device_id, 1, regs)
 
-        adapter.set_register_names(device_id, {
-            "1.3.6.1.2.1.33.1.2.1.0": "battery_status",
-        })
-
-        # Verify the mapping was updated
         entry = adapter._oid_map.get("1.3.6.1.2.1.33.1.2.1.0")
         assert entry is not None
         assert entry[1] == "battery_status"
+
+        unnamed = adapter._oid_map.get("1.3.6.1.2.1.33.1.2.2.0")
+        assert unnamed is not None
+        assert unnamed[1] == "1.3.6.1.2.1.33.1.2.2.0"
 
     async def test_to_snmp_value_int(self):
         """Integer types convert to Integer32."""
@@ -339,7 +344,6 @@ class TestSnmpAgentServesValues:
                 RegisterInfo(0, 4, "float32", "big_endian", oid=oid, name="input_voltage"),
             ]
             await adapter.add_device(device_id, 1, regs)
-            adapter.set_register_names(device_id, {oid: "input_voltage"})
 
             eng = SnmpEngine()
             tgt = await UdpTransportTarget.create(("127.0.0.1", port))

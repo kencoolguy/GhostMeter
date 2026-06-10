@@ -42,9 +42,17 @@ async def get_device_protocol(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> str:
     """Resolve a device's protocol via its template. Raises 404 if absent."""
-    device = await _get_device_raw(session, device_id)
-    template = await get_template_with_registers(session, device.template_id)
-    return template.protocol
+    stmt = (
+        select(DeviceTemplate.protocol)
+        .join(DeviceInstance, DeviceInstance.template_id == DeviceTemplate.id)
+        .where(DeviceInstance.id == device_id)
+    )
+    protocol = await session.scalar(stmt)
+    if protocol is None:
+        raise NotFoundException(
+            detail="Device not found", error_code="DEVICE_NOT_FOUND"
+        )
+    return protocol
 
 
 async def _check_slave_id_available(
@@ -318,20 +326,19 @@ async def delete_device(
     await session.commit()
 
 
-async def start_device(
-    session: AsyncSession, device_id: uuid.UUID,
-) -> dict:
-    """Start a device (stopped → running). Registers slave in protocol adapter."""
-    device = await _get_device_raw(session, device_id)
+async def register_device_runtime(
+    device: DeviceInstance, template: DeviceTemplate,
+) -> None:
+    """Register a device with its protocol adapter and start its simulation task.
 
-    if device.status != "stopped":
-        raise ConflictException(
-            detail=f"Device is already {device.status}",
-            error_code="INVALID_STATE_TRANSITION",
-        )
+    Shared by start_device and the startup resume loop in app.main, so the
+    registration steps cannot drift between the two paths. Raises if adapter
+    registration fails; a simulation-start failure is only logged (the adapter
+    keeps serving the last pushed values).
+    """
+    if not protocol_manager.is_running:
+        return
 
-    # Load template with registers for protocol adapter
-    template = await get_template_with_registers(session, device.template_id)
     register_infos = [
         RegisterInfo(
             address=reg.address,
@@ -345,51 +352,46 @@ async def start_device(
         for reg in template.registers
     ]
 
-    # OPC UA needs the device display name before the Object node is created
-    if template.protocol == "opcua" and protocol_manager.is_running:
-        opcua_adapter = protocol_manager.get_adapter("opcua")
-        if opcua_adapter is not None:
-            opcua_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
+    # OPC UA / BACnet need the device display name before their object node
+    # is created in add_device
+    if template.protocol in ("opcua", "bacnet"):
+        adapter = protocol_manager.get_adapter(template.protocol)
+        if adapter is not None:
+            adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
 
-    # BACnet needs the device display name before the device object is created
-    if template.protocol == "bacnet" and protocol_manager.is_running:
-        bacnet_adapter = protocol_manager.get_adapter("bacnet")
-        if bacnet_adapter is not None:
-            bacnet_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
+    await protocol_manager.add_device(
+        template.protocol, device.id, device.slave_id, register_infos,
+    )
 
-    # Register device in protocol adapter
-    if protocol_manager.is_running:
-        try:
-            await protocol_manager.add_device(
-                template.protocol, device.id, device.slave_id, register_infos,
-            )
-        except Exception as e:
-            device.status = "error"
-            await session.commit()
-            raise ConflictException(
-                detail=f"Failed to start device: {e}",
-                error_code="PROTOCOL_ERROR",
-            ) from e
+    try:
+        await simulation_engine.start_device(device.id)
+    except Exception as e:
+        logger.error("Failed to start simulation for device %s: %s", device.id, e)
 
-    # Start simulation engine for this device
-    if protocol_manager.is_running:
-        try:
-            await simulation_engine.start_device(device.id)
-        except Exception as e:
-            logger.error("Failed to start simulation for device %s: %s", device_id, e)
 
-    # Set SNMP register names if applicable
-    if template.protocol == "snmp":
-        try:
-            snmp_adapter = protocol_manager.get_adapter("snmp")
-            oid_to_name = {
-                reg.oid: reg.name
-                for reg in template.registers
-                if reg.oid
-            }
-            snmp_adapter.set_register_names(device.id, oid_to_name)  # type: ignore[attr-defined]
-        except Exception as e:
-            logger.warning("Failed to set SNMP register names: %s", e)
+async def start_device(
+    session: AsyncSession, device_id: uuid.UUID,
+) -> dict:
+    """Start a device (stopped → running). Registers slave in protocol adapter."""
+    device = await _get_device_raw(session, device_id)
+
+    if device.status != "stopped":
+        raise ConflictException(
+            detail=f"Device is already {device.status}",
+            error_code="INVALID_STATE_TRANSITION",
+        )
+
+    template = await get_template_with_registers(session, device.template_id)
+
+    try:
+        await register_device_runtime(device, template)
+    except Exception as e:
+        device.status = "error"
+        await session.commit()
+        raise ConflictException(
+            detail=f"Failed to start device: {e}",
+            error_code="PROTOCOL_ERROR",
+        ) from e
 
     # Auto-start MQTT publishing if configured and enabled
     try:

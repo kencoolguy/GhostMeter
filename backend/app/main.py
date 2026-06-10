@@ -27,12 +27,12 @@ from app.exceptions import (
 from app.models.device import DeviceInstance
 from app.protocols import protocol_manager
 from app.protocols.bacnet_agent import BacnetAdapter
-from app.protocols.base import RegisterInfo
 from app.protocols.modbus_tcp import ModbusTcpAdapter
 from app.protocols.mqtt_adapter import MqttAdapter
 from app.protocols.opcua_agent import OpcUaAdapter
 from app.protocols.snmp_agent import SnmpAdapter
 from app.seed.loader import seed_builtin_profiles, seed_builtin_scenarios, seed_builtin_templates
+from app.services import device_service
 from app.services.template_service import get_template as get_template_with_registers
 from app.simulation import simulation_engine
 
@@ -123,41 +123,7 @@ async def lifespan(app: FastAPI):
         for device in running_devices:
             try:
                 template = await get_template_with_registers(session, device.template_id)
-                register_infos = [
-                    RegisterInfo(
-                        address=reg.address,
-                        function_code=reg.function_code,
-                        data_type=reg.data_type,
-                        byte_order=reg.byte_order,
-                        oid=reg.oid,
-                        name=reg.name,
-                        unit=reg.unit,
-                    )
-                    for reg in template.registers
-                ]
-                if template.protocol == "opcua":
-                    opcua_adapter.set_device_meta(device.id, device.name)
-                if template.protocol == "bacnet":
-                    bacnet_adapter = protocol_manager.get_adapter("bacnet")
-                    if bacnet_adapter is not None:
-                        bacnet_adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
-                await protocol_manager.add_device(
-                    template.protocol, device.id, device.slave_id, register_infos,
-                )
-                await simulation_engine.start_device(device.id)
-                # SNMP needs its OID→register-name map rebuilt so resolve_oid can
-                # look values up by name (mirrors device_service.start_device).
-                # Without this, resumed SNMP devices serve noSuchObject after a
-                # restart even though their OIDs are registered.
-                if template.protocol == "snmp":
-                    snmp_adapter = protocol_manager.get_adapter("snmp")
-                    if snmp_adapter is not None:
-                        oid_to_name = {
-                            reg.oid: reg.name
-                            for reg in template.registers
-                            if reg.oid
-                        }
-                        snmp_adapter.set_register_names(device.id, oid_to_name)
+                await device_service.register_device_runtime(device, template)
                 resumed += 1
             except Exception:
                 logger.error(
