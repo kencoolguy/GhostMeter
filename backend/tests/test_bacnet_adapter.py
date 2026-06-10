@@ -1,9 +1,17 @@
 """Tests for the BACnet/IP adapter (real bacpypes3 client round-trips on loopback)."""
 
+import contextlib
 import socket
 import uuid
 
 import pytest
+from bacpypes3.settings import settings as bp3_settings
+
+# Route-aware addresses ("net:mac@router-ip:port") let the test client reach
+# VLAN devices through the router on loopback without any broadcasts.
+bp3_settings.route_aware = True
+
+NETWORK = 100
 
 pytestmark = pytest.mark.asyncio
 
@@ -13,6 +21,67 @@ def _free_udp_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+@contextlib.asynccontextmanager
+async def _client_app():
+    """A standalone bacpypes3 client application bound to loopback."""
+    from bacpypes3.app import Application
+    from bacpypes3.local.device import DeviceObject
+    from bacpypes3.local.networkport import NetworkPortObject
+
+    port = _free_udp_port()
+    app = Application.from_object_list([
+        DeviceObject(
+            objectIdentifier=("device", 4194302),
+            objectName="test-client",
+            vendorIdentifier=999,
+        ),
+        NetworkPortObject(
+            f"127.0.0.1/32:{port}",
+            objectIdentifier=("network-port", 1),
+            objectName="client-port",
+        ),
+    ])
+    try:
+        yield app
+    finally:
+        app.close()
+
+
+def _device_addr(router_port: int, slave_id: int):
+    from bacpypes3.pdu import Address
+
+    return Address(f"{NETWORK}:{slave_id}@127.0.0.1:{router_port}")
+
+
+@contextlib.asynccontextmanager
+async def _running_adapter():
+    """A started BacnetAdapter bound to loopback on a free port."""
+    from app.protocols.bacnet_agent import BacnetAdapter
+
+    adapter = BacnetAdapter(
+        address="127.0.0.1/32",
+        port=_free_udp_port(),
+        device_instance_base=100000,
+        network=NETWORK,
+    )
+    await adapter.start()
+    assert adapter.get_status()["running"] is True
+    try:
+        yield adapter
+    finally:
+        await adapter.stop()
+
+
+def _regs():
+    from app.protocols.base import RegisterInfo
+
+    return [
+        RegisterInfo(0, 3, "float32", "big_endian", name="voltage_l1", unit="V"),
+        RegisterInfo(1, 3, "float32", "big_endian", name="active_power", unit="kW"),
+        RegisterInfo(2, 3, "int16", "big_endian", name="status", unit=None),
+    ]
 
 
 class TestBacnetSettings:
@@ -63,3 +132,60 @@ class TestBacnetLifecycle:
             assert adapter.get_status()["running"] is True
         finally:
             await adapter.stop()
+
+
+class TestBacnetAddRemoveDevice:
+    async def test_add_device_creates_objects(self):
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            status = adapter.get_status()
+            assert status["device_count"] == 1
+            assert status["object_count"] == 3
+
+    async def test_client_reads_object_name_and_units(self):
+        from bacpypes3.basetypes import EngineeringUnits
+        from bacpypes3.primitivedata import ObjectIdentifier
+
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            adapter.set_device_meta(device_id, "Test Meter")
+            await adapter.add_device(device_id, 1, _regs())
+
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                # read_property requires ObjectIdentifier instances (bare
+                # tuples raise TypeError in bacpypes3 0.0.106)
+                ai0 = ObjectIdentifier(("analog-input", 0))
+                name = await client.read_property(addr, ai0, "object-name")
+                assert str(name) == "voltage_l1"
+                units = await client.read_property(addr, ai0, "units")
+                assert units == EngineeringUnits("volts")
+                dev_name = await client.read_property(
+                    addr, ObjectIdentifier(("device", 100001)), "object-name"
+                )
+                assert str(dev_name) == "Test Meter"
+
+    async def test_device_instance_conflict_raises(self):
+        from app.exceptions import ConflictException
+
+        async with _running_adapter() as adapter:
+            await adapter.add_device(uuid.uuid4(), 1, _regs())
+            with pytest.raises(ConflictException):
+                await adapter.add_device(uuid.uuid4(), 1, _regs())
+
+    async def test_remove_device_clears_objects(self):
+        async with _running_adapter() as adapter:
+            device_id = uuid.uuid4()
+            await adapter.add_device(device_id, 1, _regs())
+            await adapter.remove_device(device_id)
+            status = adapter.get_status()
+            assert status["device_count"] == 0
+            assert status["object_count"] == 0
+            # The device's VirtualNode must be detached from the VLAN —
+            # app.close() alone leaves a zombie node still answering on MAC 1.
+            # Only the router's own VLAN node may remain.
+            assert len(adapter._vlan.nodes) == 1
+            # Same slave_id can be re-added after removal
+            await adapter.add_device(uuid.uuid4(), 1, _regs())
+            assert len(adapter._vlan.nodes) == 2

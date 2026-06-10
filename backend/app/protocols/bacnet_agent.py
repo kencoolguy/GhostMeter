@@ -119,10 +119,16 @@ class BacnetAdapter(ProtocolAdapter):
                 objectName="GhostMeter BACnet Router",
                 vendorIdentifier=_VENDOR_ID,
             )
+            # The IPv4 port needs its own configured network number, otherwise
+            # the router cannot build the NPDU source address (SADR) when
+            # forwarding requests onto the VLAN ("integer network required").
+            # Same layout as bacpypes3 samples/ip-to-vlan.json (ip=100, vlan=200).
             ipv4_port = NetworkPortObject(
                 f"{self._address}:{self._port}",
                 objectIdentifier=("network-port", 1),
                 objectName="NetworkPort-IPv4",
+                networkNumber=self._network + 1,
+                networkNumberQuality="configured",
             )
             vlan_port = NetworkPortObject(
                 None,
@@ -184,10 +190,106 @@ class BacnetAdapter(ProtocolAdapter):
         slave_id: int,
         registers: list[RegisterInfo],
     ) -> None:
-        raise NotImplementedError  # Task 3
+        """Create a virtual BACnet device application on the VLAN."""
+        if self._router_app is None or not self._running:
+            raise RuntimeError("BACnet adapter not started")
+
+        instance = self._base + slave_id
+        owner = self._instance_owner.get(instance)
+        if owner is not None and owner != device_id:
+            raise ConflictException(
+                detail=(
+                    f"BACnet device instance {instance} (slave {slave_id}) "
+                    "is already registered by another device"
+                ),
+                error_code="BACNET_INSTANCE_CONFLICT",
+            )
+
+        display_name = self._device_meta.get(device_id) or f"Device_{slave_id}"
+        objs: list = [
+            DeviceObject(
+                objectIdentifier=("device", instance),
+                objectName=display_name,
+                vendorIdentifier=_VENDOR_ID,
+            ),
+            NetworkPortObject(
+                None,
+                objectIdentifier=("network-port", 1),
+                objectName="NetworkPort-VLAN",
+                networkType="virtual",
+                networkInterfaceName=self._vlan_name,
+                macAddress=bytes([slave_id]),
+                protocolLevel="bacnet-application",
+                changesPending=False,
+                outOfService=False,
+                reliability="no-fault-detected",
+            ),
+        ]
+
+        analog_objs: dict[int, AnalogInputObject] = {}
+        for reg in registers:
+            if reg.address in analog_objs:
+                logger.warning(
+                    "BACnet: duplicate register address %d on device %s; skipping %r",
+                    reg.address, device_id, reg.name,
+                )
+                continue
+            ai = AnalogInputObject(
+                objectIdentifier=("analog-input", reg.address),
+                objectName=reg.name or f"reg_{reg.address}",
+                presentValue=0.0,
+                outOfService=False,
+                units=_UNIT_MAP.get(reg.unit or "", "no-units"),
+            )
+            analog_objs[reg.address] = ai
+            objs.append(ai)
+
+        app = _DeviceApplication.from_object_list(objs)
+        app._ghost_adapter = self
+        app._ghost_device_id = device_id
+
+        self._device_apps[device_id] = app
+        self._instance_owner[instance] = device_id
+        for addr, ai in analog_objs.items():
+            self._objects[(device_id, addr)] = ai
+
+        # Announce on the network (best-effort; broadcast may not leave a
+        # docker bridge — unicast reads are unaffected).
+        try:
+            app.i_am()
+        except Exception:
+            logger.debug("BACnet: I-Am broadcast failed", exc_info=True)
+
+        logger.info(
+            "BACnet: added device %s (instance %d, %d objects)",
+            display_name, instance, len(analog_objs),
+        )
 
     async def _do_remove_device(self, device_id: UUID) -> None:
-        raise NotImplementedError  # Task 3
+        """Close and remove the device's BACnet application."""
+        app = self._device_apps.pop(device_id, None)
+        if app is not None:
+            try:
+                app.close()
+            except Exception:
+                logger.debug("Error closing BACnet device app", exc_info=True)
+            # Application.close() does NOT detach the app's VirtualNode from
+            # the VLAN (VirtualLinkLayer.close() is a no-op), so without this
+            # the removed device keeps answering and re-adding the same
+            # slave_id would create a duplicate-MAC node. Detach explicitly.
+            for link_layer in app.link_layers.values():
+                node = getattr(link_layer, "node", None)
+                if node is not None and node.lan is not None:
+                    node.lan.remove_node(node)
+        self._objects = {
+            key: obj for key, obj in self._objects.items() if key[0] != device_id
+        }
+        self._instance_owner = {
+            inst: dev for inst, dev in self._instance_owner.items()
+            if dev != device_id
+        }
+        self._device_meta.pop(device_id, None)
+        logger.info("BACnet: removed device %s", device_id)
 
     async def update_register(
         self,
