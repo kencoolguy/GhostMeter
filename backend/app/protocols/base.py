@@ -42,6 +42,13 @@ class ProtocolAdapter(ABC):
     setup. Stats lifecycle (create on add, remove on remove) is handled here.
     """
 
+    # Comm-layer fault types this protocol can simulate. Class-level so the
+    # REST layer can validate capability without a running adapter instance.
+    # Adapters that cannot express a type override with a subset (e.g. MQTT).
+    supported_fault_types: frozenset[str] = frozenset(
+        {"delay", "timeout", "exception", "intermittent"}
+    )
+
     def __init__(self) -> None:
         self._device_stats: dict[UUID, DeviceStats] = {}
 

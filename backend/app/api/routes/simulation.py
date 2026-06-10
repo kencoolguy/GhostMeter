@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.exceptions import ValidationException
-from app.protocols import protocol_manager
+from app.protocols import get_supported_fault_types, protocol_manager
 from app.schemas.common import ApiResponse
 from app.schemas.simulation import (
     FaultConfigResponse,
@@ -105,11 +105,13 @@ async def set_fault(
     # validate before mutating any state (no orphan fault entry on a bad request).
     protocol = await device_service.get_device_protocol(session, device_id)
 
-    if protocol == "mqtt" and data.fault_type == "exception":
+    supported = get_supported_fault_types(protocol)
+    if data.fault_type not in supported:
         raise ValidationException(
-            detail="Fault type 'exception' is not supported for MQTT devices: "
-            "MQTT is publish-only, so there is no request/response channel to "
-            "return a protocol error on. Use delay, timeout, or intermittent.",
+            detail=(
+                f"Fault type '{data.fault_type}' is not supported for {protocol} "
+                f"devices. Supported types: {', '.join(sorted(supported))}."
+            ),
         )
 
     fault = FaultConfig(fault_type=data.fault_type, params=data.params)
