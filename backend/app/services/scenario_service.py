@@ -94,21 +94,43 @@ def _scenario_to_summary(scenario: Scenario, template_name: str) -> dict:
     }
 
 
+def _step_to_dict(step: ScenarioStep, include_id: bool = True) -> dict:
+    """Serialize a step ORM row (include_id=False for portable export)."""
+    result = {
+        "register_name": step.register_name,
+        "anomaly_type": step.anomaly_type,
+        "anomaly_params": step.anomaly_params,
+        "trigger_at_seconds": step.trigger_at_seconds,
+        "duration_seconds": step.duration_seconds,
+        "sort_order": step.sort_order,
+    }
+    if include_id:
+        result["id"] = step.id
+    return result
+
+
+def _build_steps(
+    scenario_id: uuid.UUID, steps_data: list[ScenarioStepCreate],
+) -> list[ScenarioStep]:
+    """Construct step ORM rows for a scenario."""
+    return [
+        ScenarioStep(
+            scenario_id=scenario_id,
+            register_name=step.register_name,
+            anomaly_type=step.anomaly_type,
+            anomaly_params=step.anomaly_params,
+            trigger_at_seconds=step.trigger_at_seconds,
+            duration_seconds=step.duration_seconds,
+            sort_order=step.sort_order,
+        )
+        for step in steps_data
+    ]
+
+
 def _scenario_to_detail(scenario: Scenario, template_name: str) -> dict:
     """Convert scenario ORM to detail dict with steps."""
     result = _scenario_to_summary(scenario, template_name)
-    result["steps"] = [
-        {
-            "id": step.id,
-            "register_name": step.register_name,
-            "anomaly_type": step.anomaly_type,
-            "anomaly_params": step.anomaly_params,
-            "trigger_at_seconds": step.trigger_at_seconds,
-            "duration_seconds": step.duration_seconds,
-            "sort_order": step.sort_order,
-        }
-        for step in scenario.steps
-    ]
+    result["steps"] = [_step_to_dict(step) for step in scenario.steps]
     return result
 
 
@@ -153,17 +175,7 @@ async def create_scenario(
     session.add(scenario)
     await session.flush()
 
-    for step_data in data.steps:
-        step = ScenarioStep(
-            scenario_id=scenario.id,
-            register_name=step_data.register_name,
-            anomaly_type=step_data.anomaly_type,
-            anomaly_params=step_data.anomaly_params,
-            trigger_at_seconds=step_data.trigger_at_seconds,
-            duration_seconds=step_data.duration_seconds,
-            sort_order=step_data.sort_order,
-        )
-        session.add(step)
+    session.add_all(_build_steps(scenario.id, data.steps))
 
     await session.commit()
     await session.refresh(scenario, ["steps"])
@@ -195,18 +207,7 @@ async def update_scenario(
         await session.delete(step)
     await session.flush()
 
-    # Create new steps
-    for step_data in data.steps:
-        step = ScenarioStep(
-            scenario_id=scenario.id,
-            register_name=step_data.register_name,
-            anomaly_type=step_data.anomaly_type,
-            anomaly_params=step_data.anomaly_params,
-            trigger_at_seconds=step_data.trigger_at_seconds,
-            duration_seconds=step_data.duration_seconds,
-            sort_order=step_data.sort_order,
-        )
-        session.add(step)
+    session.add_all(_build_steps(scenario.id, data.steps))
 
     await session.commit()
     await session.refresh(scenario, ["steps"])
@@ -233,17 +234,7 @@ async def export_scenario(session: AsyncSession, scenario_id: uuid.UUID) -> dict
         "name": scenario.name,
         "description": scenario.description,
         "template_name": template_name,
-        "steps": [
-            {
-                "register_name": step.register_name,
-                "anomaly_type": step.anomaly_type,
-                "anomaly_params": step.anomaly_params,
-                "trigger_at_seconds": step.trigger_at_seconds,
-                "duration_seconds": step.duration_seconds,
-                "sort_order": step.sort_order,
-            }
-            for step in scenario.steps
-        ],
+        "steps": [_step_to_dict(step, include_id=False) for step in scenario.steps],
     }
 
 

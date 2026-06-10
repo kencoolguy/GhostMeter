@@ -105,29 +105,24 @@ class _DeviceApplication(Application):
             raise ExecutionError(errorClass="device", errorCode="operationalProblem")
         return False
 
-    async def do_ReadPropertyRequest(self, apdu) -> None:
+    async def _faulted_counted_read(self, handler, apdu) -> None:
+        """Shared fault-gate + stats choreography for confirmed read requests."""
         t0 = time.monotonic()
         try:
             if await self._drop_for_fault():
                 self._count(t0, success=False)
                 return
-            await super().do_ReadPropertyRequest(apdu)
+            await handler(apdu)
         except Exception:
             self._count(t0, success=False)
             raise
         self._count(t0, success=True)
 
+    async def do_ReadPropertyRequest(self, apdu) -> None:
+        await self._faulted_counted_read(super().do_ReadPropertyRequest, apdu)
+
     async def do_ReadPropertyMultipleRequest(self, apdu) -> None:
-        t0 = time.monotonic()
-        try:
-            if await self._drop_for_fault():
-                self._count(t0, success=False)
-                return
-            await super().do_ReadPropertyMultipleRequest(apdu)
-        except Exception:
-            self._count(t0, success=False)
-            raise
-        self._count(t0, success=True)
+        await self._faulted_counted_read(super().do_ReadPropertyMultipleRequest, apdu)
 
     async def do_WritePropertyRequest(self, apdu) -> None:
         """Simulated devices are read-only; values come from the simulation

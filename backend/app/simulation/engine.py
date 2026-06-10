@@ -41,7 +41,6 @@ class _DeviceTaskState:
 
     task: asyncio.Task
     restart_count: int = 0
-    last_restart: datetime | None = None
 
 
 class SimulationEngine:
@@ -51,13 +50,6 @@ class SimulationEngine:
         self._device_states: dict[UUID, _DeviceTaskState] = {}
         self._device_values: dict[UUID, dict[str, float]] = {}
         self._data_generator = DataGenerator()
-
-    # ------------------------------------------------------------------
-    # Backward-compatible property for code that reads _device_tasks
-    # ------------------------------------------------------------------
-    @property
-    def _device_tasks(self) -> dict[UUID, asyncio.Task]:
-        return {did: st.task for did, st in self._device_states.items()}
 
     async def start_device(self, device_id: UUID) -> None:
         """Start simulation for a device."""
@@ -91,7 +83,6 @@ class SimulationEngine:
         self._device_states[device_id] = _DeviceTaskState(
             task=task,
             restart_count=restart_count,
-            last_restart=datetime.now(timezone.utc) if restart_count > 0 else None,
         )
         logger.info(
             "Simulation started for device %s (interval=%.1fs, restart=%d)",
