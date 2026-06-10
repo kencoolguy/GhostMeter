@@ -9,6 +9,7 @@ from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdrsp, context
 from pysnmp.proto import rfc1905
 from pysnmp.proto.rfc1902 import Gauge32, Integer32, ObjectName, OctetString
+from pysnmp.smi import error as smi_error
 from pysnmp.smi.instrum import AbstractMibInstrumController
 
 from app.exceptions import ConflictException
@@ -35,11 +36,28 @@ class _DynamicMibController(AbstractMibInstrumController):
     def __init__(self, adapter: "SnmpAdapter") -> None:
         self._adapter = adapter
 
+    def _raise_for_exception_fault(self, oid: str) -> None:
+        """Raise GenError when the OID's device has an active `exception` fault.
+
+        process_pdu's SmiError handler maps GenError to a genErr response
+        (pysnmp SMI_ERROR_MAP), so the client receives a protocol-level error
+        instead of a value.
+        """
+        from app.simulation import fault_simulator
+
+        entry = self._adapter._oid_map.get(oid)
+        if entry is None:
+            return
+        fault = fault_simulator.get_fault(entry[0])
+        if fault is not None and fault.fault_type == "exception":
+            raise smi_error.GenError()
+
     def read_variables(self, *var_binds, **context):
         """Resolve each requested OID to its current value (GET)."""
         result = []
         for name, _ in var_binds:
             oid = ".".join(str(x) for x in name)
+            self._raise_for_exception_fault(oid)
             value, data_type = self._adapter.resolve_oid(oid)
             if value is None:
                 result.append((name, rfc1905.NoSuchObject()))
@@ -54,6 +72,7 @@ class _DynamicMibController(AbstractMibInstrumController):
             oid = ".".join(str(x) for x in name) if len(name) else ""
             nxt = self._adapter.get_next_oid(oid)
             while nxt is not None:
+                self._raise_for_exception_fault(nxt)
                 value, data_type = self._adapter.resolve_oid(nxt)
                 if value is not None:
                     result.append(
