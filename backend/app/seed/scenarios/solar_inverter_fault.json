@@ -1,5 +1,5 @@
 {
-  "template_name": "Solar Inverter (Fronius Symo)",
+  "template_name": "SunSpec Solar Inverter",
   "name": "Fault Disconnect",
   "description": "Simulates inverter fault: AC power drops, DC voltage drifts, efficiency zeroes",
   "steps": [
