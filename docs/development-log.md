@@ -1,5 +1,40 @@
 # Development Log
 
+## 2026-06-11 — OPC UA delay fault 改非阻塞（async PreRead hook）
+
+### 根因
+
+OPC UA 的 delay fault 在 asyncua 的 value callback 裡 `time.sleep` 最多 10 秒。
+這個 callback 是同步的，整個後端又是單一 event loop——只要一個 client 讀一個
+delay-faulted 節點，**全部協議 + REST + WS + 模擬 tick 停擺**；client 每秒輪詢
+等於持續癱瘓。當初做 OPC UA fault sim 時認為 read path 無法攔截（所以才走
+sync callback + 「mirrors Modbus」的 trade-off）。
+
+### 修法（Ken 裁決採 A：攔 async read 層）
+
+重新挖 asyncua 1.1.8 內部後找到正規攔截點：`InternalSession.read` 是 async，
+且開頭就 `await callback_service.dispatch(CallbackType.PreRead, ...)`——官方
+callback API（`server.subscribe_server_callback`）支援 async listener。因此：
+
+- `start()` 訂閱 `CallbackType.PreRead` → `_pre_read_fault_delay`：從
+  `request_params.NodesToRead` 經新的 `_node_device` map（NodeId → device_id）
+  找到 delay-faulted 設備，`await asyncio.sleep(delay)`——只暫停該 session 的
+  pipeline（每個 client connection 有自己的 processor task）。
+- value callback 的 delay 分支改為直接回快取值（exception/timeout/intermittent
+  維持原 callback 機制，無行為變化）。
+- 無 fault 時 hook 第一行 `if not self._faulted: return`，熱路徑只多一個
+  set 檢查。
+- Subscription/monitored item 取樣不走 `session.read`，不受 delay 影響
+  （與原行為一致）。
+
+### 驗證
+
+- 新 regression test：1.2 s delay 讀取期間，50 ms heartbeat task 必須持續跳動
+  （≥10 ticks）。**紅燈驗證**：暫時還原舊的 blocking sleep → 測試 FAILED；
+  新實作 → PASSED。
+- 既有 delay 測試（elapsed ≥ delay_ms）不變且通過；OPC UA 全套 39 passed。
+
+
 ## 2026-06-11 — Cut release 0.4.0 準備（Milestone 8.7）
 
 ### 做了什麼

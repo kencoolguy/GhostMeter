@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **OPC UA delay fault no longer blocks the event loop**: the delay was a `time.sleep` inside asyncua's synchronous value callback, so while one client read a delay-faulted node, every other protocol server, the REST API, the WebSocket broadcast and all simulation ticks stalled for up to 10 s (a 1 Hz poller re-triggered it continuously). The sleep now runs in an async `CallbackType.PreRead` server callback, suspending only the requesting session. Verified by a regression test that keeps a 50 ms heartbeat ticking during a 1.2 s delayed read.
+
 ## [0.4.0] - 2026-06-11
 
 ### Added
