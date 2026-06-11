@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Monitor WebSocket now connects same-origin** (`wss://`/`ws://` + current host + `/ws/monitor`) instead of hardcoding `ws://<hostname>:8000`. The dev server (vite `/ws` proxy) and production nginx (`location /ws/`) have always proxied WebSocket traffic, but the client bypassed them — so live values only worked when the backend port was directly reachable (Tailscale), and broke behind any reverse proxy or HTTPS tunnel (mixed-content `ws://` is blocked on https pages).
+
 ## [0.4.2] - 2026-06-11
 
 ### Fixed

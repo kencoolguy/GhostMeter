@@ -1,5 +1,35 @@
 # Development Log
 
+## 2026-06-11 — Monitor WS 改 same-origin（P0 安全盤點的修正項）
+
+### 盤點結論（先於修正）
+
+針對「API 無認證但公網可達」的 P0 疑慮做了實地查證：
+
+- Linode 上**沒有** Cloudflare Tunnel（無 cloudflared 容器/程序/token）——
+  API 與前端只綁 Tailscale IP，公網不可達，風險不成立。
+- `ghostmeter.pages.dev` 是活的（CI 的 Cloudflare Pages 整合每次 push 自動
+  部署），但其 `/api` 打回 SPA fallback——是個無後端的壞 UI 殼（= issue #21），
+  無資料暴露。處置（停用 Pages 專案或加 Access）需在 Cloudflare dashboard
+  操作，記錄於 issue。
+
+### 修正：WS 硬編碼 :8000
+
+`MONITOR_WS_URL` 硬編碼 `ws://<hostname>:8000`，但 vite dev（`/ws` proxy）
+與 production nginx（`location /ws/`）其實都早已支援 WS 代理——client 繞過
+它們導致：(a) 任何 reverse proxy / tunnel 後面 Monitor 即時值都是死的；
+(b) https 頁面上 `ws://` 會被瀏覽器以 mixed content 擋掉。改為 same-origin
+（協議依 `location.protocol` 切 wss/ws）。
+
+### 驗證
+
+- `npm run build` 通過。
+- 本地 production nginx 容器（:3002）實測 WS upgrade：
+  `curl -H "Upgrade: websocket" ... http://localhost:3002/ws/monitor` →
+  **HTTP/1.1 101 Switching Protocols**。
+- 部署 Linode 後以 Tailscale IP:3002 再驗一次 101。
+
+
 ## 2026-06-11 — 內建 scenario 從未 seed 成功 + .env 版本覆寫（v0.4.1 部署驗證發現）
 
 ### 根因
