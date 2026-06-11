@@ -134,6 +134,42 @@ class TestOpcUaFaultApplication:
             fault_simulator.clear_all()
             await adapter.stop()
 
+    async def test_delay_fault_does_not_block_event_loop(self):
+        """The delay must suspend only the reading session (async PreRead
+        hook), never the event loop — a blocking sleep here would stall
+        every other protocol server, REST, and the WS broadcast."""
+        from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import FaultConfig
+
+        port = free_tcp_port()
+        adapter, dev, url = await _make_running_device(port)
+        try:
+            fault_simulator.set_fault(dev, FaultConfig("delay", {"delay_ms": 1200}))
+            await adapter.apply_fault(dev)
+
+            ticks = 0
+
+            async def _heartbeat():
+                nonlocal ticks
+                while True:
+                    await asyncio.sleep(0.05)
+                    ticks += 1
+
+            hb = asyncio.create_task(_heartbeat())
+            t0 = time.monotonic()
+            status, value = await _read_status(url, raise_on_bad=True)
+            elapsed = time.monotonic() - t0
+            hb.cancel()
+
+            assert status == "Good", status
+            assert abs(value - 100.0) < 0.01
+            assert elapsed >= 1.2, f"expected >=1.2s, got {elapsed:.3f}s"
+            # The heartbeat kept ticking while the read was being delayed.
+            assert ticks >= 10, f"event loop was blocked (only {ticks} ticks)"
+        finally:
+            fault_simulator.clear_all()
+            await adapter.stop()
+
     async def test_intermittent_rate_1_always_bad(self):
         from app.simulation import fault_simulator
         from app.simulation.fault_simulator import FaultConfig

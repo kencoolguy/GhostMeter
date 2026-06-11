@@ -866,7 +866,7 @@ For **OPC UA** devices the fault is applied push-based at the protocol layer imm
 |---|---|
 | `exception` | Every read returns `BadDeviceFailure` status code; no value |
 | `timeout` | Every read returns `BadTimeout` status code; no value |
-| `delay` | Read succeeds with a Good status after a server-side sleep of `delay_ms` ms (bounded to 10 000 ms); returns the latest cached register value |
+| `delay` | Read succeeds with a Good status after a server-side wait of `delay_ms` ms (bounded to 10 000 ms); returns the latest cached register value. The wait is applied asynchronously per session (PreRead hook) and does not block other clients, protocols, or the REST/WS layers |
 | `intermittent` | Each read randomly returns `BadCommunicationError` with probability `failure_rate`, or the latest cached value with Good status otherwise |
 
 While a fault is active, the simulation engine continues updating the per-node value cache; the cached value is served as-is once the fault is cleared. OPC UA subscriptions are paused during a fault (the value callback bypasses subscription notifications) and automatically resume on fault clear.

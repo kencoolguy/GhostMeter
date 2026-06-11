@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **OPC UA delay fault no longer blocks the event loop**: the delay was a `time.sleep` inside asyncua's synchronous value callback, so while one client read a delay-faulted node, every other protocol server, the REST API, the WebSocket broadcast and all simulation ticks stalled for up to 10 s (a 1 Hz poller re-triggered it continuously). The sleep now runs in an async `CallbackType.PreRead` server callback, suspending only the requesting session. Verified by a regression test that keeps a 50 ms heartbeat ticking during a 1.2 s delayed read.
 - **Builtin "Fault Disconnect" scenario flipped dc_voltage upward mid-step**: the seed used `max_drift: -50`, but `max_drift` is a magnitude — the injector clamps with `abs(drift) > abs(max_drift)` and takes the direction from `drift_per_second`'s sign, so once the cap was reached (10 s into the 28 s step) the clamp produced `-max_drift = +50` and the intended -50 V sag jumped to +50 V above baseline for the remaining 18 s. Seed fixed to `max_drift: 50`; Alembic data migration `a7c3e91f4b20` repairs already-seeded builtin rows (user scenarios untouched).
 
 ### Changed
