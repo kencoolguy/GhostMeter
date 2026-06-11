@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-11
+
 ### Added
 - Comm-layer fault simulation for BACnet, SNMP, and MQTT — all five protocols now support `delay` / `timeout` / `intermittent` faults through `PUT /devices/{id}/fault` (pull-based, same model as Modbus). BACnet: faulted devices also stop answering Who-Is (fully dark, like a real dead device); `exception` maps to BACnet Error `device/operationalProblem`. SNMP: `exception` maps to `genErr`; delayed responses are deferred without blocking the event loop. MQTT: `timeout` stops publishing, `intermittent` randomly skips publishes, `delay` publishes late; `exception` is rejected with 422 (publish-only protocols have no request/response channel to return an error on).
 - BACnet/IP protocol adapter (5th protocol): Who-Is/I-Am discovery, ReadProperty / ReadPropertyMultiple. One UDP port (47808) with a virtual-network router topology — each device is an independent BACnet device instance (`100000 + slave_id`); registers map to read-only analog-input objects with engineering units. Per-device read statistics included.
@@ -29,15 +31,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - WebSocket monitor_update payload 新增 `mqtt_broker_connected` 欄位
 - DeviceMonitorData 新增 `mqtt_stats`、`template_name` 欄位
 
-### Fixed
-- **Modbus fault params were unsanitized**: `delay_ms` was applied raw with no cap — `delay_ms=999999` blocked the response (and the event loop, since `trace_pdu` is a sync callback) for ~17 minutes, while the other four protocols cap at 10 s; and a malformed `failure_rate` (e.g. a string) raised `TypeError` inside `trace_pdu`, killing the request. Modbus now consumes the shared `get_delay_seconds` (10 s cap, NaN/inf guard) and `get_failure_rate` (0–1 clamp) helpers — fault-param semantics are now identical across all five protocols.
-- **BACnet replies deadlocked on wildcard bind (`0.0.0.0/0`, the production default) on hosts that cannot bind 255.255.255.255** (e.g. macOS): bacpypes3 creates a second endpoint task for the subnet broadcast address, and `IPv4DatagramServer.indication()` awaits ALL transport tasks before sending any reply — with `/0` the broadcast is 255.255.255.255, whose bind fails on macOS and retries forever, so inbound requests arrived but every response hung. The adapter now drops the doomed broadcast endpoint task when the configured prefix has no usable subnet broadcast (prefixlen 0) and logs a warning; unicast reads work, broadcast Who-Is discovery requires a concrete interface CIDR.
-- **BACnet WriteProperty was accepted (spec violation)**: bacpypes3's local analog-input objects accept writes to presentValue (runtime-verified: wrote 999.0, re-read 999.0). Simulated devices are read-only — values come from the simulation engine — so `WriteProperty` now returns a proper BACnet Error (`property` / `writeAccessDenied`) and the simulated value is untouched.
-- **SNMP devices stopped serving values after a restart**: the startup auto-resume path (`app/main.py`) re-registered OIDs but, unlike `device_service.start_device`, never called `set_register_names`, so resumed SNMP devices resolved OIDs by raw-OID key instead of register name and returned `noSuchObject`. Resume now rebuilds the SNMP OID→name map, so SNMP survives restarts / boot auto-start.
-- **SNMP agent never served register values**: the adapter registered OIDs and could `resolve_oid()`, but `start()` wired pysnmp's command responders to the default (empty) MIB context, so every real GET/GETNEXT returned `noSuchObject` (unit tests only called `resolve_oid` directly, so they passed). Added a `_DynamicMibController` (`AbstractMibInstrumController`) bridging GET/GETNEXT to `resolve_oid`/`get_next_oid` and registered it on the null context. Added an integration test that performs a real SNMP GET/GETNEXT through the agent.
-- **UPS "Normal Operation" profile crashed the simulation engine**: `output_power`'s computed expression used bare variable names (`output_voltage * output_current`) instead of the required `{braces}`, so the parser saw an `ast.Name` and raised, stopping the device after 5 consecutive errors. Fixed the seed expression to `{output_voltage} * {output_current}`; added a seed-validation assertion that all computed expressions use braced variables.
-- **CI 6h timeout on OPC UA server tests** (root cause of issue #37, previously mis-attributed to asyncpg): coverage's default C trace function fires per-line on every module, and asyncua rebuilds its ~100k-line standard address space on each `Server.init()`. Under `pytest --cov` each OPC UA server test took ~11 min, blowing the 6h job limit. Fixed by `[tool.coverage.run] core = "sysmon"` (PEP 669 `sys.monitoring`), which skips instrumentation of non-`source` files — `Server.init()` drops from >240s to ~0.4s under coverage.
-- Quieted the `asyncua` logger to WARNING in `app/main.py` (secondary cleanup): each `Server.init()` emits ~1100 INFO lines loading the standard address space, spamming startup logs. Not the CI fix.
+- Auto-resume: backend now automatically resumes running devices on startup (registers in protocol adapters + restarts simulation engine)
+- Device Detail: register table now shows live values via WebSocket (replaces hard-coded null)
+- Device Detail: "Open in Monitor" button navigates to Monitor page with device auto-selected
+- Device Detail: Live/Disconnected connection status badge on Register Map card
+- Monitor: supports `?device=<id>` query param for auto-selecting a device on page load
+
+- Scenario mode: reusable anomaly injection timelines bound to device templates
+- Scenario CRUD API (`/api/v1/scenarios`) with list, get, create, update, delete, export, import
+- Scenario execution API: start/stop/status per device (`/api/v1/devices/{id}/scenario/...`)
+- ScenarioRunner: async executor that triggers anomaly injections on a timeline
+- Built-in scenario seeds: Power Outage Recovery, Voltage Instability, Inverter Fault Sequence
+- `scenarios` and `scenario_steps` DB tables with Alembic migration
+- Frontend Scenarios page: list view with template filter, create/edit/delete/clone/export/import
+- Frontend timeline editor: drag-and-drop anomaly blocks on a register×time grid
+- Frontend scenario execution card on Device Detail page with start/stop and real-time progress
+- 19 integration tests for scenario CRUD, seed loading, built-in protection, and export/import
 
 ### Changed
 - `/` route 改導向 `/monitor`（原 `/templates`）
@@ -59,23 +68,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - 移除死代碼：SimulationEngine `_device_tasks` 相容 property、從未被讀取的 `last_restart`；BACnet 兩個 byte-identical read handler 合併；scenario step 欄位清單三份手抄合併為 helper
   - 測試:`tests/netutil.py` 共用 free-port helpers（原本 5 個檔案各自定義）、`clean_faults` 改為 conftest 全域 autouse fixture
 
-### Removed
-- `pages/Monitor/DeviceDetailPanel.tsx`、`RegisterChart.tsx`、`StatsPanel.tsx`、`EventLog.tsx`
-- monitorStore 的 `selectedDeviceId` / `selectDevice`
-
-### Previously Added
-- Auto-resume: backend now automatically resumes running devices on startup (registers in protocol adapters + restarts simulation engine)
-- Device Detail: register table now shows live values via WebSocket (replaces hard-coded null)
-- Device Detail: "Open in Monitor" button navigates to Monitor page with device auto-selected
-- Device Detail: Live/Disconnected connection status badge on Register Map card
-- Monitor: supports `?device=<id>` query param for auto-selecting a device on page load
-
-### Changed
 - Monitor DeviceCard preview: defaults to total_power + total_energy instead of voltage_l1/l2
 - Monitor chart selector: changed to multi-select, defaults to total_power + total_energy
 - Batch device name prefix: removed extra space between prefix and slave ID (e.g. "Meter1" instead of "Meter 1")
 
+- MQTT publish config card: edit/publish mode separation — fields locked during publishing, "Stop publishing to edit settings" hint
+- MQTT publishing status indicator (green `MQTT` tag) in device list and device detail pages
+- `mqtt_publishing` boolean field added to device list API response
+- Unified button styles: Start Publishing uses green primary, Stop Publishing uses danger
+
 ### Fixed
+- **Modbus fault params were unsanitized**: `delay_ms` was applied raw with no cap — `delay_ms=999999` blocked the response (and the event loop, since `trace_pdu` is a sync callback) for ~17 minutes, while the other four protocols cap at 10 s; and a malformed `failure_rate` (e.g. a string) raised `TypeError` inside `trace_pdu`, killing the request. Modbus now consumes the shared `get_delay_seconds` (10 s cap, NaN/inf guard) and `get_failure_rate` (0–1 clamp) helpers — fault-param semantics are now identical across all five protocols.
+- **BACnet replies deadlocked on wildcard bind (`0.0.0.0/0`, the production default) on hosts that cannot bind 255.255.255.255** (e.g. macOS): bacpypes3 creates a second endpoint task for the subnet broadcast address, and `IPv4DatagramServer.indication()` awaits ALL transport tasks before sending any reply — with `/0` the broadcast is 255.255.255.255, whose bind fails on macOS and retries forever, so inbound requests arrived but every response hung. The adapter now drops the doomed broadcast endpoint task when the configured prefix has no usable subnet broadcast (prefixlen 0) and logs a warning; unicast reads work, broadcast Who-Is discovery requires a concrete interface CIDR.
+- **BACnet WriteProperty was accepted (spec violation)**: bacpypes3's local analog-input objects accept writes to presentValue (runtime-verified: wrote 999.0, re-read 999.0). Simulated devices are read-only — values come from the simulation engine — so `WriteProperty` now returns a proper BACnet Error (`property` / `writeAccessDenied`) and the simulated value is untouched.
+- **SNMP devices stopped serving values after a restart**: the startup auto-resume path (`app/main.py`) re-registered OIDs but, unlike `device_service.start_device`, never called `set_register_names`, so resumed SNMP devices resolved OIDs by raw-OID key instead of register name and returned `noSuchObject`. Resume now rebuilds the SNMP OID→name map, so SNMP survives restarts / boot auto-start.
+- **SNMP agent never served register values**: the adapter registered OIDs and could `resolve_oid()`, but `start()` wired pysnmp's command responders to the default (empty) MIB context, so every real GET/GETNEXT returned `noSuchObject` (unit tests only called `resolve_oid` directly, so they passed). Added a `_DynamicMibController` (`AbstractMibInstrumController`) bridging GET/GETNEXT to `resolve_oid`/`get_next_oid` and registered it on the null context. Added an integration test that performs a real SNMP GET/GETNEXT through the agent.
+- **UPS "Normal Operation" profile crashed the simulation engine**: `output_power`'s computed expression used bare variable names (`output_voltage * output_current`) instead of the required `{braces}`, so the parser saw an `ast.Name` and raised, stopping the device after 5 consecutive errors. Fixed the seed expression to `{output_voltage} * {output_current}`; added a seed-validation assertion that all computed expressions use braced variables.
+- **CI 6h timeout on OPC UA server tests** (root cause of issue #37, previously mis-attributed to asyncpg): coverage's default C trace function fires per-line on every module, and asyncua rebuilds its ~100k-line standard address space on each `Server.init()`. Under `pytest --cov` each OPC UA server test took ~11 min, blowing the 6h job limit. Fixed by `[tool.coverage.run] core = "sysmon"` (PEP 669 `sys.monitoring`), which skips instrumentation of non-`source` files — `Server.init()` drops from >240s to ~0.4s under coverage.
+- Quieted the `asyncua` logger to WARNING in `app/main.py` (secondary cleanup): each `Server.init()` emits ~1100 INFO lines loading the standard address space, spamming startup logs. Not the CI fix.
+
 - Pinned `pymodbus>=3.12,<3.13`: the unbounded `>=3.12` constraint resolved to 3.13.0 on fresh installs (CI / container rebuild), whose `ModbusServerContext(devices={})` change broke the Modbus TCP server and its tests. Capped to the 3.12.x line until the adapter is adapted to 3.13.
 - Simulation engine crash recovery: tasks that crash (e.g. network disconnection) now auto-restart with exponential backoff (max 5 attempts), and DB status correctly updates to "error" when recovery fails
 - Inner adapter errors (e.g. pymodbus write failures) now count toward consecutive error threshold, preventing silent simulation death while device status stays "running"
@@ -83,7 +94,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Devices with status=running showed no register values after backend restart (simulation engine was not resumed)
 - Frontend `package.json` scripts no longer hard-code VirtualBox shared-folder workaround paths (`/home/ken/.ghostmeter-frontend-modules/...`); `npm run dev` / `npm run build` / `npm run lint` now use standard tooling and work on any machine after `npm install`
 
+- Resolved 91 ruff lint errors accumulated in `backend/` since CI was removed on 2026-03-20 (31 unsorted imports, 12 unused imports, 44 line-too-long, 2 unused variables, 1 module-level import not at top, 1 trailing whitespace). CI is now green.
+- `backend/pyproject.toml`: added `alembic/versions/*` to ruff `per-file-ignores` for `E501` — auto-generated migration files get long type declarations that reappear on each regen and shouldn't be hand-wrapped.
+- `backend/app/services/scenario_runner.py`: documented why the `_anomaly_injector` import is late (circular-import avoidance) and added `# noqa: E402` with the explanation.
+
 ### Removed
+- `pages/Monitor/DeviceDetailPanel.tsx`、`RegisterChart.tsx`、`StatsPanel.tsx`、`EventLog.tsx`
+- monitorStore 的 `selectedDeviceId` / `selectDevice`
+
 - `frontend/tsconfig.local.json`, `tsconfig.local.app.json`, `tsconfig.local.node.json` (VirtualBox shared-folder node_modules workaround — no longer needed)
 - `frontend/.npmrc` comment file (workaround documentation)
 - `frontend/package.json` `build:local` script (workaround for vboxsf symlink issue)
@@ -93,11 +111,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Backend job: Python 3.12 + PostgreSQL 16 service + ruff lint + alembic migrate + pytest with coverage
 - Frontend job: Node 22 (aligned with Dockerfile) + `tsc -b` type check + `npm run build`
 
-### Fixed (lint debt)
-- Resolved 91 ruff lint errors accumulated in `backend/` since CI was removed on 2026-03-20 (31 unsorted imports, 12 unused imports, 44 line-too-long, 2 unused variables, 1 module-level import not at top, 1 trailing whitespace). CI is now green.
-- `backend/pyproject.toml`: added `alembic/versions/*` to ruff `per-file-ignores` for `E501` — auto-generated migration files get long type declarations that reappear on each regen and shouldn't be hand-wrapped.
-- `backend/app/services/scenario_runner.py`: documented why the `_anomaly_injector` import is late (circular-import avoidance) and added `# noqa: E402` with the explanation.
-
 ### Documentation
 - `docs/api-reference.md`: documented 18 previously-undocumented endpoints surfaced during consolidation drift check
   - Anomaly injection: `POST/GET/DELETE /devices/{id}/anomaly`, `DELETE /devices/{id}/anomaly/{register_name}`, `GET/PUT/DELETE /devices/{id}/anomaly/schedules`
@@ -106,24 +119,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Simulation profiles: `GET /simulation-profiles/template/{template_id}` (blank template download), `POST /simulation-profiles/import` (with `template_id` query param), `GET /simulation-profiles/{profile_id}/export`
 - `docs/api-reference.md` `RegisterValue` schema: added `oid` field (used for SNMP templates) and replaced the stale "Phase 3: always null" note on `value` with an accurate description pointing to `/ws/monitor` for live values
 - `docs/development-phases.md`: added Milestone 8.6 (Polish & UX Fixes) and Milestone 8.7 (Consolidation, in progress) to reflect work completed since Scenario Mode shipped
-
-### Previously Added
-- Scenario mode: reusable anomaly injection timelines bound to device templates
-- Scenario CRUD API (`/api/v1/scenarios`) with list, get, create, update, delete, export, import
-- Scenario execution API: start/stop/status per device (`/api/v1/devices/{id}/scenario/...`)
-- ScenarioRunner: async executor that triggers anomaly injections on a timeline
-- Built-in scenario seeds: Power Outage Recovery, Voltage Instability, Inverter Fault Sequence
-- `scenarios` and `scenario_steps` DB tables with Alembic migration
-- Frontend Scenarios page: list view with template filter, create/edit/delete/clone/export/import
-- Frontend timeline editor: drag-and-drop anomaly blocks on a register×time grid
-- Frontend scenario execution card on Device Detail page with start/stop and real-time progress
-- 19 integration tests for scenario CRUD, seed loading, built-in protection, and export/import
-
-### Changed
-- MQTT publish config card: edit/publish mode separation — fields locked during publishing, "Stop publishing to edit settings" hint
-- MQTT publishing status indicator (green `MQTT` tag) in device list and device detail pages
-- `mqtt_publishing` boolean field added to device list API response
-- Unified button styles: Start Publishing uses green primary, Stop Publishing uses danger
 
 ## [0.3.0] - 2026-03-27
 
