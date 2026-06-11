@@ -30,3 +30,25 @@ services:
   frontend:
     ports: !override
       - "${BIND_IP:-127.0.0.1}:3002:80"
+
+  # Cloudflare Tunnel sidecar — publishes the frontend (and, through nginx's
+  # /api + /ws proxies, the whole app) over a Cloudflare hostname WITHOUT
+  # opening any inbound port (cloudflared dials out to Cloudflare).
+  #
+  # Opt-in via compose profile: deploy.sh enables the "tunnel" profile only
+  # when CLOUDFLARE_TUNNEL_TOKEN is set in .env, so deployments without a
+  # token are completely unaffected.
+  #
+  # SECURITY: the API has no authentication of its own. Before pointing a
+  # Public Hostname at this tunnel, an Access policy MUST be configured in
+  # Cloudflare Zero Trust — otherwise anyone with the URL controls the
+  # simulator. See docs/deployment.md section 5.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    depends_on:
+      - frontend

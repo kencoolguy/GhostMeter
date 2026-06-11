@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Built-in Cloudflare Tunnel support** for deploy hosts: `docker-compose.prod.yml` gains an opt-in `cloudflared` sidecar (compose profile `tunnel`); `deploy.sh` enables it only when `CLOUDFLARE_TUNNEL_TOKEN` is set in `.env`, so tokenless deployments are unaffected. Deployment guide rewritten with the full Zero Trust procedure — **a Cloudflare Access policy is mandatory before exposing a Public Hostname** (the API has no authentication of its own).
+
 ### Fixed
 - **Monitor WebSocket now connects same-origin** (`wss://`/`ws://` + current host + `/ws/monitor`) instead of hardcoding `ws://<hostname>:8000`. The dev server (vite `/ws` proxy) and production nginx (`location /ws/`) have always proxied WebSocket traffic, but the client bypassed them — so live values only worked when the backend port was directly reachable (Tailscale), and broke behind any reverse proxy or HTTPS tunnel (mixed-content `ws://` is blocked on https pages).
 
