@@ -1,5 +1,33 @@
 # Development Log
 
+## 2026-06-11 — Cloudflare Tunnel 內建支援（opt-in sidecar）
+
+### 做了什麼
+
+Ken 確認理想架構為「公網 → Cloudflare Access → Tunnel → Linode frontend（nginx
+proxy /api、/ws）」。盤點確認 Linode 本來就有完整前端（nginx :3002，僅
+Tailscale 可達），Pages 那份是 CI 副產品壞殼（issue #21，待 dashboard 停用）。
+
+實作（VM/repo 端；dashboard 端由 Ken 操作）：
+
+- `docker-compose.prod.yml` 新增 `cloudflared` sidecar，掛 compose profile
+  `tunnel`——profile 未啟用時 `config --services` 驗證不含該服務，行為不變。
+- `deploy.sh` 偵測 `.env` 的 `CLOUDFLARE_TUNNEL_TOKEN` 非空才 export
+  `COMPOSE_PROFILES=tunnel`（grep 邏輯以空值/有值兩種 .env 實測過）。
+- `.env.example` 新增 `CLOUDFLARE_TUNNEL_TOKEN=`（含安全警語）。
+- `docs/deployment.md` 第 5 節改寫為完整流程：dashboard 三步（建 tunnel、
+  Public Hostname → `http://frontend:80`、**Access policy 必設**）+ VM 端
+  一行 token + `update.sh` + 驗證清單（含無痕打 `/api` 應被 Access 擋）。
+
+### 設計取捨
+
+- 用 compose profile 而非獨立 override 檔：單一檔案、deploy.sh 一個 if、
+  token 不存在時零影響（與 BIND_IP 預設 127.0.0.1 的 fail-safe 哲學一致）。
+- 認證放 Cloudflare Access 而非應用層 API key：零程式碼、天然涵蓋 `/api` 與
+  `/ws` 全路徑、SSO/OTP 現成。應用層認證等真正多用戶需求出現再說。
+- WS 經 tunnel 可用的前提是 same-origin（PR #58）已先落地。
+
+
 ## 2026-06-11 — Monitor WS 改 same-origin（P0 安全盤點的修正項）
 
 ### 盤點結論（先於修正）

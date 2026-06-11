@@ -55,23 +55,42 @@ http --timeout=5 http://<公網IP>:8000/health        # ✅ 應 timeout = 沒裸
 
 協議埠測試:用 EMS / 工具連 `<BIND_IP>` 的 `502`(Modbus)、`4840`(OPC UA)、`161`(SNMP)。
 
-## 5. 前端對外(Cloudflare Tunnel)
+## 5. 前端對外(Cloudflare Tunnel + Access)
 
-公網埠全鎖,所以用 **Cloudflare Tunnel**(純出站,不開任何入站埠)對外發布前端。在 Zero Trust → Networks → Tunnels 建 tunnel 取得 token,於 VM 加一個 service(可放 `docker-compose.override.yml` 或併入 prod overlay):
+公網埠全鎖,所以用 **Cloudflare Tunnel**(純出站,不開任何入站埠)對外發布。
+cloudflared sidecar 已內建在 `docker-compose.prod.yml`(profile `tunnel`),
+`deploy.sh` 偵測到 `.env` 有 `CLOUDFLARE_TUNNEL_TOKEN` 才會啟動它——沒設 token
+的部署完全不受影響。
 
-```yaml
-services:
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    restart: unless-stopped
-    depends_on:
-      - frontend
+> ⚠️ **先設 Access 再開 Hostname**。nginx 會把 `/api` 與 `/ws` 一併 proxy 給
+> backend,而 API 本身沒有任何認證——Public Hostname 沒有 Access policy 擋著,
+> 等於任何知道網址的人都能操控模擬器。
+
+### Dashboard 端(Cloudflare Zero Trust)
+
+1. **建 Tunnel**:Networks → Tunnels → Create a tunnel(connector 選
+   cloudflared)→ 複製 token(`eyJ...` 長字串)。
+2. **設 Public Hostname**:該 tunnel → Public Hostname → 你的網域/子網域 →
+   service 填 `http://frontend:80`(同 compose network,用服務名)。
+3. **設 Access policy(必做)**:Access → Applications → Add an application →
+   Self-hosted → domain 填同一個 hostname → policy 設 Allow + Include →
+   Emails → 你的 email。之後開網址會先看到 Cloudflare 登入頁(email OTP)。
+
+### VM 端
+
+```bash
+echo 'CLOUDFLARE_TUNNEL_TOKEN=eyJ...' >> ~/ghostmeter/.env
+cd ~/ghostmeter && ./update.sh        # deploy.sh 偵測 token → 啟動 cloudflared
+docker logs ghostmeter-cloudflared-1 | tail   # 應看到 "Registered tunnel connection"
 ```
 
-在 tunnel 的 Public Hostname 設定你的網域 → service `http://frontend:80`(同 compose network 用服務名),即取得公網 HTTPS 前端,且不暴露任何協議埠。
+### 驗證
+
+- 開 `https://<你的網域>` → 先被導到 Cloudflare Access 登入,通過後看到 UI
+- Monitor 頁即時值正常(WS 走 same-origin `wss://<網域>/ws/monitor`,經 nginx
+  proxy;v0.4.2 之後支援)
+- 無痕視窗直接打 `https://<網域>/api/v1/templates` → 應被 Access 擋下(302 到
+  登入頁),拿不到 JSON
 
 ## 相關檔案
 
