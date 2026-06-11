@@ -3,7 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
 # --- Request Schemas ---
 
 class DeviceCreate(BaseModel):
@@ -88,6 +87,7 @@ class DeviceSummary(BaseModel):
     status: str
     port: int
     description: str | None
+    mqtt_publishing: bool = False
     created_at: datetime
     updated_at: datetime
 

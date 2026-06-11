@@ -13,6 +13,12 @@ export interface CommunicationStats {
   avg_response_ms: number;
 }
 
+export interface MqttStats {
+  request_count: number;
+  success_count: number;
+  error_count: number;
+}
+
 export interface FaultInfo {
   fault_type: string;
   params: Record<string, unknown>;
@@ -21,6 +27,7 @@ export interface FaultInfo {
 export interface DeviceMonitorData {
   device_id: string;
   name: string;
+  template_name: string | null;
   slave_id: number;
   port: number;
   status: string;
@@ -28,6 +35,7 @@ export interface DeviceMonitorData {
   active_anomalies: string[];
   active_fault: FaultInfo | null;
   stats: CommunicationStats;
+  mqtt_stats: MqttStats | null;
 }
 
 export interface MonitorEvent {
@@ -43,6 +51,7 @@ export interface MonitorUpdate {
   timestamp: string;
   devices: DeviceMonitorData[];
   events: MonitorEvent[];
+  mqtt_broker_connected: boolean;
 }
 
 export interface RegisterHistoryPoint {

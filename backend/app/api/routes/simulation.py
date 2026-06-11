@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.exceptions import ValidationException
+from app.protocols import get_supported_fault_types, protocol_manager
 from app.schemas.common import ApiResponse
 from app.schemas.simulation import (
     FaultConfigResponse,
@@ -14,7 +16,7 @@ from app.schemas.simulation import (
     SimulationConfigCreate,
     SimulationConfigResponse,
 )
-from app.services import simulation_service
+from app.services import device_service, simulation_service
 from app.services.monitor_service import monitor_service
 from app.simulation import fault_simulator
 from app.simulation.fault_simulator import FaultConfig
@@ -96,10 +98,29 @@ async def delete_simulation_configs(
 async def set_fault(
     device_id: uuid.UUID,
     data: FaultConfigSet,
+    session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[FaultConfigResponse]:
-    """Set a communication fault on a device (in-memory)."""
+    """Set a communication fault on a device (in-memory) and apply it to the adapter."""
+    # Resolve the device's protocol first — this 404s on an unknown device, so we
+    # validate before mutating any state (no orphan fault entry on a bad request).
+    protocol = await device_service.get_device_protocol(session, device_id)
+
+    supported = get_supported_fault_types(protocol)
+    if data.fault_type not in supported:
+        raise ValidationException(
+            detail=(
+                f"Fault type '{data.fault_type}' is not supported for {protocol} "
+                f"devices. Supported types: {', '.join(sorted(supported))}."
+            ),
+        )
+
     fault = FaultConfig(fault_type=data.fault_type, params=data.params)
     fault_simulator.set_fault(device_id, fault)
+
+    adapter = protocol_manager.get_adapter(protocol)
+    if adapter is not None and protocol_manager.is_running:
+        await adapter.apply_fault(device_id)
+
     monitor_service.log_event(
         device_id, str(device_id), "fault_set",
         f"Fault set: {data.fault_type}",
@@ -137,9 +158,20 @@ async def get_fault(
 )
 async def clear_fault(
     device_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[None]:
-    """Clear the active fault for a device."""
+    """Clear the active fault for a device and detach it from the adapter."""
+    # Detach the adapter hook before clearing the in-memory state, mirroring the
+    # state-then-hook order of set_fault in reverse (LIFO teardown): remove_fault
+    # restores the node value and callback atomically, so reads never observe a
+    # still-attached callback against absent fault state.
+    protocol = await device_service.get_device_protocol(session, device_id)
+    adapter = protocol_manager.get_adapter(protocol)
+    if adapter is not None and protocol_manager.is_running:
+        await adapter.remove_fault(device_id)
+
     fault_simulator.clear_fault(device_id)
+
     monitor_service.log_event(
         device_id, str(device_id), "fault_clear", "Fault cleared",
     )

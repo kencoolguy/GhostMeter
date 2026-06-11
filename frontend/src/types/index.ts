@@ -50,6 +50,7 @@ export type {
   FaultInfo,
   MonitorEvent,
   MonitorUpdate,
+  MqttStats,
   RegisterData,
   RegisterHistoryPoint,
 } from "./monitor";
@@ -70,3 +71,5 @@ export type {
   SimulationProfile,
   UpdateProfile,
 } from "./profile";
+
+export type { ScenarioDetail, ScenarioSummary } from "./scenario";

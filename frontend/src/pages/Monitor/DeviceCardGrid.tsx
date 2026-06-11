@@ -1,37 +1,28 @@
-import { Flex } from "antd";
-import type { DeviceMonitorData } from "../../types";
+import type { DeviceMonitorData, RegisterHistoryPoint } from "../../types";
 import { DeviceCard } from "./DeviceCard";
+import { pickPrimaryName } from "../../utils/pickPrimary";
 
 interface DeviceCardGridProps {
   devices: DeviceMonitorData[];
-  selectedDeviceId: string | null;
-  onSelectDevice: (deviceId: string) => void;
+  registerHistory: Record<string, RegisterHistoryPoint[]>;
 }
 
-export function DeviceCardGrid({
-  devices,
-  selectedDeviceId,
-  onSelectDevice,
-}: DeviceCardGridProps) {
-  if (devices.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: 40, color: "#999" }}>
-        No running devices. Start a device to see live data.
-      </div>
-    );
-  }
-
+export function DeviceCardGrid({ devices, registerHistory }: DeviceCardGridProps) {
   return (
-    <Flex wrap gap={16}>
-      {devices.map((device) => (
-        <div key={device.device_id} style={{ width: 280 }}>
-          <DeviceCard
-            device={device}
-            selected={device.device_id === selectedDeviceId}
-            onClick={() => onSelectDevice(device.device_id)}
-          />
-        </div>
-      ))}
-    </Flex>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {devices.map((device) => {
+        const primary = pickPrimaryName(device);
+        const history = primary
+          ? registerHistory[`${device.device_id}:${primary}`] ?? []
+          : [];
+        return <DeviceCard key={device.device_id} device={device} history={history} />;
+      })}
+    </div>
   );
 }

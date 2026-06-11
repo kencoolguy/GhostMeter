@@ -12,12 +12,14 @@ class TestSeedLoader:
         templates = body["data"]
 
         builtin = [t for t in templates if t["is_builtin"]]
-        assert len(builtin) == 4
+        assert len(builtin) == 6
 
         names = {t["name"] for t in builtin}
         assert "SDM630 Three-Phase Meter" in names
         assert "SDM120 Single-Phase Meter" in names
         assert "SunSpec Solar Inverter" in names
+        assert "Energy Meter (OPC UA)" in names
+        assert "Energy Meter (BACnet)" in names
 
     async def test_seed_is_idempotent(self, client: AsyncClient) -> None:
         await seed_builtin_templates()
@@ -26,7 +28,7 @@ class TestSeedLoader:
         response = await client.get("/api/v1/templates")
         templates = response.json()["data"]
         builtin = [t for t in templates if t["is_builtin"]]
-        assert len(builtin) == 4
+        assert len(builtin) == 6
 
     async def test_builtin_template_cannot_be_deleted(
         self, client: AsyncClient,

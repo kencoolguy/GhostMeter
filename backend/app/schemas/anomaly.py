@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-
 VALID_ANOMALY_TYPES = {"spike", "drift", "flatline", "out_of_range", "data_loss"}
 
 _REQUIRED_PARAMS: dict[str, list[str]] = {

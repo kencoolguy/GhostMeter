@@ -3,30 +3,38 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.api.routes.anomaly import router as anomaly_router
+from app.api.routes.devices import router as devices_router
+from app.api.routes.health import router as health_router
 from app.api.routes.mqtt import router as mqtt_router
+from app.api.routes.scenarios import execution_router as scenario_execution_router
+from app.api.routes.scenarios import router as scenarios_router
+from app.api.routes.simulation import router as simulation_router
 from app.api.routes.simulation_profiles import router as profiles_router
 from app.api.routes.system import router as system_router
-from app.api.websocket import router as ws_router, start_broadcast, stop_broadcast
-from app.api.routes.health import router as health_router
-from app.api.routes.devices import router as devices_router
-from app.api.routes.simulation import router as simulation_router
 from app.api.routes.templates import router as templates_router
+from app.api.websocket import router as ws_router
+from app.api.websocket import start_broadcast, stop_broadcast
 from app.config import get_settings
-from app.database import engine
-from app.protocols import protocol_manager
-from app.protocols.modbus_tcp import ModbusTcpAdapter
-from app.protocols.mqtt_adapter import MqttAdapter
-from app.protocols.snmp_agent import SnmpAdapter
-from app.seed.loader import seed_builtin_profiles, seed_builtin_templates
-from app.simulation import simulation_engine
+from app.database import async_session_factory, engine
 from app.exceptions import (
     AppException,
     app_exception_handler,
     generic_exception_handler,
 )
+from app.models.device import DeviceInstance
+from app.protocols import protocol_manager
+from app.protocols.bacnet_agent import BacnetAdapter
+from app.protocols.modbus_tcp import ModbusTcpAdapter
+from app.protocols.mqtt_adapter import MqttAdapter
+from app.protocols.opcua_agent import OpcUaAdapter
+from app.protocols.snmp_agent import SnmpAdapter
+from app.seed.loader import seed_builtin_profiles, seed_builtin_scenarios, seed_builtin_templates
+from app.services import device_service
+from app.services.template_service import get_template as get_template_with_registers
+from app.simulation import simulation_engine
 
 settings = get_settings()
 
@@ -35,6 +43,11 @@ logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+# asyncua logs ~1100 INFO lines per Server.init() while loading the standard
+# address space, which spams startup logs at root INFO. Quiet it to WARNING.
+# (Noise reduction only — the CI 6h timeout was a coverage-tracer issue; see
+# pyproject [tool.coverage.run].)
+logging.getLogger("asyncua").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -56,6 +69,8 @@ async def lifespan(app: FastAPI):
     logger.info("Template seed data check complete")
     await seed_builtin_profiles()
     logger.info("Profile seed data check complete")
+    await seed_builtin_scenarios()
+    logger.info("Scenario seed data check complete")
 
     # Start Modbus TCP protocol adapter
     modbus_adapter = ModbusTcpAdapter(
@@ -75,8 +90,49 @@ async def lifespan(app: FastAPI):
     )
     protocol_manager.register_adapter("snmp", snmp_adapter)
 
+    # Register OPC UA adapter
+    opcua_adapter = OpcUaAdapter(
+        host=settings.OPCUA_HOST,
+        port=settings.OPCUA_PORT,
+        endpoint_path=settings.OPCUA_ENDPOINT_PATH,
+        server_name=settings.OPCUA_SERVER_NAME,
+        namespace_uri=settings.OPCUA_NAMESPACE_URI,
+    )
+    protocol_manager.register_adapter("opcua", opcua_adapter)
+
+    # Register BACnet adapter
+    bacnet_adapter = BacnetAdapter(
+        address=settings.BACNET_ADDRESS,
+        port=settings.BACNET_PORT,
+        device_instance_base=settings.BACNET_DEVICE_INSTANCE_BASE,
+        network=settings.BACNET_NETWORK,
+    )
+    protocol_manager.register_adapter("bacnet", bacnet_adapter)
+
     await protocol_manager.start_all()
     logger.info("Protocol manager started")
+
+    # Resume devices that were running before shutdown
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(DeviceInstance).where(DeviceInstance.status == "running")
+        )
+        running_devices = result.scalars().all()
+
+        resumed = 0
+        for device in running_devices:
+            try:
+                template = await get_template_with_registers(session, device.template_id)
+                await device_service.register_device_runtime(device, template)
+                resumed += 1
+            except Exception:
+                logger.error(
+                    "Failed to resume device %s (%s)",
+                    device.name, device.id, exc_info=True,
+                )
+
+    if resumed:
+        logger.info("Resumed %d device(s)", resumed)
 
     # Start WebSocket monitor broadcast
     start_broadcast()
@@ -128,9 +184,15 @@ api_v1_router.include_router(templates_router, prefix="/templates", tags=["templ
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
 api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simulation"])
 api_v1_router.include_router(anomaly_router, prefix="/devices", tags=["anomaly"])
-api_v1_router.include_router(profiles_router, prefix="/simulation-profiles", tags=["simulation-profiles"])
+api_v1_router.include_router(
+    profiles_router, prefix="/simulation-profiles", tags=["simulation-profiles"],
+)
 api_v1_router.include_router(system_router, prefix="/system", tags=["system"])
 api_v1_router.include_router(mqtt_router, prefix="/system", tags=["mqtt"])
+api_v1_router.include_router(scenarios_router, prefix="/scenarios", tags=["scenarios"])
+api_v1_router.include_router(
+    scenario_execution_router, prefix="/devices", tags=["scenario-execution"],
+)
 app.include_router(api_v1_router)
 
 

@@ -1,6 +1,15 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 
+[tool.coverage.run]
+# Use sys.monitoring (PEP 669) instead of coverage's default C trace function.
+# The C tracer fires per-line on ALL modules; asyncua rebuilds its ~100k-line
+# standard address space on every Server.init(), so under `pytest --cov` each
+# OPC UA server test ballooned to ~11 min and the suite hit the 6h CI timeout.
+# sysmon disables instrumentation for non-`source` files, restoring init() to
+# ~0.4s. Requires Python 3.12+.
+core = "sysmon"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -10,3 +19,4 @@ select = ["E", "F", "W", "I"]  # pycodestyle + pyflakes + isort
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E402"]  # allow late imports in test files
+"alembic/versions/*" = ["E501"]  # auto-generated migrations, long type declarations re-appear on regen

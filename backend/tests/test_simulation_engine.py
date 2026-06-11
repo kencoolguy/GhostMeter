@@ -14,7 +14,7 @@ class TestSimulationEngineLifecycle:
         with patch.object(engine, '_load_device_data', new_callable=AsyncMock) as mock_load:
             mock_load.return_value = ([], {}, "modbus_tcp")
             await engine.start_device(device_id)
-            assert device_id not in engine._device_tasks
+            assert device_id not in engine._device_states
 
     @pytest.mark.asyncio
     async def test_stop_nonexistent_device_noop(self):
@@ -25,7 +25,7 @@ class TestSimulationEngineLifecycle:
     async def test_shutdown_empty(self):
         engine = SimulationEngine()
         await engine.shutdown()
-        assert len(engine._device_tasks) == 0
+        assert len(engine._device_states) == 0
 
     @pytest.mark.asyncio
     async def test_reload_calls_load(self):

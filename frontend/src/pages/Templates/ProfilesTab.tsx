@@ -10,21 +10,13 @@ import { useEffect, useState } from "react";
 import { profileApi } from "../../services/profileApi";
 import { useProfileStore } from "../../stores/profileStore";
 import type { RegisterDefinition, SimulationProfile } from "../../types";
+import { downloadBlob } from "../../utils/download";
 import { ProfileFormModal } from "./ProfileFormModal";
 
 interface ProfilesTabProps {
   templateId: string;
   registers: Omit<RegisterDefinition, "id">[];
   readOnly?: boolean;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export function ProfilesTab({

@@ -4,7 +4,6 @@ import uuid
 
 from httpx import AsyncClient
 
-
 TEMPLATE_PAYLOAD = {
     "name": "Sim Test Meter",
     "protocol": "modbus_tcp",
@@ -106,7 +105,11 @@ class TestSetSimulationConfigs:
         # Replace with only one config
         payload2 = {
             "configs": [
-                {"register_name": "voltage", "data_mode": "random", "mode_params": {"min": 200, "max": 240}},
+                {
+                    "register_name": "voltage",
+                    "data_mode": "random",
+                    "mode_params": {"min": 200, "max": 240},
+                },
             ]
         }
         resp = await client.put(
@@ -146,8 +149,16 @@ class TestSetSimulationConfigs:
         _, device_id = await _create_template_and_device(client)
         payload = {
             "configs": [
-                {"register_name": "voltage", "data_mode": "static", "mode_params": {"value": 220}},
-                {"register_name": "voltage", "data_mode": "random", "mode_params": {"min": 200, "max": 240}},
+                {
+                    "register_name": "voltage",
+                    "data_mode": "static",
+                    "mode_params": {"value": 220},
+                },
+                {
+                    "register_name": "voltage",
+                    "data_mode": "random",
+                    "mode_params": {"min": 200, "max": 240},
+                },
             ]
         }
         resp = await client.put(
@@ -291,3 +302,36 @@ class TestFaultControl:
             f"/api/v1/devices/{device_id}/fault", json=payload
         )
         assert resp.status_code == 422
+
+    async def test_put_exception_fault_on_mqtt_device_rejected(self, client: AsyncClient) -> None:
+        """MQTT is publish-only — no request/response channel for an error, so
+        the exception fault type is rejected with 422 and no state is left behind."""
+        mqtt_template = {**TEMPLATE_PAYLOAD, "name": "MQTT Fault Template", "protocol": "mqtt"}
+        resp = await client.post("/api/v1/templates", json=mqtt_template)
+        assert resp.status_code == 201
+        template_id = resp.json()["data"]["id"]
+
+        resp = await client.post(
+            "/api/v1/devices",
+            json={"template_id": template_id, "name": "MQTT Fault Device", "slave_id": 11},
+        )
+        assert resp.status_code == 201
+        device_id = resp.json()["data"]["id"]
+
+        resp = await client.put(
+            f"/api/v1/devices/{device_id}/fault",
+            json={"fault_type": "exception", "params": {}},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error_code"] == "VALIDATION_ERROR"
+
+        # No orphan fault state was created
+        resp = await client.get(f"/api/v1/devices/{device_id}/fault")
+        assert resp.json()["data"] is None
+
+        # The other fault types remain accepted for MQTT devices
+        resp = await client.put(
+            f"/api/v1/devices/{device_id}/fault",
+            json={"fault_type": "timeout", "params": {}},
+        )
+        assert resp.status_code == 200

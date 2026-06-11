@@ -15,7 +15,7 @@ from pymodbus.datastore import (
 from pymodbus.pdu import ExceptionResponse
 from pymodbus.server import ModbusTcpServer
 
-from app.protocols.base import DeviceStats, ProtocolAdapter, RegisterInfo
+from app.protocols.base import ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
                         stats.request_count += 1
 
                     from app.simulation import fault_simulator
+                    from app.simulation.fault_simulator import get_failure_rate
                     fault = fault_simulator.get_fault(dev_id)
                     if fault:
                         if fault.fault_type == "timeout":
@@ -125,8 +126,7 @@ class ModbusTcpAdapter(ProtocolAdapter):
                             if stats:
                                 stats.error_count += 1
                         elif fault.fault_type == "intermittent":
-                            rate = fault.params.get("failure_rate", 0.5)
-                            if random.random() < rate:
+                            if random.random() < get_failure_rate(fault.params):
                                 self._suppress_slave(pdu.dev_id)
                                 if stats:
                                     stats.error_count += 1
@@ -141,12 +141,14 @@ class ModbusTcpAdapter(ProtocolAdapter):
             start_time = self._request_start_times.pop(pdu.transaction_id, None)
 
             from app.simulation import fault_simulator
+            from app.simulation.fault_simulator import get_delay_seconds
             fault = fault_simulator.get_fault(dev_id)
 
             if fault is not None:
                 if fault.fault_type == "delay":
-                    delay_ms = fault.params.get("delay_ms", 500)
-                    time.sleep(delay_ms / 1000.0)
+                    # Bounded blocking sleep (trace_pdu is a sync pymodbus
+                    # callback — same trade-off as the OPC UA value callback)
+                    time.sleep(get_delay_seconds(fault.params))
                 elif fault.fault_type == "exception":
                     exc_code = fault.params.get("exception_code", 0x04)
                     resp = ExceptionResponse(pdu.function_code, exc_code)

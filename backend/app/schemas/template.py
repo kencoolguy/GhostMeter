@@ -3,7 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
 # --- Data type → register count mapping ---
 
 DATA_TYPE_REGISTER_COUNT: dict[str, int] = {

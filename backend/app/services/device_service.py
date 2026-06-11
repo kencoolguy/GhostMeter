@@ -4,21 +4,22 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.exceptions import ConflictException, NotFoundException, ValidationException
+from app.models.device import DeviceInstance
+from app.models.mqtt import MqttPublishConfig
+from app.models.template import DeviceTemplate
 from app.protocols import protocol_manager
 from app.protocols.base import RegisterInfo
-from app.services import mqtt_service, simulation_profile_service
-from app.simulation import simulation_engine
-from app.models.device import DeviceInstance
-from app.models.template import DeviceTemplate
 from app.schemas.device import (
     DeviceBatchCreate,
     DeviceCreate,
     DeviceUpdate,
     RegisterValue,
 )
+from app.services import mqtt_service, simulation_profile_service
+from app.services.template_service import get_template as get_template_with_registers
+from app.simulation import simulation_engine
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,23 @@ async def _get_device_raw(
             detail="Device not found", error_code="DEVICE_NOT_FOUND"
         )
     return device
+
+
+async def get_device_protocol(
+    session: AsyncSession, device_id: uuid.UUID,
+) -> str:
+    """Resolve a device's protocol via its template. Raises 404 if absent."""
+    stmt = (
+        select(DeviceTemplate.protocol)
+        .join(DeviceInstance, DeviceInstance.template_id == DeviceTemplate.id)
+        .where(DeviceInstance.id == device_id)
+    )
+    protocol = await session.scalar(stmt)
+    if protocol is None:
+        raise NotFoundException(
+            detail="Device not found", error_code="DEVICE_NOT_FOUND"
+        )
+    return protocol
 
 
 async def _check_slave_id_available(
@@ -57,25 +75,11 @@ async def _check_slave_id_available(
         )
 
 
-async def _get_template_or_404(
-    session: AsyncSession, template_id: uuid.UUID,
-) -> DeviceTemplate:
-    """Get template or raise 404."""
-    stmt = (
-        select(DeviceTemplate)
-        .options(selectinload(DeviceTemplate.registers))
-        .where(DeviceTemplate.id == template_id)
-    )
-    result = await session.execute(stmt)
-    template = result.scalar_one_or_none()
-    if template is None:
-        raise NotFoundException(
-            detail="Template not found", error_code="TEMPLATE_NOT_FOUND"
-        )
-    return template
-
-
-def _device_to_summary(device: DeviceInstance, template_name: str) -> dict:
+def _device_to_summary(
+    device: DeviceInstance,
+    template_name: str,
+    mqtt_publishing: bool = False,
+) -> dict:
     """Convert device ORM to summary dict."""
     return {
         "id": device.id,
@@ -86,6 +90,7 @@ def _device_to_summary(device: DeviceInstance, template_name: str) -> dict:
         "status": device.status,
         "port": device.port,
         "description": device.description,
+        "mqtt_publishing": mqtt_publishing,
         "created_at": device.created_at,
         "updated_at": device.updated_at,
     }
@@ -121,15 +126,27 @@ async def _resolve_and_apply_profile(
 
 
 async def list_devices(session: AsyncSession) -> list[dict]:
-    """List all devices with template name."""
+    """List all devices with template name and MQTT publishing status."""
     stmt = (
-        select(DeviceInstance, DeviceTemplate.name.label("template_name"))
+        select(
+            DeviceInstance,
+            DeviceTemplate.name.label("template_name"),
+            MqttPublishConfig.enabled.label("mqtt_enabled"),
+        )
         .join(DeviceTemplate, DeviceInstance.template_id == DeviceTemplate.id)
+        .outerjoin(
+            MqttPublishConfig,
+            DeviceInstance.id == MqttPublishConfig.device_id,
+        )
         .order_by(DeviceInstance.created_at)
     )
     result = await session.execute(stmt)
     return [
-        _device_to_summary(row.DeviceInstance, row.template_name)
+        _device_to_summary(
+            row.DeviceInstance,
+            row.template_name,
+            mqtt_publishing=bool(row.mqtt_enabled),
+        )
         for row in result.all()
     ]
 
@@ -155,7 +172,7 @@ async def get_device_detail(session: AsyncSession, device_id: uuid.UUID) -> dict
     device_data = await get_device(session, device_id)
 
     # Get template registers
-    template = await _get_template_or_404(session, device_data["template_id"])
+    template = await get_template_with_registers(session, device_data["template_id"])
     registers = [
         RegisterValue(
             name=reg.name,
@@ -179,7 +196,7 @@ async def create_device(
     session: AsyncSession, data: DeviceCreate,
 ) -> dict:
     """Create a single device."""
-    await _get_template_or_404(session, data.template_id)
+    await get_template_with_registers(session, data.template_id)
     await _check_slave_id_available(session, data.slave_id, data.port)
 
     device = DeviceInstance(
@@ -214,7 +231,7 @@ async def batch_create_devices(
     if count > 50:
         raise ValidationException("Batch create limited to 50 devices")
 
-    template = await _get_template_or_404(session, data.template_id)
+    template = await get_template_with_registers(session, data.template_id)
 
     # Check all slave IDs are available
     for sid in range(data.slave_id_start, data.slave_id_end + 1):
@@ -226,7 +243,7 @@ async def batch_create_devices(
     devices = []
     for sid in range(data.slave_id_start, data.slave_id_end + 1):
         if data.name_prefix:
-            name = f"{prefix} {sid}"
+            name = f"{prefix}{sid}"
         else:
             name = f"{prefix} - Slave {sid}"
 
@@ -309,6 +326,49 @@ async def delete_device(
     await session.commit()
 
 
+async def register_device_runtime(
+    device: DeviceInstance, template: DeviceTemplate,
+) -> None:
+    """Register a device with its protocol adapter and start its simulation task.
+
+    Shared by start_device and the startup resume loop in app.main, so the
+    registration steps cannot drift between the two paths. Raises if adapter
+    registration fails; a simulation-start failure is only logged (the adapter
+    keeps serving the last pushed values).
+    """
+    if not protocol_manager.is_running:
+        return
+
+    register_infos = [
+        RegisterInfo(
+            address=reg.address,
+            function_code=reg.function_code,
+            data_type=reg.data_type,
+            byte_order=reg.byte_order,
+            oid=reg.oid,
+            name=reg.name,
+            unit=reg.unit,
+        )
+        for reg in template.registers
+    ]
+
+    # OPC UA / BACnet need the device display name before their object node
+    # is created in add_device
+    if template.protocol in ("opcua", "bacnet"):
+        adapter = protocol_manager.get_adapter(template.protocol)
+        if adapter is not None:
+            adapter.set_device_meta(device.id, device.name)  # type: ignore[attr-defined]
+
+    await protocol_manager.add_device(
+        template.protocol, device.id, device.slave_id, register_infos,
+    )
+
+    try:
+        await simulation_engine.start_device(device.id)
+    except Exception as e:
+        logger.error("Failed to start simulation for device %s: %s", device.id, e)
+
+
 async def start_device(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> dict:
@@ -321,52 +381,17 @@ async def start_device(
             error_code="INVALID_STATE_TRANSITION",
         )
 
-    # Load template with registers for protocol adapter
-    template = await _get_template_or_404(session, device.template_id)
-    register_infos = [
-        RegisterInfo(
-            address=reg.address,
-            function_code=reg.function_code,
-            data_type=reg.data_type,
-            byte_order=reg.byte_order,
-            oid=reg.oid,
-        )
-        for reg in template.registers
-    ]
+    template = await get_template_with_registers(session, device.template_id)
 
-    # Register device in protocol adapter
-    if protocol_manager.is_running:
-        try:
-            await protocol_manager.add_device(
-                template.protocol, device.id, device.slave_id, register_infos,
-            )
-        except Exception as e:
-            device.status = "error"
-            await session.commit()
-            raise ConflictException(
-                detail=f"Failed to start device: {e}",
-                error_code="PROTOCOL_ERROR",
-            ) from e
-
-    # Start simulation engine for this device
-    if protocol_manager.is_running:
-        try:
-            await simulation_engine.start_device(device.id)
-        except Exception as e:
-            logger.error("Failed to start simulation for device %s: %s", device_id, e)
-
-    # Set SNMP register names if applicable
-    if template.protocol == "snmp":
-        try:
-            snmp_adapter = protocol_manager.get_adapter("snmp")
-            oid_to_name = {
-                reg.oid: reg.name
-                for reg in template.registers
-                if reg.oid
-            }
-            snmp_adapter.set_register_names(device.id, oid_to_name)  # type: ignore[attr-defined]
-        except Exception as e:
-            logger.warning("Failed to set SNMP register names: %s", e)
+    try:
+        await register_device_runtime(device, template)
+    except Exception as e:
+        device.status = "error"
+        await session.commit()
+        raise ConflictException(
+            detail=f"Failed to start device: {e}",
+            error_code="PROTOCOL_ERROR",
+        ) from e
 
     # Auto-start MQTT publishing if configured and enabled
     try:
@@ -411,6 +436,13 @@ async def stop_device(
     except Exception:
         pass
 
+    # Stop scenario if running (best-effort)
+    try:
+        from app.services.scenario_runner import scenario_runner
+        await scenario_runner.stop(device.id)
+    except Exception:
+        pass
+
     # Stop simulation engine for this device
     try:
         await simulation_engine.stop_device(device.id)
@@ -419,7 +451,7 @@ async def stop_device(
 
     # Unregister device from protocol adapter (best-effort for error state)
     if protocol_manager.is_running:
-        template = await _get_template_or_404(session, device.template_id)
+        template = await get_template_with_registers(session, device.template_id)
         try:
             await protocol_manager.remove_device(template.protocol, device.id)
         except Exception:
@@ -519,7 +551,7 @@ async def get_device_registers(
 ) -> list[dict]:
     """Get register definitions for a device (value=None in Phase 3)."""
     device_data = await get_device(session, device_id)
-    template = await _get_template_or_404(session, device_data["template_id"])
+    template = await get_template_with_registers(session, device_data["template_id"])
     return [
         RegisterValue(
             name=reg.name,

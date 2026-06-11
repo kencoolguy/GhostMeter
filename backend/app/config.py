@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "GhostMeter"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "0.4.0"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
 
@@ -33,6 +33,19 @@ class Settings(BaseSettings):
     # SNMP
     SNMP_PORT: int = 10161
     SNMP_COMMUNITY: str = "public"
+
+    # OPC UA
+    OPCUA_HOST: str = "0.0.0.0"
+    OPCUA_PORT: int = 4840
+    OPCUA_ENDPOINT_PATH: str = "/ghostmeter/server/"
+    OPCUA_SERVER_NAME: str = "GhostMeter OPC UA Server"
+    OPCUA_NAMESPACE_URI: str = "http://ghostmeter.local/opcua/"
+
+    # BACnet/IP
+    BACNET_ADDRESS: str = "0.0.0.0/0"  # CIDR; subnet mask needed for broadcast calc
+    BACNET_PORT: int = 47808
+    BACNET_DEVICE_INSTANCE_BASE: int = 100000  # device instance = base + slave_id; router = base
+    BACNET_NETWORK: int = 100  # virtual (VLAN) network number
 
     # Direct override (takes precedence if set)
     DATABASE_URL: str | None = None

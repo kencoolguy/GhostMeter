@@ -1,0 +1,18 @@
+{
+  "name": "Energy Meter (OPC UA)",
+  "protocol": "opcua",
+  "description": "Three-phase energy meter exposed over OPC UA. Registers are surfaced as browsable Variable nodes. Address/function_code are nominal (unused by OPC UA, kept for schema compatibility).",
+  "registers": [
+    {"name": "voltage_l1", "address": 0, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Phase L1 voltage", "sort_order": 0, "oid": null},
+    {"name": "voltage_l2", "address": 1, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Phase L2 voltage", "sort_order": 1, "oid": null},
+    {"name": "voltage_l3", "address": 2, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "V", "description": "Phase L3 voltage", "sort_order": 2, "oid": null},
+    {"name": "current_l1", "address": 3, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Phase L1 current", "sort_order": 3, "oid": null},
+    {"name": "current_l2", "address": 4, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Phase L2 current", "sort_order": 4, "oid": null},
+    {"name": "current_l3", "address": 5, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "A", "description": "Phase L3 current", "sort_order": 5, "oid": null},
+    {"name": "active_power_total", "address": 6, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "W", "description": "Total active power", "sort_order": 6, "oid": null},
+    {"name": "power_factor", "address": 7, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": null, "description": "Power factor", "sort_order": 7, "oid": null},
+    {"name": "frequency", "address": 8, "function_code": 3, "data_type": "float32", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "Hz", "description": "Line frequency", "sort_order": 8, "oid": null},
+    {"name": "energy_total", "address": 9, "function_code": 3, "data_type": "float64", "byte_order": "big_endian", "scale_factor": 1.0, "unit": "kWh", "description": "Cumulative active energy", "sort_order": 9, "oid": null},
+    {"name": "status", "address": 10, "function_code": 3, "data_type": "int16", "byte_order": "big_endian", "scale_factor": 1.0, "unit": null, "description": "Device status (0=ok)", "sort_order": 10, "oid": null}
+  ]
+}

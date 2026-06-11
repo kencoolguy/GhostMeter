@@ -122,7 +122,9 @@ class TestBatchCreateDevices:
         )
         assert response.status_code == 201
         devices = response.json()["data"]
-        assert devices[0]["name"] == "Floor 3 10"
+        # Name format is "{prefix}{slave_id}" — no space between prefix and slave ID
+        # (updated in commit 4c8cefa to avoid double spacing when the prefix ends in " ")
+        assert devices[0]["name"] == "Floor 310"
 
     async def test_batch_create_invalid_range(self, client: AsyncClient) -> None:
         template = await create_template(client)
@@ -270,6 +272,39 @@ class TestStartStop:
         # Phase 3 has no API to set error state directly;
         # we test via direct DB manipulation
         pass  # Covered in Phase 4 when error state can be triggered
+
+
+class TestDeviceMqttPublishing:
+    async def test_list_devices_includes_mqtt_publishing_false_by_default(
+        self, client: AsyncClient,
+    ) -> None:
+        """Device without MQTT config should have mqtt_publishing=False."""
+        template = await create_template(client)
+        await create_device(client, template["id"])
+        response = await client.get("/api/v1/devices")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert len(data) == 1
+        assert data[0]["mqtt_publishing"] is False
+
+    async def test_list_devices_mqtt_publishing_reflects_enabled_config(
+        self, client: AsyncClient,
+    ) -> None:
+        """Device with MQTT config (enabled defaults to false) should have mqtt_publishing=False."""
+        template = await create_template(client)
+        device = await create_device(client, template["id"])
+        # PUT an MQTT config — enabled defaults to false
+        response = await client.put(
+            f"/api/v1/system/devices/{device['id']}/mqtt",
+            json={"topic_template": "test/{device_name}", "payload_mode": "batch"},
+        )
+        assert response.status_code == 200
+
+        response = await client.get("/api/v1/devices")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert len(data) == 1
+        assert data[0]["mqtt_publishing"] is False
 
 
 class TestGetRegisters:

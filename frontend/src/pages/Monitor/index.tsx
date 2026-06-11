@@ -1,22 +1,30 @@
-import { Badge, Collapse, Space, Typography } from "antd";
-import { useCallback } from "react";
+import { Badge, Button, Typography } from "antd";
+import { useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { MONITOR_WS_URL } from "../../services/ws";
 import { useMonitorStore } from "../../stores/monitorStore";
 import type { MonitorUpdate } from "../../types";
 import { DeviceCardGrid } from "./DeviceCardGrid";
-import { DeviceDetailPanel } from "./DeviceDetailPanel";
-import { EventLog } from "./EventLog";
-
-const WS_URL = `ws://${window.location.hostname}:8000/ws/monitor`;
+import { EmptyState } from "./EmptyState";
+import { EventDrawer } from "./EventDrawer";
+import { EventToast } from "./EventToast";
+import { KpiPanel } from "./KpiPanel";
+import "./monitor.css";
 
 export default function MonitorPage() {
   const {
     devices,
     events,
     registerHistory,
-    selectedDeviceId,
+    mqttBrokerConnected,
+    recentToastEvent,
+    eventDrawerOpen,
     handleMonitorUpdate,
-    selectDevice,
+    dismissToast,
+    openEventDrawer,
+    closeEventDrawer,
+    clearEvents,
   } = useMonitorStore();
 
   const onMessage = useCallback(
@@ -29,45 +37,62 @@ export default function MonitorPage() {
     [handleMonitorUpdate],
   );
 
-  const { connected } = useWebSocket({ url: WS_URL, onMessage });
+  const { connected } = useWebSocket({ url: MONITOR_WS_URL, onMessage });
 
-  const selectedDevice = devices.find((d) => d.device_id === selectedDeviceId);
+  // "Open in Monitor" from DeviceDetail passes ?device=<id>: scroll the
+  // matching card into view once it arrives in the broadcast, then drop
+  // the param so refreshes don't re-scroll.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusDeviceId = searchParams.get("device");
+  useEffect(() => {
+    if (!focusDeviceId || devices.length === 0) return;
+    const el = document.getElementById(`gm-device-card-${focusDeviceId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setSearchParams({}, { replace: true });
+    }
+  }, [focusDeviceId, devices, setSearchParams]);
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <Typography.Title level={2} style={{ margin: 0 }}>
-          Real-time Monitor
+          Monitor{" "}
+          <Badge
+            status={connected ? "success" : "error"}
+            text={<span style={{ fontSize: 12 }}>{connected ? "Live" : "Disconnected"}</span>}
+            style={{ marginLeft: 10 }}
+          />
         </Typography.Title>
-        <Badge
-          status={connected ? "success" : "error"}
-          text={connected ? "Connected" : "Disconnected"}
-        />
-      </Space>
+        <Button onClick={openEventDrawer}>
+          📋 Events <span style={{ marginLeft: 4, color: "var(--gm-text-2)" }}>({events.length})</span>
+        </Button>
+      </div>
 
-      <DeviceCardGrid
-        devices={devices}
-        selectedDeviceId={selectedDeviceId}
-        onSelectDevice={selectDevice}
-      />
-
-      {selectedDevice && (
-        <DeviceDetailPanel
-          device={selectedDevice}
-          registerHistory={registerHistory}
-        />
+      {devices.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <>
+          <KpiPanel devices={devices} mqttBrokerConnected={mqttBrokerConnected} />
+          <DeviceCardGrid devices={devices} registerHistory={registerHistory} />
+        </>
       )}
 
-      <Collapse
-        items={[
-          {
-            key: "events",
-            label: `Event Log (${events.length})`,
-            children: <EventLog events={events} />,
-          },
-        ]}
-        defaultActiveKey={["events"]}
+      <EventToast
+        event={recentToastEvent}
+        onDismiss={dismissToast}
+        onOpenDrawer={() => {
+          dismissToast();
+          openEventDrawer();
+        }}
       />
-    </Space>
+
+      <EventDrawer
+        open={eventDrawerOpen}
+        events={events}
+        onClose={closeEventDrawer}
+        onClear={clearEvents}
+      />
+    </div>
   );
 }

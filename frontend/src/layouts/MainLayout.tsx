@@ -4,20 +4,22 @@ import {
   ExperimentOutlined,
   HddOutlined,
   MenuFoldOutlined,
+  ThunderboltOutlined,
   MenuUnfoldOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Button, Layout, Menu, theme } from "antd";
+import { Button, Layout, Menu } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 
 const { Header, Sider, Content } = Layout;
 
 const menuItems = [
-  { key: "/templates", icon: <AppstoreOutlined />, label: "Templates" },
-  { key: "/devices", icon: <HddOutlined />, label: "Devices" },
-  { key: "/simulation", icon: <ExperimentOutlined />, label: "Simulation" },
   { key: "/monitor", icon: <DashboardOutlined />, label: "Monitor" },
+  { key: "/devices", icon: <HddOutlined />, label: "Devices" },
+  { key: "/templates", icon: <AppstoreOutlined />, label: "Templates" },
+  { key: "/simulation", icon: <ExperimentOutlined />, label: "Simulation" },
+  { key: "/scenarios", icon: <ThunderboltOutlined />, label: "Scenarios" },
   { key: "/settings", icon: <SettingOutlined />, label: "Settings" },
 ];
 
@@ -25,9 +27,6 @@ export function MainLayout() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
   const navigate = useNavigate();
   const location = useLocation();
-  const {
-    token: { colorBgContainer, borderRadiusLG },
-  } = theme.useToken();
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -41,19 +40,17 @@ export function MainLayout() {
             toggleSidebar();
           }
         }}
+        width={220}
+        className="gm-sider"
       >
-        <div
-          style={{
-            height: 32,
-            margin: 16,
-            color: "white",
-            fontWeight: "bold",
-            fontSize: sidebarCollapsed ? 14 : 18,
-            textAlign: "center",
-            lineHeight: "32px",
-          }}
-        >
-          {sidebarCollapsed ? "GM" : "GhostMeter"}
+        <div className={`gm-brand ${sidebarCollapsed ? "gm-brand-collapsed" : ""}`}>
+          <div className="gm-brand-logo">GM</div>
+          {!sidebarCollapsed && (
+            <div className="gm-brand-text">
+              <span className="gm-brand-name">GhostMeter</span>
+              <span className="gm-brand-tag">DEVICE SIMULATOR</span>
+            </div>
+          )}
         </div>
         <Menu
           theme="dark"
@@ -61,17 +58,11 @@ export function MainLayout() {
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
+          style={{ background: "transparent", border: "none" }}
         />
       </Sider>
       <Layout>
-        <Header
-          style={{
-            padding: "0 16px",
-            background: colorBgContainer,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
+        <Header className="gm-header">
           <Button
             type="text"
             icon={
@@ -79,16 +70,12 @@ export function MainLayout() {
             }
             onClick={toggleSidebar}
           />
+          <span className="gm-header-live">
+            <span className="gm-header-live-dot" />
+            <span>Live</span>
+          </span>
         </Header>
-        <Content
-          style={{
-            margin: 24,
-            padding: 24,
-            background: colorBgContainer,
-            borderRadius: borderRadiusLG,
-            minHeight: 280,
-          }}
-        >
+        <Content className="gm-content">
           <Outlet />
         </Content>
       </Layout>

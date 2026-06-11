@@ -4,8 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
-
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 VALID_DATA_MODES = {"static", "random", "daily_curve", "computed", "accumulator"}
 VALID_FAULT_TYPES = {"delay", "timeout", "exception", "intermittent"}
@@ -71,6 +70,28 @@ class FaultConfigSet(BaseModel):
         if v not in VALID_FAULT_TYPES:
             raise ValueError(f"fault_type must be one of {VALID_FAULT_TYPES}")
         return v
+
+    @model_validator(mode="after")
+    def validate_params(self) -> "FaultConfigSet":
+        """Validate fault_type-specific params so malformed input is rejected with a
+        422 at the API boundary instead of raising deep inside a protocol adapter."""
+        if self.fault_type == "delay" and "delay_ms" in self.params:
+            try:
+                delay_ms = int(self.params["delay_ms"])
+            except (TypeError, ValueError):
+                raise ValueError("delay_ms must be an integer number of milliseconds")
+            if delay_ms < 0:
+                raise ValueError("delay_ms must be >= 0")
+            self.params["delay_ms"] = delay_ms
+        if self.fault_type == "intermittent" and "failure_rate" in self.params:
+            try:
+                rate = float(self.params["failure_rate"])
+            except (TypeError, ValueError):
+                raise ValueError("failure_rate must be a number between 0.0 and 1.0")
+            if not 0.0 <= rate <= 1.0:
+                raise ValueError("failure_rate must be between 0.0 and 1.0")
+            self.params["failure_rate"] = rate
+        return self
 
 
 class FaultConfigResponse(BaseModel):

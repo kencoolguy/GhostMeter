@@ -166,6 +166,11 @@
 - [ ] Docker Hub image publish（deferred）
 - [ ] 在相關社群宣傳（deferred）
 
+### Milestone 7.4：正式部署工具 ✅ Complete (2026-06-10)
+- [x] `docker-compose.prod.yml`：port 綁定 `BIND_IP`、postgres 不對外（exposed host 安全部署）
+- [x] `deploy.sh`：套用 prod overlay + migration + 啟動 一鍵腳本
+- [x] `docs/deployment.md`：Linode（Tailscale + Cloudflare Tunnel）部署指南
+
 ---
 
 ## Phase 8：Post-MVP 功能擴充
@@ -201,6 +206,90 @@
 - [x] Frontend OID column and SNMP protocol option in template creation
 - [x] OID conflict detection for same-template devices
 - [x] 16 integration tests (template CRUD, adapter unit, seed validation)
+
+### Milestone 8.5：Scenario Mode ✅
+- [x] `scenarios` + `scenario_steps` DB tables + Alembic migration
+- [x] Pydantic schemas (Create / Update / Summary / Detail / StepCreate / Export / ExecutionStatus)
+- [x] Scenario CRUD service + API routes (`/api/v1/scenarios`)
+- [x] ScenarioRunner: async executor with timeline-based anomaly injection/clear
+- [x] Execution API: start/stop/status per device (`/api/v1/devices/{id}/scenario/...`)
+- [x] Built-in seed scenarios: Power Outage Recovery, Voltage Instability, Inverter Fault Sequence
+- [x] Frontend types, API client (`scenarioApi.ts`), Zustand store (`scenarioStore.ts`)
+- [x] ScenarioList page with template filter, CRUD actions, clone, export/import
+- [x] TimelineEditor: visual drag-and-drop anomaly blocks on register×time grid
+- [x] ScenarioExecutionCard on Device Detail: start/stop with real-time progress polling
+- [x] 19 integration tests (CRUD, seed, built-in protection, export/import)
+
+### Milestone 8.6：Polish & UX Fixes ✅
+- [x] Auto-resume: running devices restored after backend restart (re-registers protocol adapters + restarts simulation engine)
+- [x] Device Detail live values via `/ws/monitor` WebSocket (closes #19)
+- [x] Device Detail "Open in Monitor" button with `?device=<id>` deep link
+- [x] Monitor page `?device=` query param auto-selects device on mount
+- [x] Anomaly injection panel: replaced raw JSON textarea with dynamic per-type param form
+- [x] Batch device name prefix spacing fix
+
+### Milestone 8.8：Monitor Redesign — Glance Dashboard (issue #29) ✅ Complete (2026-04-17)
+- [x] Monitor redesigned as glance dashboard: KPI panel, mid-density card grid, sparklines, value-flash animation, status dot pulse
+- [x] `/monitor` set as home route (`/` redirects to `/monitor`); Monitor moved to top of sidebar
+- [x] Stopped devices surfaced in grid (faded + Start shortcut); guided empty state when no devices exist
+- [x] Backend: include stopped devices in monitor snapshot; expose `mqtt_broker_connected`; per-device `template_name`
+- [x] Event toast notifications (3s auto-dismiss) + Drawer for accumulated history
+- [x] Refactor: shared `pickPrimary` helper module; `ProtocolManager.get_adapter` returns Optional with None checks at all call sites
+- [x] Removed DeviceDetailPanel, RegisterChart, StatsPanel, EventLog from Monitor page
+
+### Milestone 8.9：OPC UA Server Adapter ✅ Merged (2026-06-03, PR #33)
+- [x] OpcUaAdapter extending ProtocolAdapter (asyncua, single shared server, Anonymous/None)
+- [x] Push value-sync: simulation engine update_register → variable node; subscriptions fire automatically
+- [x] RegisterInfo extended with name/unit; device name via set_device_meta pre-add hook
+- [x] Built-in "Energy Meter (OPC UA)" template (11 registers) + Normal Operation profile
+- [x] Frontend OPC UA protocol option; docker-compose port 4840
+- [x] Integration tests: server lifecycle, node CRUD, typed value round-trip, subscription, device wiring
+- [x] Post-review hardening: out-of-range value clamping, unique `(#slave_id)` node names, `_device_meta` cleanup
+- [x] Merged to `dev` via PR #33; follow-up PR #34 pinned `pymodbus<3.13`
+
+### Milestone 8.10：OPC UA Comm-layer Fault Simulation ✅ Complete (2026-06-03)
+- [x] `ProtocolAdapter` base gains no-op `apply_fault(device_id)` / `remove_fault(device_id)` hooks; Modbus inherits unchanged (pull-based via trace_pdu)
+- [x] `OpcUaAdapter` overrides hooks: `apply_fault` attaches per-node asyncua value callbacks (`set_attribute_value_callback`); `remove_fault` detaches by re-writing cached value (restores stored value, clears callback, resumes subscriptions atomically)
+- [x] Per-node last-value cache (`_last_values`); `update_register` skips `write_value` while device is in `_faulted` set
+- [x] Fault-type mapping: `exception` → `BadDeviceFailure`, `timeout` → `BadTimeout`, `delay` → bounded server-side `time.sleep` (cap 10 s) + cached value, `intermittent` → random `BadCommunicationError` by `failure_rate`
+- [x] Callback reads `fault_simulator` live on every client read (single source of truth; same model as Modbus trace_pdu)
+- [x] Auto-reattach on `add_device` if a fault is already active (parity with Modbus surviving stop/start)
+- [x] REST `PUT/DELETE /devices/{id}/fault` wired to adapter hook via `get_device_protocol` DB lookup
+- [x] 13 new tests: adapter-level fault tests (exception/timeout/delay/intermittent/cache/subscription restore) + REST e2e round-trip
+- **Note:** SNMP/MQTT adapters could reuse the same base hook pattern in the future (out of scope here; their fault semantics differ significantly)
+
+### Milestone 8.11：BACnet/IP Adapter ✅ Complete (2026-06-10)
+- [x] `BacnetAdapter` in `backend/app/protocols/bacnet_agent.py` (bacpypes3 0.0.106)
+- [x] Router + VLAN topology: one IPv4 Application on UDP 47808 + `VirtualNetwork` (network 100); each simulated device = independent BACnet Application on the VLAN (instance = `100000 + slave_id`)
+- [x] Services: Who-Is/I-Am discovery, ReadProperty, ReadPropertyMultiple; read-only
+- [x] Registers map to analog-input objects (instance = register address, objectName = name, EngineeringUnits from unit string)
+- [x] Per-device read statistics (request / success / error / avg ms) via overridden ReadProperty handlers
+- [x] Push value sync: `update_register` writes `presentValue`, clamped to float32 range (prevents operational-problem errors from anomaly spikes)
+- [x] `base.py` fix: stats entry no longer leaked when `_do_add_device` raises (affects all adapters)
+- [x] Built-in "Energy Meter (BACnet)" seed template + Normal Operation profile
+- [x] Frontend `bacnet` protocol option; docker-compose + prod overlay UDP 47808; config settings (`BACNET_NETWORK`, `BACNET_DEVICE_INSTANCE_BASE`)
+- [x] `backend/tests/test_bacnet_adapter.py`: 17 tests (lifecycle, device add/remove, register round-trip, stats, restart safety, VLAN-node zombie prevention)
+- **Deferred:** COV subscriptions, WriteProperty, BBMD / Foreign Device registration
+
+### Milestone 8.12：SNMP / MQTT / BACnet 故障模擬 ✅ Complete (2026-06-11)
+- [x] Shared fault-param helpers in `fault_simulator.py` (`get_delay_seconds` cap 10 s + NaN/inf guard, `get_failure_rate` clamp 0–1)
+- [x] BACnet: pull-based fault gate in `_DeviceApplication` (ReadProperty / RPM); `exception` → Error `device/operationalProblem`; timeout/intermittent also suppress Who-Is (device goes fully dark)
+- [x] SNMP: fault-aware command responders (timeout/intermittent drop, delay deferred via `loop.call_later` — non-blocking); `exception` → `genErr` via `_DynamicMibController`
+- [x] MQTT: `_publish_loop` gate — timeout stops publishing, intermittent skips probabilistically, delay publishes late; `exception` rejected at REST (422)
+- [x] REST: `PUT /devices/{id}/fault` validates MQTT + exception → 422; API otherwise unchanged
+- [x] Tests: `test_bacnet_fault.py` (real bacpypes3 client incl. REST e2e), `test_snmp_fault.py` (real GET/GETNEXT incl. loop-responsiveness check), `test_mqtt_fault.py` (fake-client publish loop), `test_simulation_api.py` 422 case
+- **Result:** comm-layer fault simulation now at parity across all 5 protocols (Modbus / OPC UA / SNMP / MQTT / BACnet)
+
+### Milestone 8.7：Consolidation (in progress 🔄)
+- [x] Remove VirtualBox shared-folder path hacks from `frontend/package.json` + tsconfigs + `.npmrc`
+- [x] Restore `.github/workflows/ci.yml` (was removed in 6d92a2c pending workflow-scope token)
+- [x] API reference drift fix: document 18 previously undocumented endpoints (anomaly, simulation config, fault, simulation-profile import/export/blank)
+- [x] `RegisterValue` schema: document `oid` field and update stale `value` description
+- [x] Pre-release /simplify cleanup pass over `main...dev`: 14 behavior-preserving fixes applied (adapter fault-type capability, shared device-runtime registration, SNMP one-phase name map, frontend anomaly constants, monitor history/render perf, CSS-variable theming, test helper consolidation) — see dev log 2026-06-11; 5 findings deferred (OPC UA blocking delay, scenario param validation semantics, monitor DB cache, fault-action resolver, adapter_status generalization)
+- [x] Backend test health check: full `pytest` run **380 passed, 0 skipped** (2026-06-11, host venv vs ghostmeter_test DB)
+- [x] Cut release prep: version aligned to **0.4.0** everywhere (README badge was 0.3.0; backend `APP_VERSION` and frontend `package.json` were still 0.1.0); CHANGELOG `[Unreleased]` consolidated into a `[0.4.0] - 2026-06-11` section (duplicate subsection headers from successive pushes merged); README features list gained Scenario mode
+- [ ] Verify CI pipeline green on release PRs, merge to dev, then dev→main PR + `v0.4.0` tag (human review)
+- [ ] Address issues surfaced during audit: #21 (Cloudflare Pages build config), #22 (npm audit vulnerabilities), #23 (frontend bundle >500KB)
 
 ---
 

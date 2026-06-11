@@ -5,7 +5,7 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
-import { Badge, Button, Popconfirm, Space, Table, Tooltip } from "antd";
+import { Badge, Button, Popconfirm, Space, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -127,10 +127,17 @@ export function DeviceList() {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      width: 120,
-      render: (status: string) => {
+      width: 160,
+      render: (status: string, record: DeviceSummary) => {
         const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.stopped;
-        return <Badge status={config.status} text={config.text} />;
+        return (
+          <Space size={4}>
+            <Badge status={config.status} text={config.text} />
+            {record.status === "running" && record.mqtt_publishing && (
+              <Tag color="green" style={{ marginInlineStart: 0 }}>MQTT</Tag>
+            )}
+          </Space>
+        );
       },
     },
     {

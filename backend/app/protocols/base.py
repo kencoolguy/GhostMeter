@@ -13,7 +13,9 @@ class RegisterInfo:
     function_code: int  # 3=holding, 4=input
     data_type: str      # int16, uint16, int32, uint32, float32, float64
     byte_order: str     # big_endian, little_endian, etc.
-    oid: str | None = None  # SNMP OID string, null for Modbus
+    oid: str | None = None   # SNMP OID string, null for Modbus
+    name: str | None = None  # register name → OPC UA browse/display name
+    unit: str | None = None  # → OPC UA node Description (interim EngineeringUnits)
 
 
 @dataclass
@@ -40,6 +42,13 @@ class ProtocolAdapter(ABC):
     setup. Stats lifecycle (create on add, remove on remove) is handled here.
     """
 
+    # Comm-layer fault types this protocol can simulate. Class-level so the
+    # REST layer can validate capability without a running adapter instance.
+    # Adapters that cannot express a type override with a subset (e.g. MQTT).
+    supported_fault_types: frozenset[str] = frozenset(
+        {"delay", "timeout", "exception", "intermittent"}
+    )
+
     def __init__(self) -> None:
         self._device_stats: dict[UUID, DeviceStats] = {}
 
@@ -54,6 +63,25 @@ class ProtocolAdapter(ABC):
         if device_id in self._device_stats:
             self._device_stats[device_id] = DeviceStats()
 
+    # --- Fault hooks (concrete no-op default; protocol adapters may override) ---
+
+    async def apply_fault(self, device_id: UUID) -> None:
+        """A comm-layer fault became active for this device.
+
+        Presence toggle only — the active FaultConfig lives in
+        app.simulation.fault_simulator. Default no-op: Modbus polls
+        fault_simulator live in trace_pdu, so it needs no action here.
+        OPC UA overrides this to attach value callbacks.
+        """
+
+    async def remove_fault(self, device_id: UUID) -> None:
+        """The comm-layer fault was cleared for this device.
+
+        Mirror of apply_fault. Default no-op: Modbus stops applying the fault
+        automatically once fault_simulator no longer reports it. OPC UA overrides
+        this to detach the value callbacks attached in apply_fault.
+        """
+
     # --- Device lifecycle (template methods) ---
 
     async def add_device(
@@ -62,9 +90,17 @@ class ProtocolAdapter(ABC):
         slave_id: int,
         registers: list[RegisterInfo],
     ) -> None:
-        """Register a device — creates stats entry, then delegates to subclass."""
+        """Register a device — creates stats entry, then delegates to subclass.
+
+        If the subclass registration fails, the stats entry is rolled back so
+        a failed add leaves no trace.
+        """
         self._device_stats[device_id] = DeviceStats()
-        await self._do_add_device(device_id, slave_id, registers)
+        try:
+            await self._do_add_device(device_id, slave_id, registers)
+        except Exception:
+            self._device_stats.pop(device_id, None)
+            raise
 
     async def remove_device(self, device_id: UUID) -> None:
         """Unregister a device — delegates to subclass, then cleans up stats.
