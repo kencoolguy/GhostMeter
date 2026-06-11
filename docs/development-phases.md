@@ -288,7 +288,10 @@
 - [x] Pre-release /simplify cleanup pass over `main...dev`: 14 behavior-preserving fixes applied (adapter fault-type capability, shared device-runtime registration, SNMP one-phase name map, frontend anomaly constants, monitor history/render perf, CSS-variable theming, test helper consolidation) — see dev log 2026-06-11; 5 findings deferred (OPC UA blocking delay, scenario param validation semantics, monitor DB cache, fault-action resolver, adapter_status generalization)
 - [x] Backend test health check: full `pytest` run **380 passed, 0 skipped** (2026-06-11, host venv vs ghostmeter_test DB)
 - [x] Cut release prep: version aligned to **0.4.0** everywhere (README badge was 0.3.0; backend `APP_VERSION` and frontend `package.json` were still 0.1.0); CHANGELOG `[Unreleased]` consolidated into a `[0.4.0] - 2026-06-11` section (duplicate subsection headers from successive pushes merged); README features list gained Scenario mode
-- [ ] Verify CI pipeline green on release PRs, merge to dev, then dev→main PR + `v0.4.0` tag (human review)
+- [x] **v0.4.0 released** (2026-06-11): PRs #47/#48/#49 merged with CI green, `v0.4.0` tag + GitHub Release published
+- [x] Deferred /simplify findings resolved per Ken's rulings: **PR #50** (negative max_drift seed bug — sign flip at the clamp — fixed + Alembic data repair + unified `AnomalyParamsBase` validation across inject/schedule/scenario) and **PR #51** (OPC UA delay fault moved to async PreRead hook — no longer blocks the event loop; red-test verified)
+- [x] **v0.4.1 released** (2026-06-11): the two fixes above
+- [ ] Remaining follow-ups (no decision needed): monitor_service per-tick DB query caching, per-adapter fault decision trees → shared resolver, MQTT-specific monitor payload fields → generic adapter_status, monitorStore singleton WS connection
 - [ ] Address issues surfaced during audit: #21 (Cloudflare Pages build config), #22 (npm audit vulnerabilities), #23 (frontend bundle >500KB)
 
 ---
