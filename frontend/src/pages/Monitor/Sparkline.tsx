@@ -12,7 +12,7 @@ interface SparklineProps {
  * Tiny in-card line chart. No axes, no grid, no tooltip.
  * Animation disabled so 1Hz updates don't jitter.
  */
-export function Sparkline({ data, color = "#22d3ee", height = 36 }: SparklineProps) {
+export function Sparkline({ data, color = "var(--gm-cyan)", height = 36 }: SparklineProps) {
   const chartData = useMemo(
     () => data.map((p) => ({ value: p.value })),
     [data],

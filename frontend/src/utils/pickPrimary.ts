@@ -1,4 +1,4 @@
-import type { DeviceMonitorData, RegisterData } from "../../types";
+import type { DeviceMonitorData, RegisterData } from "../types";
 
 const PREFERRED = ["total_power", "ac_power", "total_energy"];
 

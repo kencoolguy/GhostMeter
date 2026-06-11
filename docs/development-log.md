@@ -1,5 +1,56 @@
 # Development Log
 
+## 2026-06-11 — Pre-release /simplify 清理（Milestone 8.7）
+
+### 做了什麼
+
+Cut release 前對 `main...dev` 全部累積變更（148 檔、~20k 行）跑了一輪 4 角度
+（reuse / simplification / efficiency / altitude）的品質審查，去重後共 ~20 項發現，
+修掉其中 14 項行為不變的 cleanup。重點：
+
+- **Fault 能力宣告下沉到 adapter**：`ProtocolAdapter.supported_fault_types` class 屬性
+  （MQTT 排除 `exception`），`PUT /devices/{id}/fault` 改為泛用能力檢查。選 class-level
+  而非 instance-level 是因為 API 測試不跑 lifespan（adapter 不會註冊），capability 必須
+  不依賴 running instance 也查得到——`app/protocols/__init__.py` 提供
+  `get_supported_fault_types()` 查詢（lazy import 避免拖入整套 protocol stack）。
+- **啟動/恢復共用註冊流程**：`main.py` 的 resume 區塊原本手抄 `start_device` 的
+  adapter 註冊邏輯，且已經 drift（SNMP name map 的 bug 當初就是這樣產生的）。
+  抽出 `device_service.register_device_runtime()` 供兩邊呼叫。同時把 SNMP 的
+  OID→name 對照改為 `_do_add_device` 直接從 `RegisterInfo.name` 寫入，整個刪除
+  `set_register_names` 兩段式註冊（含兩個 call site 的 type: ignore）。
+- **前端 anomaly 中繼資料統一**：AnomalyTab 與 StepPopover 各有一份參數欄位表且
+  預設值互相矛盾（spike 2.0/0.1 vs 1.5/0.8——後者其實宣告了從未套用）；timeline
+  與 scenario badge 各有一份顏色表且顏色不同。統一到 `constants/anomaly.ts`。
+- **Monitor 效能**：registerHistory 只剩 sparkline 一個消費者（Detail panel 已在
+  Monitor 改版時刪除），改為只累積 running 設備的 primary register；DeviceDetail
+  對 1 Hz broadcast 加 bail-out，值沒變不重繪。
+- 其餘：OPC UA fault callback 改用共用 clamp helpers、`get_device_protocol` 單一
+  JOIN query、BACnet read handler 合併、engine 死代碼、`/monitor?device=` 補消費端、
+  Monitor 色票改 CSS 變數、download/WS URL 共用、測試 free-port/clean_faults 整併。
+
+### 審查後決定不修（留待確認或 follow-up）
+
+1. **OPC UA delay fault 會阻塞整個 event loop**（efficiency 審查發現）：asyncua 的
+   value callback 是同步的，`time.sleep` 最長 10 秒會卡住所有協議 + REST + WS。
+   這是當初 OPC UA fault sim 的已知 trade-off（註解寫明 mirrors Modbus），要根治
+   得攔 asyncua 的 async read service 層，屬設計變更——**需要使用者確認方向**。
+2. **Scenario step 缺參數驗證**（reuse 審查發現 `ScenarioStepCreate` 沒套
+   `validate_params`）：不能直接補，因為內建 seed scenario 用了 `max_drift: -50`
+   （負值），會被 `max_drift > 0` 規則擋下。這是 schedule 與 scenario 兩邊語義
+   分歧（負向 drift 該不該允許？），**需要使用者裁決後一起修**。
+3. **monitor_service 每秒全量撈 DB**（含 stopped 設備）：正確解法是記憶體快取 +
+   device CRUD 失效，屬設計變更，follow-up。
+4. **fault 決策樹在 5 個 adapter 各寫一份**：可抽 `resolve_fault_action()` 共用
+   resolver，medium 重構，release 前不動。
+5. monitor payload 的 MQTT 特例欄位改泛用 `adapter_status`、monitorStore 單例 WS
+   連線：都會動到 payload/架構，follow-up。
+
+### 驗證
+
+- 後端 full suite **380 passed**（無 fail / 無 skip，193s；受影響的 13 個檔案先行驗證 184 passed）
+- `ruff check` 乾淨；前端 `tsc -b && vite build` 通過；`eslint` 維持原有 14 個
+  pre-existing 問題（均在未觸碰檔案，屬 issue #21–23 清理範圍）
+
 ## 2026-06-11 — SNMP / MQTT / BACnet 通訊層故障模擬
 
 ### 做了什麼

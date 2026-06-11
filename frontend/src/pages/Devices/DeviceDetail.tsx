@@ -5,14 +5,13 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { MONITOR_WS_URL } from "../../services/ws";
 import type { DeviceSummary, RegisterValue } from "../../types";
 import type { MonitorUpdate, RegisterData } from "../../types/monitor";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { EditDeviceModal } from "./EditDeviceModal";
 import { MqttPublishConfig } from "./MqttPublishConfig";
 import { ScenarioCard } from "./ScenarioCard";
-
-const WS_URL = `ws://${window.location.hostname}:8000/ws/monitor`;
 
 const STATUS_CONFIG: Record<string, { status: "success" | "default" | "error"; text: string }> = {
   running: { status: "success", text: "Running" },
@@ -62,13 +61,21 @@ export default function DeviceDetail() {
       const update = data as MonitorUpdate;
       if (update.type === "monitor_update" && id) {
         const device = update.devices.find((d) => d.device_id === id);
-        setLiveRegisters(device?.registers ?? []);
+        // Bail out when values are unchanged so the 1 Hz broadcast doesn't
+        // re-render the whole page on every tick.
+        setLiveRegisters((prev) => {
+          const next = device?.registers ?? [];
+          const unchanged =
+            prev.length === next.length &&
+            prev.every((r, i) => r.name === next[i].name && r.value === next[i].value);
+          return unchanged ? prev : next;
+        });
       }
     },
     [id],
   );
 
-  const { connected } = useWebSocket({ url: WS_URL, onMessage });
+  const { connected } = useWebSocket({ url: MONITOR_WS_URL, onMessage });
 
   const registersWithLiveValues = useMemo(() => {
     if (!currentDevice?.registers) return [];

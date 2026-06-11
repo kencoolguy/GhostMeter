@@ -237,6 +237,7 @@ class OpcUaAdapter(ProtocolAdapter):
         (single source of truth, same model as Modbus trace_pdu).
         """
         from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import get_delay_seconds, get_failure_rate
 
         def cb(nodeid, attr):  # noqa: ANN001 — asyncua calls cb(nodeid, attr)
             fault = fault_simulator.get_fault(device_id)
@@ -248,13 +249,10 @@ class OpcUaAdapter(ProtocolAdapter):
             if ftype == "timeout":
                 return self._bad_datavalue(ua.StatusCodes.BadTimeout)
             if ftype == "delay":
-                # Clamp defensively to [0, 10s]; the REST schema validates this too.
-                delay_ms = min(max(int(fault.params.get("delay_ms", 500)), 0), 10000)
-                time.sleep(delay_ms / 1000.0)  # bounded blocking (mirrors Modbus)
+                time.sleep(get_delay_seconds(fault.params))  # bounded blocking (mirrors Modbus)
                 return self._good_datavalue(key)
             if ftype == "intermittent":
-                rate = min(max(float(fault.params.get("failure_rate", 0.5)), 0.0), 1.0)
-                if random.random() < rate:
+                if random.random() < get_failure_rate(fault.params):
                     return self._bad_datavalue(ua.StatusCodes.BadCommunicationError)
                 return self._good_datavalue(key)
             return self._good_datavalue(key)  # unknown type → behave normally

@@ -2,12 +2,13 @@
 
 import asyncio
 import contextlib
-import socket
 import time
 import uuid
 
 import pytest
 from bacpypes3.settings import settings as bp3_settings
+
+from tests.netutil import free_udp_port
 
 NETWORK = 100
 
@@ -23,29 +24,13 @@ def _route_aware():
     bp3_settings.route_aware = previous
 
 
-@pytest.fixture(autouse=True)
-def _clean_faults():
-    """Fault state is process-global; never leak it between tests."""
-    from app.simulation import fault_simulator
-
-    fault_simulator.clear_all()
-    yield
-    fault_simulator.clear_all()
-
-
-def _free_udp_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @contextlib.asynccontextmanager
 async def _client_app():
     from bacpypes3.app import Application
     from bacpypes3.local.device import DeviceObject
     from bacpypes3.local.networkport import NetworkPortObject
 
-    port = _free_udp_port()
+    port = free_udp_port()
     app = Application.from_object_list([
         DeviceObject(
             objectIdentifier=("device", 4194302),
@@ -76,7 +61,7 @@ async def _running_adapter():
 
     adapter = BacnetAdapter(
         address="127.0.0.1/32",
-        port=_free_udp_port(),
+        port=free_udp_port(),
         device_instance_base=100000,
         network=NETWORK,
     )

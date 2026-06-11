@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 class MqttAdapter(ProtocolAdapter):
     """MQTT publish adapter. Reads values from SimulationEngine at publish time."""
 
+    # MQTT is publish-only — there is no request/response channel to return a
+    # protocol error on, so the "exception" fault type cannot be simulated.
+    supported_fault_types = frozenset({"delay", "timeout", "intermittent"})
+
     def __init__(self) -> None:
         super().__init__()
         self._client: aiomqtt.Client | None = None
@@ -225,7 +229,7 @@ class MqttAdapter(ProtocolAdapter):
                         continue
                     if fault.fault_type == "delay":
                         await asyncio.sleep(get_delay_seconds(fault.params))
-                    # "exception" is rejected at the REST layer for MQTT devices
+                    # "exception" is excluded via supported_fault_types (422 at REST)
 
                 if not self._connected or not self._client:
                     stats = self._device_stats.get(device_id)

@@ -1,19 +1,13 @@
 """Tests for the OPC UA server adapter (real asyncua client round-trips)."""
 
 import asyncio
-import socket
 import uuid
 
 import pytest
 
+from tests.netutil import free_tcp_port
+
 pytestmark = pytest.mark.asyncio
-
-
-def _free_port() -> int:
-    """Return an unused TCP port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 class _SubHandler:
@@ -58,7 +52,7 @@ class TestOpcUaLifecycle:
     async def test_initial_status(self):
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        adapter = OpcUaAdapter(host="127.0.0.1", port=_free_port())
+        adapter = OpcUaAdapter(host="127.0.0.1", port=free_tcp_port())
         status = adapter.get_status()
         assert status["running"] is False
         assert status["device_count"] == 0
@@ -69,7 +63,7 @@ class TestOpcUaLifecycle:
 
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         try:
@@ -95,7 +89,7 @@ class TestOpcUaAddDevice:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         device_id = uuid.uuid4()
@@ -130,7 +124,7 @@ class TestOpcUaAddDevice:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         device_id = uuid.uuid4()
@@ -156,7 +150,7 @@ class TestOpcUaAddDevice:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         dev_a = uuid.uuid4()
@@ -200,7 +194,7 @@ class TestOpcUaUpdateRegister:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         device_id = uuid.uuid4()
@@ -227,7 +221,7 @@ class TestOpcUaUpdateRegister:
         """Writing to a non-existent (device, addr, fc) does not raise."""
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         try:
@@ -249,7 +243,7 @@ class TestOpcUaSubscription:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         device_id = uuid.uuid4()
@@ -294,7 +288,7 @@ class TestOpcUaRemoveDevice:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         device_id = uuid.uuid4()
@@ -349,7 +343,7 @@ class TestOpcUaOutOfRangeClamping:
         from app.protocols.base import RegisterInfo
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         await adapter.start()
         device_id = uuid.uuid4()
@@ -383,7 +377,7 @@ class TestOpcUaDeviceWiring:
         from app.protocols import protocol_manager
         from app.protocols.opcua_agent import OpcUaAdapter
 
-        port = _free_port()
+        port = free_tcp_port()
         adapter = OpcUaAdapter(host="127.0.0.1", port=port)
         protocol_manager.register_adapter("opcua", adapter)
         await protocol_manager.start_all()  # only opcua is registered in test process

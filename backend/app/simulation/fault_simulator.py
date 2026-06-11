@@ -46,7 +46,7 @@ class FaultSimulator:
         logger.info("All faults cleared")
 
 
-MAX_DELAY_MS = 10_000  # matches the OPC UA server-side delay cap
+MAX_DELAY_MS = 10_000  # single delay cap shared by all protocol adapters
 
 
 def get_delay_seconds(params: dict[str, Any]) -> float:

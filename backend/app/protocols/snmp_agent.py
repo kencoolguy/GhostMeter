@@ -275,7 +275,9 @@ class SnmpAdapter(ProtocolAdapter):
         device_oid_list: list[str] = []
         for reg in oids_to_add:
             oid = reg.oid  # already checked non-None above
-            self._oid_map[oid] = (device_id, oid)  # type: ignore[arg-type]
+            # resolve_oid looks values up by register name; fall back to the
+            # OID string for registers without a name.
+            self._oid_map[oid] = (device_id, reg.name or oid)  # type: ignore[arg-type]
             self._oid_data_types[oid] = reg.data_type  # type: ignore[arg-type]
             device_oid_list.append(oid)  # type: ignore[arg-type]
 
@@ -320,16 +322,6 @@ class SnmpAdapter(ProtocolAdapter):
         }
 
     # --- SNMP-specific methods ---
-
-    def set_register_names(
-        self,
-        device_id: UUID,
-        oid_to_name: dict[str, str],
-    ) -> None:
-        """Set the OID→register_name mapping for a device."""
-        for oid, name in oid_to_name.items():
-            if oid in self._oid_map:
-                self._oid_map[oid] = (device_id, name)
 
     def resolve_pdu_device(self, pdu) -> UUID | None:
         """Map a request PDU to a device via its first resolvable varbind OID.

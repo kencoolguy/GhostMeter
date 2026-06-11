@@ -1,16 +1,10 @@
 import { CloseOutlined } from "@ant-design/icons";
 import { Button, Popover, Tooltip } from "antd";
 import { useRef, useState } from "react";
+import { ANOMALY_COLORS, ANOMALY_FALLBACK_COLOR } from "../../constants/anomaly";
+import type { AnomalyType } from "../../types";
 import type { ScenarioStepCreate } from "../../types/scenario";
 import { StepPopover } from "./StepPopover";
-
-const ANOMALY_COLORS: Record<string, string> = {
-  spike: "#fa8c16",
-  drift: "#1890ff",
-  flatline: "#8c8c8c",
-  out_of_range: "#f5222d",
-  data_loss: "#722ed1",
-};
 
 interface TimelineBlockProps {
   step: ScenarioStepCreate;
@@ -31,7 +25,7 @@ export function TimelineBlock({ step, index, pxPerSecond, onUpdate, onDelete, re
 
   const left = step.trigger_at_seconds * pxPerSecond;
   const width = step.duration_seconds * pxPerSecond;
-  const color = ANOMALY_COLORS[step.anomaly_type] ?? "#8c8c8c";
+  const color = ANOMALY_COLORS[step.anomaly_type as AnomalyType] ?? ANOMALY_FALLBACK_COLOR;
 
   const handleMouseDown = (e: React.MouseEvent, type: "move" | "resize-right") => {
     if (readOnly) return;

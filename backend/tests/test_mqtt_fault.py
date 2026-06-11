@@ -10,15 +10,6 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture(autouse=True)
-def _clean_faults():
-    from app.simulation import fault_simulator
-
-    fault_simulator.clear_all()
-    yield
-    fault_simulator.clear_all()
-
-
 class _FakeMqttClient:
     def __init__(self) -> None:
         self.published: list[tuple[str, str, float]] = []

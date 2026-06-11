@@ -846,7 +846,9 @@ Set (or replace) the active communication fault on a device.
 
 **Error cases:**
 - `404` — device not found (`DEVICE_NOT_FOUND`)
-- `422` — unknown `fault_type`
+- `422` — unknown `fault_type`, or a fault type the device's protocol does not
+  support (`VALIDATION_ERROR`; each adapter declares its `supported_fault_types` —
+  currently only MQTT excludes `exception`)
 
 **Protocol-layer behavior:**
 
