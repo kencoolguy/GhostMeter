@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-11
+
+### Fixed
+- **Builtin scenarios never seeded in any environment**: the scenario seed JSONs referenced template names that don't exist in the template seeds (`Solar Inverter (Fronius Symo)` / `Three-Phase Power Meter (SDM630)` vs. the actual `SunSpec Solar Inverter` / `SDM630 Three-Phase Meter`), and `seed_builtin_scenarios` only logs a WARNING on a miss — so every deployment shipped with zero builtin scenarios. Seed names fixed; two guard tests added (static cross-reference of scenario seeds against template seeds, and an end-to-end seed test asserting the builtin scenarios actually land).
+- `.env.example` no longer pins `APP_VERSION=0.1.0` — the value overrode the application's real version via pydantic-settings, making deployed instances report a stale version at `/health`. The version is a code constant, not deployment config.
+
 ## [0.4.1] - 2026-06-11
 
 ### Fixed

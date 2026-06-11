@@ -1,5 +1,5 @@
 {
-  "template_name": "Three-Phase Power Meter (SDM630)",
+  "template_name": "SDM630 Three-Phase Meter",
   "name": "Voltage Instability",
   "description": "Simulates unstable voltage across three phases with spikes and drift",
   "steps": [

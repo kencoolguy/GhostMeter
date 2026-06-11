@@ -2,7 +2,7 @@
 
 > Multi-protocol device simulator for energy management systems.
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue)]()
+[![Version](https://img.shields.io/badge/version-0.4.2-blue)]()
 [![Python](https://img.shields.io/badge/python-3.12+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
