@@ -1409,6 +1409,11 @@ Create a new scenario with steps.
 **Error cases:**
 - `404` -- template not found
 - `409` -- duplicate name for this template
+- `422` -- invalid step anomaly params: steps enforce the same rules as
+  real-time injection and schedules (required params per anomaly type;
+  spike `multiplier > 0`, `probability` in [0,1]; drift `max_drift > 0` —
+  `max_drift` is a magnitude, drift direction comes from
+  `drift_per_second`'s sign). Applies to create, update, and import.
 
 ---
 

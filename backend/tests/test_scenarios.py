@@ -155,7 +155,7 @@ class TestScenarioCRUD:
                 {
                     "register_name": "nonexistent_register",
                     "anomaly_type": "spike",
-                    "anomaly_params": {},
+                    "anomaly_params": {"multiplier": 2.0, "probability": 0.5},
                     "trigger_at_seconds": 0,
                     "duration_seconds": 10,
                 },
@@ -173,14 +173,14 @@ class TestScenarioCRUD:
                 {
                     "register_name": "voltage",
                     "anomaly_type": "spike",
-                    "anomaly_params": {},
+                    "anomaly_params": {"multiplier": 2.0, "probability": 0.5},
                     "trigger_at_seconds": 0,
                     "duration_seconds": 20,
                 },
                 {
                     "register_name": "voltage",
                     "anomaly_type": "drift",
-                    "anomaly_params": {},
+                    "anomaly_params": {"drift_per_second": 1.0, "max_drift": 10.0},
                     "trigger_at_seconds": 10,
                     "duration_seconds": 15,
                 },
@@ -188,6 +188,47 @@ class TestScenarioCRUD:
         }
         resp = await client.post("/api/v1/scenarios", json=payload)
         assert resp.status_code == 422
+
+    async def test_step_anomaly_params_validated(self, client: AsyncClient) -> None:
+        """Scenario steps enforce the same anomaly-param rules as real-time
+        injection and schedules (shared AnomalyParamsBase)."""
+        template = await create_template(client)
+
+        def payload_with_step(step: dict) -> dict:
+            return {
+                "template_id": template["id"],
+                "name": "Param Validation Scenario",
+                "steps": [{
+                    "register_name": "voltage",
+                    "trigger_at_seconds": 0,
+                    "duration_seconds": 10,
+                    **step,
+                }],
+            }
+
+        # Negative max_drift rejected: max_drift is a magnitude (direction
+        # comes from drift_per_second's sign); a negative value made the
+        # injector clamp flip the drift sign at the cap.
+        resp = await client.post("/api/v1/scenarios", json=payload_with_step({
+            "anomaly_type": "drift",
+            "anomaly_params": {"drift_per_second": -5, "max_drift": -50},
+        }))
+        assert resp.status_code == 422
+
+        # Spike without its required params rejected
+        resp = await client.post("/api/v1/scenarios", json=payload_with_step({
+            "anomaly_type": "spike",
+            "anomaly_params": {},
+        }))
+        assert resp.status_code == 422
+
+        # Downward sag expressed correctly (negative rate, positive
+        # magnitude) is valid
+        resp = await client.post("/api/v1/scenarios", json=payload_with_step({
+            "anomaly_type": "drift",
+            "anomaly_params": {"drift_per_second": -5, "max_drift": 50},
+        }))
+        assert resp.status_code == 201
 
     async def test_export_scenario(self, client: AsyncClient) -> None:
         template = await create_template(client)
