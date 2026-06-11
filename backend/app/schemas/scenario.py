@@ -6,25 +6,22 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.schemas.anomaly import VALID_ANOMALY_TYPES
+from app.schemas.anomaly import AnomalyParamsBase
 
 
-class ScenarioStepCreate(BaseModel):
-    """Schema for creating a single scenario step."""
+class ScenarioStepCreate(AnomalyParamsBase):
+    """Schema for creating a single scenario step.
+
+    Inherits anomaly_type/anomaly_params validation from AnomalyParamsBase so
+    scenario steps enforce the same param rules as real-time injection and
+    schedules (a step with bad params would otherwise only fail at runtime,
+    mid-scenario).
+    """
 
     register_name: str
-    anomaly_type: str
-    anomaly_params: dict[str, Any] = {}
     trigger_at_seconds: int
     duration_seconds: int
     sort_order: int = 0
-
-    @field_validator("anomaly_type")
-    @classmethod
-    def validate_anomaly_type(cls, v: str) -> str:
-        if v not in VALID_ANOMALY_TYPES:
-            raise ValueError(f"anomaly_type must be one of {VALID_ANOMALY_TYPES}")
-        return v
 
     @field_validator("trigger_at_seconds")
     @classmethod

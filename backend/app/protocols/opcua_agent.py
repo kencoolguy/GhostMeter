@@ -8,13 +8,14 @@ notifications to clients automatically when a node value changes.
 Security: SecurityPolicy None + Anonymous (MVP).
 """
 
+import asyncio
 import logging
 import math
 import random
-import time
 from uuid import UUID
 
 from asyncua import Server, ua
+from asyncua.common.callback import CallbackType
 
 from app.protocols.base import ProtocolAdapter, RegisterInfo
 
@@ -86,6 +87,7 @@ class OpcUaAdapter(ProtocolAdapter):
         self._running = False
         self._device_objects: dict[UUID, object] = {}          # device_id → Object node
         self._nodes: dict[tuple[UUID, int, int], object] = {}  # (dev, addr, fc) → node
+        self._node_device: dict[ua.NodeId, UUID] = {}          # variable NodeId → device_id
         self._device_meta: dict[UUID, str] = {}                # device_id → display name
         self._last_values: dict[tuple[UUID, int, int], tuple[float | int, ua.VariantType]] = {}
         self._faulted: set[UUID] = set()  # devices with fault callbacks attached
@@ -103,6 +105,12 @@ class OpcUaAdapter(ProtocolAdapter):
                 self._ns_idx, "GhostMeter"
             )
             await self._server.start()
+            # Delay faults sleep in this async PreRead hook (suspends only the
+            # requesting session) instead of blocking the whole event loop in
+            # the synchronous value callback.
+            self._server.subscribe_server_callback(
+                CallbackType.PreRead, self._pre_read_fault_delay,
+            )
             self._running = True
             logger.info("OPC UA server started on %s", self._endpoint)
         except Exception:
@@ -120,6 +128,7 @@ class OpcUaAdapter(ProtocolAdapter):
         self._folder = None
         self._device_objects.clear()
         self._nodes.clear()
+        self._node_device.clear()
         self._last_values.clear()
         self._faulted.clear()
         self._device_meta.clear()
@@ -163,6 +172,7 @@ class OpcUaAdapter(ProtocolAdapter):
                 except Exception:
                     logger.debug("Could not set Description for %s", node_name)
             self._nodes[(device_id, reg.address, reg.function_code)] = var
+            self._node_device[var.nodeid] = device_id
             self._last_values[(device_id, reg.address, reg.function_code)] = (
                 caster(0), vtype,
             )
@@ -185,6 +195,9 @@ class OpcUaAdapter(ProtocolAdapter):
                 logger.debug("Error deleting OPC UA nodes for %s", device_id, exc_info=True)
         self._nodes = {
             key: node for key, node in self._nodes.items() if key[0] != device_id
+        }
+        self._node_device = {
+            nid: did for nid, did in self._node_device.items() if did != device_id
         }
         self._last_values = {
             k: v for k, v in self._last_values.items() if k[0] != device_id
@@ -237,7 +250,7 @@ class OpcUaAdapter(ProtocolAdapter):
         (single source of truth, same model as Modbus trace_pdu).
         """
         from app.simulation import fault_simulator
-        from app.simulation.fault_simulator import get_delay_seconds, get_failure_rate
+        from app.simulation.fault_simulator import get_failure_rate
 
         def cb(nodeid, attr):  # noqa: ANN001 — asyncua calls cb(nodeid, attr)
             fault = fault_simulator.get_fault(device_id)
@@ -249,7 +262,9 @@ class OpcUaAdapter(ProtocolAdapter):
             if ftype == "timeout":
                 return self._bad_datavalue(ua.StatusCodes.BadTimeout)
             if ftype == "delay":
-                time.sleep(get_delay_seconds(fault.params))  # bounded blocking (mirrors Modbus)
+                # The sleep happens in _pre_read_fault_delay (async, per
+                # session); this callback must stay non-blocking and only
+                # serves the cached value.
                 return self._good_datavalue(key)
             if ftype == "intermittent":
                 if random.random() < get_failure_rate(fault.params):
@@ -258,6 +273,31 @@ class OpcUaAdapter(ProtocolAdapter):
             return self._good_datavalue(key)  # unknown type → behave normally
 
         return cb
+
+    async def _pre_read_fault_delay(self, event, dispatcher) -> None:  # noqa: ANN001
+        """PreRead server callback: apply delay faults without blocking.
+
+        asyncua awaits this hook inside InternalSession.read, so the sleep
+        suspends only the requesting session's pipeline — the event loop
+        (other protocol servers, REST, WebSocket, simulation ticks) keeps
+        running. The synchronous value callback cannot do this: a time.sleep
+        there stalls the entire process.
+        """
+        if not self._faulted:
+            return
+        from app.simulation import fault_simulator
+        from app.simulation.fault_simulator import get_delay_seconds
+
+        delay = 0.0
+        for read_value in getattr(event.request_params, "NodesToRead", None) or []:
+            device_id = self._node_device.get(read_value.NodeId)
+            if device_id is None or device_id not in self._faulted:
+                continue
+            fault = fault_simulator.get_fault(device_id)
+            if fault is not None and fault.fault_type == "delay":
+                delay = max(delay, get_delay_seconds(fault.params))
+        if delay > 0:
+            await asyncio.sleep(delay)
 
     async def apply_fault(self, device_id: UUID) -> None:
         """Attach a value callback to each of the device's nodes (idempotent)."""
