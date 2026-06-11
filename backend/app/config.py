@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "GhostMeter"
-    APP_VERSION: str = "0.4.1"
+    APP_VERSION: str = "0.4.2"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
 
