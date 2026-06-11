@@ -1,5 +1,33 @@
 # Development Log
 
+## 2026-06-11 — 內建 scenario 從未 seed 成功 + .env 版本覆寫（v0.4.1 部署驗證發現）
+
+### 根因
+
+部署 v0.4.1 到 Linode 後驗證時發現兩個問題：
+
+1. **線上 `scenarios` 0 筆**：scenario seed JSON 的 `template_name` 寫的是
+   `Solar Inverter (Fronius Symo)` / `Three-Phase Power Meter (SDM630)`——
+   這兩個名字從未存在於 template seeds（實際是 `SunSpec Solar Inverter` /
+   `SDM630 Three-Phase Meter`）。`seed_builtin_scenarios` 解析不到 template
+   只發 WARNING，所以**任何環境都從未種進過內建 scenario**（本地 docker DB
+   同樣 0 筆，先前誤判為 image 太舊）。也因此 a7c3e91f4b20 data migration
+   在真實環境其實是 no-op——帶 -50 的壞 row 只存在於測試情境。
+2. **`/health` 回報 0.1.0**：`.env.example` 含 `APP_VERSION=0.1.0`，Linode
+   的 `.env` 由它複製而來，pydantic-settings 的 env 覆寫了程式碼裡的版本。
+
+### 修法
+
+- 三個 scenario seed 的 `template_name` 改為現行 template 名稱（steps 引用的
+  register 名稱已逐一比對，兩個 template 全數存在，改名即足夠）。
+- 守門測試 ×2：(a) 靜態交叉驗證——scenario seed 的 template_name 必須存在於
+  template seeds、每個 step 的 register_name 必須存在於該 template；
+  (b) e2e——seed templates + scenarios 後，API 必須回出 3 個內建 scenario。
+  **紅燈驗證**：對舊 seed 檔兩個測試都 FAILED，修正後通過。
+- `.env.example` 移除 `APP_VERSION`（版本是程式常數，不是部署設定）；Linode
+  的 `.env` 同步刪除該行。
+
+
 ## 2026-06-11 — OPC UA delay fault 改非阻塞（async PreRead hook）
 
 ### 根因

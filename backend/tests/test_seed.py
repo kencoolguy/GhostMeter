@@ -30,6 +30,23 @@ class TestSeedLoader:
         builtin = [t for t in templates if t["is_builtin"]]
         assert len(builtin) == 6
 
+    async def test_seed_creates_builtin_scenarios(self, client: AsyncClient) -> None:
+        """End-to-end: scenario seeds actually land in the DB.
+
+        The loader only WARNs when a scenario seed's template_name doesn't
+        resolve, so without this test a template rename silently ships with
+        zero builtin scenarios (as happened in production)."""
+        from app.seed.loader import seed_builtin_scenarios
+
+        await seed_builtin_templates()
+        await seed_builtin_scenarios()
+
+        response = await client.get("/api/v1/scenarios")
+        scenarios = response.json()["data"]
+        builtin = [s for s in scenarios if s["is_builtin"]]
+        names = {s["name"] for s in builtin}
+        assert names == {"Fault Disconnect", "Power Outage", "Voltage Instability"}
+
     async def test_builtin_template_cannot_be_deleted(
         self, client: AsyncClient,
     ) -> None:
@@ -113,3 +130,34 @@ class TestScenarioSeedFiles:
             raw = json.loads(seed_file.read_text(encoding="utf-8"))
             for step in raw["steps"]:
                 ScenarioStepCreate(**step)
+
+    def test_scenario_seeds_reference_existing_template_seeds(self) -> None:
+        """Scenario seeds must point at real template-seed names and registers.
+
+        seed_builtin_scenarios resolves templates by name and only logs a
+        WARNING on a miss, so a renamed template silently leaves builtin
+        scenarios unseeded everywhere (this happened: the scenario seeds
+        shipped with template names that never existed in the template
+        seeds, and no environment ever got the builtin scenarios)."""
+        import json
+
+        from app.seed.loader import SCENARIOS_DIR, SEED_DIR
+
+        templates = {}
+        for tf in SEED_DIR.glob("*.json"):
+            raw = json.loads(tf.read_text(encoding="utf-8"))
+            templates[raw["name"]] = {r["name"] for r in raw["registers"]}
+
+        for sf in sorted(SCENARIOS_DIR.glob("*.json")):
+            raw = json.loads(sf.read_text(encoding="utf-8"))
+            template_name = raw["template_name"]
+            assert template_name in templates, (
+                f"{sf.name}: template '{template_name}' not found in template seeds "
+                f"(have: {sorted(templates)})"
+            )
+            registers = templates[template_name]
+            for step in raw["steps"]:
+                assert step["register_name"] in registers, (
+                    f"{sf.name}: register '{step['register_name']}' not in "
+                    f"template '{template_name}'"
+                )

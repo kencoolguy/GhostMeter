@@ -1,5 +1,5 @@
 {
-  "template_name": "Three-Phase Power Meter (SDM630)",
+  "template_name": "SDM630 Three-Phase Meter",
   "name": "Power Outage",
   "description": "Simulates complete power loss: voltages drop to zero, followed by currents and power",
   "steps": [
