@@ -97,6 +97,24 @@ class TestInjectAndApply:
         result = injector.apply(device_id, "voltage", 230.0, 20.0)
         assert result == 235.0
 
+    def test_negative_drift_caps_at_negative_magnitude(
+        self, injector: AnomalyInjector, device_id: uuid.UUID
+    ) -> None:
+        """max_drift is a magnitude: with a negative drift_per_second the
+        drift saturates at -max_drift and must never flip sign.
+
+        Regression context: the builtin Fault Disconnect seed shipped
+        max_drift=-50, which made the clamp (`-max_drift`) flip a -50 sag
+        into +50 above baseline once the cap was reached."""
+        injector.inject(
+            device_id, "voltage", "drift",
+            {"drift_per_second": -5.0, "max_drift": 50.0},
+        )
+        assert injector.apply(device_id, "voltage", 230.0, 0.0) == 230.0
+        assert injector.apply(device_id, "voltage", 230.0, 5.0) == 205.0
+        # Far past the cap (raw drift would be -150): stays at -50, no flip.
+        assert injector.apply(device_id, "voltage", 230.0, 30.0) == 180.0
+
 
 class TestRemoveAndClear:
     def test_remove_specific_register(

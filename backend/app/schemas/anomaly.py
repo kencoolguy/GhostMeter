@@ -17,10 +17,15 @@ _REQUIRED_PARAMS: dict[str, list[str]] = {
 }
 
 
-class AnomalyInjectRequest(BaseModel):
-    """Schema for real-time anomaly injection (in-memory)."""
+class AnomalyParamsBase(BaseModel):
+    """Shared anomaly_type + anomaly_params validation.
 
-    register_name: str
+    Inherited by real-time injection, schedules, and scenario steps so all
+    three entry points enforce identical param rules. Note `max_drift` is a
+    magnitude — the drift direction comes from `drift_per_second`'s sign
+    (see anomaly_injector._apply_anomaly), hence the > 0 rule.
+    """
+
     anomaly_type: str
     anomaly_params: dict[str, Any] = {}
 
@@ -32,7 +37,7 @@ class AnomalyInjectRequest(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_params(self) -> "AnomalyInjectRequest":
+    def validate_params(self) -> "AnomalyParamsBase":
         required = _REQUIRED_PARAMS.get(self.anomaly_type, [])
         for param in required:
             if param not in self.anomaly_params:
@@ -51,6 +56,12 @@ class AnomalyInjectRequest(BaseModel):
         return self
 
 
+class AnomalyInjectRequest(AnomalyParamsBase):
+    """Schema for real-time anomaly injection (in-memory)."""
+
+    register_name: str
+
+
 class AnomalyActiveResponse(BaseModel):
     """Response for an active (real-time) anomaly."""
 
@@ -59,22 +70,13 @@ class AnomalyActiveResponse(BaseModel):
     anomaly_params: dict[str, Any]
 
 
-class AnomalyScheduleCreate(BaseModel):
+class AnomalyScheduleCreate(AnomalyParamsBase):
     """Schema for a single anomaly schedule entry."""
 
     register_name: str
-    anomaly_type: str
-    anomaly_params: dict[str, Any] = {}
     trigger_after_seconds: int
     duration_seconds: int
     is_enabled: bool = True
-
-    @field_validator("anomaly_type")
-    @classmethod
-    def validate_anomaly_type(cls, v: str) -> str:
-        if v not in VALID_ANOMALY_TYPES:
-            raise ValueError(f"anomaly_type must be one of {VALID_ANOMALY_TYPES}")
-        return v
 
     @field_validator("trigger_after_seconds")
     @classmethod
@@ -89,25 +91,6 @@ class AnomalyScheduleCreate(BaseModel):
         if v <= 0:
             raise ValueError("duration_seconds must be > 0")
         return v
-
-    @model_validator(mode="after")
-    def validate_params(self) -> "AnomalyScheduleCreate":
-        required = _REQUIRED_PARAMS.get(self.anomaly_type, [])
-        for param in required:
-            if param not in self.anomaly_params:
-                raise ValueError(
-                    f"anomaly_type '{self.anomaly_type}' requires param '{param}'"
-                )
-        if self.anomaly_type == "spike":
-            if self.anomaly_params["multiplier"] <= 0:
-                raise ValueError("multiplier must be > 0")
-            prob = self.anomaly_params["probability"]
-            if not 0 <= prob <= 1:
-                raise ValueError("probability must be between 0 and 1")
-        elif self.anomaly_type == "drift":
-            if self.anomaly_params["max_drift"] <= 0:
-                raise ValueError("max_drift must be > 0")
-        return self
 
 
 class AnomalyScheduleBatchSet(BaseModel):

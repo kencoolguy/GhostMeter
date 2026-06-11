@@ -1,5 +1,42 @@
 # Development Log
 
+## 2026-06-11 — Scenario step 參數驗證 + 負值 max_drift seed 修正
+
+### 根因
+
+/simplify 審查時發現 `ScenarioStepCreate` 缺少 anomaly 參數驗證（injection 與
+schedule 都有），追查後發現這不只是驗證缺口，而是已造成一個**真 bug**：
+
+`anomaly_injector._apply_anomaly` 的 drift clamp 是
+`if abs(drift) > abs(max_drift): drift = max_drift if drift_rate >= 0 else -max_drift`
+——`max_drift` 的設計語義是**幅度**（方向由 `drift_per_second` 正負號決定）。
+內建 seed「Fault Disconnect」卻寫了 `max_drift: -50`：dc_voltage 以 -5/s 下垂
+10 秒到 -50 後，clamp 取 `-max_drift = +50`，**瞬間反向跳 100V**，剩餘 18 秒
+掛在基準值上方。schedule 那邊的 `max_drift > 0` 驗證規則一直是對的，scenario
+只是漏了驗證才讓壞參數溜進 seed。
+
+### 修法（Ken 裁決採 B：修 seed + 統一驗證）
+
+1. `schemas/anomaly.py` 抽出 `AnomalyParamsBase`（anomaly_type + validate_params），
+   `AnomalyInjectRequest` / `AnomalyScheduleCreate` / `ScenarioStepCreate` 三個
+   schema 繼承——順便消掉原本 inject/schedule 兩份逐字重複的驗證器。
+2. seed 改 `max_drift: 50`（方向已由 `drift_per_second: -5` 表達）。
+3. **Alembic data migration `a7c3e91f4b20`**：seed loader 對已存在的 builtin
+   scenario 會跳過，所以已部署環境（Linode）的壞 row 要靠 migration 修——
+   只動 builtin scenario 的 drift step（`abs()` 修正），使用者自建的 scenario
+   不碰（API 層從此會擋新的負值，但既有資料尊重原樣）。
+4. 測試：injector 負向 drift 飽和不反轉的 regression test、scenario API 參數
+   驗證 422 測試、seed 檔全數通過 `ScenarioStepCreate` 的守門測試。另修兩個
+   既有測試（它們用空 params 的 spike/drift 觸發其他 422 路徑，新驗證會搶先
+   擋下，補上有效參數讓原本的測試目標仍被覆蓋）。
+
+### 驗證
+
+- Migration 以本地假資料實測：builtin `-50 → 50`、user scenario `-30` 不動、
+  非 drift step 不動；`alembic stamp` 後重跑 upgrade 確認可重入。
+- `pytest tests/test_scenarios.py tests/test_seed.py tests/test_anomaly_injector.py
+  tests/test_anomaly_api.py` → 47 passed；ruff clean。
+
 ## 2026-06-11 — Cut release 0.4.0 準備（Milestone 8.7）
 
 ### 做了什麼

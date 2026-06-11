@@ -93,3 +93,23 @@ class TestSeedLoader:
         clone = response.json()["data"]
         assert clone["name"] == "My Custom Meter"
         assert clone["is_builtin"] is False
+
+
+class TestScenarioSeedFiles:
+    def test_scenario_seed_steps_pass_param_validation(self) -> None:
+        """Every builtin scenario seed must satisfy ScenarioStepCreate.
+
+        Bad params in a seed file would otherwise only surface as a runtime
+        seeding error (regression: Fault Disconnect shipped max_drift=-50,
+        which the injector's magnitude clamp turned into a sign flip)."""
+        import json
+
+        from app.schemas.scenario import ScenarioStepCreate
+        from app.seed.loader import SCENARIOS_DIR
+
+        seed_files = sorted(SCENARIOS_DIR.glob("*.json"))
+        assert seed_files, "no scenario seed files found"
+        for seed_file in seed_files:
+            raw = json.loads(seed_file.read_text(encoding="utf-8"))
+            for step in raw["steps"]:
+                ScenarioStepCreate(**step)
