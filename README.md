@@ -157,6 +157,15 @@ cd ~/ghostmeter && ./update.sh
 [`docs/deployment.md`](docs/deployment.md) for the full guide (Tailscale +
 Cloudflare Tunnel).
 
+Tip: define an SSH alias for the deploy host in your private `~/.ssh/config`
+(host/IP and key stay out of the repo), then updating is one command from
+anywhere:
+
+```bash
+ssh <alias>                                    # key-authed login
+ssh <alias> 'cd ~/ghostmeter && ./update.sh'   # one-shot update + redeploy
+```
+
 ## Tech Stack
 
 | Layer | Technology |
