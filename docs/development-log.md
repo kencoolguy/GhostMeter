@@ -31,6 +31,28 @@
 - `docker build` 通過；image 內 `pip list` 無 pytest/httpx/ruff；`import app.main` OK。
 - 關鍵版本 sanity:pymodbus 3.12.1（維持已知相容 pin）、fastapi 0.136.3、SQLAlchemy 2.0.50。
 
+## 2026-06-12 — 部署文件補 team member 存取章節
+
+### 背景
+
+Ken 要讓 team member 連 GhostMeter：Web UI 走 Cloudflare、協議埠（502/4840/161）
+走 Tailscale。討論釐清兩個常見誤解：
+
+1. **Cloudflare**：不是把對方 email 加成 Cloudflare 帳號成員（那是 dashboard
+   管理權限），而是加進 Zero Trust 的 **Access policy**（對方不需要 Cloudflare
+   帳號，登入走 email OTP）。
+2. **Tailscale**：協議埠只綁 Tailscale IP，對方必須走 tailnet。比較後選
+   **node sharing**（只分享 Linode 單機）而非邀請進 tailnet——最小權限、
+   不佔免費方案 6 人名額、被分享機器預設隔離不能反連。
+
+### 處置
+
+- `docs/deployment.md` 第 5 節 Access policy 步驟補「加 team member email /
+  同網域用 Emails ending in」說明
+- 新增第 6 節「協議埠給 team member（Tailscale Node Sharing）」：分享端、
+  接收端（含 Windows 安裝）、驗證與收回權限步驟
+
+純文件變更，無程式碼異動。
 
 ## 2026-06-12 — 移除 header 假 Live badge
 
