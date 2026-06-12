@@ -1,5 +1,37 @@
 # Development Log
 
+## 2026-06-12 — 後端依賴 lock + dev/prod 依賴分離（P1）
+
+### 現況盤點
+
+- 前端早已 lock（`package-lock.json` tracked、CI 與 Dockerfile 都用 `npm ci`），無需動作。
+- 後端 `requirements.txt` 全是 `>=` 浮動範圍——每次 build/CI 解析到的版本都可能不同。
+- 測試依賴（pytest 等）混在唯一一份 requirements 裡 → 進了 prod image；
+  `httpx` 確認只有測試在用（app/ 無 import）。CI 另外裸裝未釘版的 `ruff`、`pytest-cov`。
+
+### 做法
+
+採 compile 式 lock（`.in` 寫直接依賴 → 編譯出全 pin 的 `.txt`）：
+
+- `requirements.in`（14 個 runtime 直接依賴）→ `requirements.txt`（45 pinned）
+- `requirements-dev.in`（pytest/pytest-asyncio/pytest-cov/httpx/ruff，
+  `-c requirements.txt` 約束共用 transitive 與 runtime 一致）→ `requirements-dev.txt`（17 pinned）
+- 編譯器選 `uv pip compile --universal`：跨平台 lock（macOS 本機 venv 與
+  Linux CI/Docker 共用同一份，靠 environment markers），pip-tools 做不到 universal。
+  uv 只是開發機上的編譯工具——CI 與 Dockerfile 仍用純 pip 安裝 lock 檔，專案不依賴 uv。
+- Dockerfile 不變（本來就只裝 `requirements.txt`）→ 測試依賴搬走後 prod image 自動排除 pytest。
+- CI 改 `pip install -r requirements.txt -r requirements-dev.txt`。
+
+### 驗證
+
+- 乾淨 venv + 純 pip 裝兩份 lock → 完整測試 385 passed；唯一 fail 是
+  `test_health` 寫死 `version == "0.1.0"`（CI 靠 workflow env `APP_VERSION: 0.1.0`
+  蓋掉真實版本才會過）——**既有問題、與 lock 無關**（同 env 重跑即過），
+  屬 PR #54 那類 stale version pin 的殘留，另案處理。
+- `docker build` 通過；image 內 `pip list` 無 pytest/httpx/ruff；`import app.main` OK。
+- 關鍵版本 sanity:pymodbus 3.12.1（維持已知相容 pin）、fastapi 0.136.3、SQLAlchemy 2.0.50。
+
+
 ## 2026-06-12 — 移除 header 假 Live badge
 
 ### 問題
