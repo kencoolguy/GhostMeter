@@ -39,7 +39,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt ruff pytest-cov
+        run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Lint with ruff
         run: ruff check .
