@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+- Deployment guide: new "team member access" coverage — add teammate emails to the Cloudflare Access policy for Web UI/API, and share the Linode via **Tailscale node sharing** (single-machine share, no tailnet membership needed) for the protocol ports (Modbus 502 / OPC UA 4840 / SNMP 161), including Windows client setup and connectivity checks.
+
 ### Added
 - **Built-in Cloudflare Tunnel support** for deploy hosts: `docker-compose.prod.yml` gains an opt-in `cloudflared` sidecar (compose profile `tunnel`); `deploy.sh` enables it only when `CLOUDFLARE_TUNNEL_TOKEN` is set in `.env`, so tokenless deployments are unaffected. Deployment guide rewritten with the full Zero Trust procedure — **a Cloudflare Access policy is mandatory before exposing a Public Hostname** (the API has no authentication of its own).
 
