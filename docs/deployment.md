@@ -75,6 +75,8 @@ cloudflared sidecar 已內建在 `docker-compose.prod.yml`(profile `tunnel`),
 3. **設 Access policy(必做)**:Access → Applications → Add an application →
    Self-hosted → domain 填同一個 hostname → policy 設 Allow + Include →
    Emails → 你的 email。之後開網址會先看到 Cloudflare 登入頁(email OTP)。
+   要讓 team member 用 Web UI,把他們的 email 一併加進這個 policy 即可
+   (對方不需要 Cloudflare 帳號;同網域的人可改用 Emails ending in 一條涵蓋)。
 
 ### VM 端
 
@@ -91,6 +93,41 @@ docker logs ghostmeter-cloudflared-1 | tail   # 應看到 "Registered tunnel con
   proxy;v0.4.2 之後支援)
 - 無痕視窗直接打 `https://<網域>/api/v1/templates` → 應被 Access 擋下(302 到
   登入頁),拿不到 JSON
+
+## 6. 協議埠給 team member(Tailscale Node Sharing)
+
+協議埠(`502` Modbus、`4840` OPC UA、`161` SNMP)只綁在 Tailscale IP 上,
+team member 要用 EMS / 工具連設備,必須走 tailnet。用 **node sharing**
+只分享 Linode 這一台機器,不必把人加進自己的 tailnet:
+
+- 對方**只看得到這一台**,tailnet 裡其他裝置對他不存在
+- 不佔免費方案的 user 名額,分享人數不限
+- 被分享的機器預設被隔離,不能主動連回對方的網路
+
+> 如果 team member 需要連多台機器或要雙向互連,才考慮改用
+> 「邀請加入 tailnet」(免費方案上限 6 人,建議搭配 ACL group 限制權限)。
+
+### 分享端(你)
+
+1. [Admin console](https://login.tailscale.com/admin/machines) → Machines →
+   Linode 那台 → ⋯ → **Share** → Copy share link 傳給對方(30 天有效)
+2. 把機器的 Tailscale IP(`tailscale ip -4`,100.x.x.x)給對方
+
+### 接收端(team member)
+
+1. 點分享連結 → 用任何 email(Google / Microsoft / GitHub)註冊或登入
+   Tailscale → 接受分享
+2. 裝 Tailscale client 並登入**同一個帳號**
+   (Windows:<https://tailscale.com/download/windows> 或
+   `winget install tailscale.tailscale`)
+3. EMS / 工具的設備 IP 填 Linode 的 Tailscale IP,例如 Modbus 連
+   `<Tailscale IP>:502`
+
+### 驗證與管理
+
+- Windows 連線測試:`Test-NetConnection <Tailscale IP> -Port 502`
+- 連不上最常見原因:登入的帳號跟接受邀請的帳號不同
+- 收回權限:Machines → 該機器 → ⋯ → Share → 移除該 user,不影響其他人
 
 ## 相關檔案
 
