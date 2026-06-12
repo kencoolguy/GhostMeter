@@ -1,5 +1,30 @@
 # Development Log
 
+## 2026-06-12 — 移除 header 假 Live badge
+
+### 問題
+
+Ken 回報右上角 LIVE 格子超出 header 底線，並質疑它的實際功用。查證結果：
+
+1. **跑版根因**：antd `.ant-layout-header` 預設 `line-height: 64px` 被 badge
+   內的 `<span>Live</span>` 繼承，inline-flex 子元素高度由 line box 決定，
+   加上 badge 自身 `padding: 4px` 後整體約 72px，超過 64px 的 header。
+2. **更根本的問題**：這顆 badge 是純靜態裝飾（`MainLayout.tsx`），沒綁任何
+   state——WS 斷線、backend 掛掉時照樣亮綠燈，是會誤導的假指示燈。真正的
+   連線指示在 Monitor 頁標題旁（綁 WS `connected`，斷線變紅）。
+
+### 處置
+
+Ken 裁示方案 A：直接移除（而非接上 monitorStore 變成真指示燈）。理由：真
+指示燈 Monitor 頁已有，header 重複一顆資訊價值低。
+
+- `MainLayout.tsx` 移除 badge JSX
+- `global.css` 移除 `.gm-header-live`、`.gm-header-live-dot`、`@keyframes
+  gm-pulse`（grep 確認僅此 badge 使用）
+
+驗證：`npm run build` 通過；bundle 內 grep 無 `gm-header-live`/`gm-pulse` 殘留。
+
+
 ## 2026-06-11 — Cloudflare Tunnel 內建支援（opt-in sidecar）
 
 ### 做了什麼
