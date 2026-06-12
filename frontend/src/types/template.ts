@@ -35,7 +35,7 @@ export interface CreateTemplate {
   registers: Omit<RegisterDefinition, "id">[];
 }
 
-export interface UpdateTemplate extends CreateTemplate {}
+export type UpdateTemplate = CreateTemplate;
 
 export interface TemplateClone {
   new_name?: string;

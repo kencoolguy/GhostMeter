@@ -10,7 +10,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ANOMALY_PARAM_FIELDS, ANOMALY_TYPE_OPTIONS } from "../../constants/anomaly";
 import { deviceApi } from "../../services/deviceApi";
 import { useSimulationStore } from "../../stores/simulationStore";
@@ -37,20 +37,26 @@ export function AnomalyTab({ deviceId }: { deviceId: string }) {
   const [selectedType, setSelectedType] = useState<AnomalyType | null>(null);
   const [form] = Form.useForm();
 
-  const loadRegisters = useCallback(async () => {
-    try {
-      const response = await deviceApi.get(deviceId);
-      setRegisters(response.data?.registers ?? []);
-    } catch {
-      message.error("Failed to load device registers");
-    }
-  }, [deviceId]);
-
   useEffect(() => {
-    loadRegisters();
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await deviceApi.get(deviceId);
+        if (!cancelled) {
+          setRegisters(response.data?.registers ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          message.error("Failed to load device registers");
+        }
+      }
+    })();
     fetchActiveAnomalies(deviceId);
     fetchSchedules(deviceId);
-  }, [deviceId, loadRegisters, fetchActiveAnomalies, fetchSchedules]);
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, fetchActiveAnomalies, fetchSchedules]);
 
   const registerOptions = registers.map((r) => ({
     value: r.name,

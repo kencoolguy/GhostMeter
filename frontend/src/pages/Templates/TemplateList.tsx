@@ -12,7 +12,8 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TemplateSummary } from "../../types";
 import { useTemplateStore } from "../../stores/templateStore";
-import { handleExport, ImportExportButtons } from "./ImportExportButtons";
+import { ImportExportButtons } from "./ImportExportButtons";
+import { exportTemplate } from "./exportTemplate";
 
 export function TemplateList() {
   const navigate = useNavigate();
@@ -103,7 +104,7 @@ export function TemplateList() {
               type="text"
               size="small"
               icon={<ExportOutlined />}
-              onClick={() => handleExport(record.id, record.name)}
+              onClick={() => exportTemplate(record.id, record.name)}
             />
           </Tooltip>
           {!record.is_builtin && (

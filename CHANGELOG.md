@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Fake "Live" badge in the app header**: it was static decoration — always glowing regardless of actual WebSocket state — and its height overflowed the 64px header (antd's inherited `line-height: 64px` + badge padding). The real connection indicator lives on the Monitor page title (green "Live" / red "Disconnected", bound to WS state).
 
 ### Fixed
+- **All 14 pre-existing ESLint problems fixed (12 errors / 2 warnings) — `npm run lint` is now clean** (issue #63). Highlights: `useWebSocket` rewrote its self-referencing reconnect closure into an effect-scoped lifecycle — the message handler now lives in a ref, so a changed callback identity no longer tears down and reopens the socket; six setState-in-effect occurrences replaced with derived state (`useMemo` base + user-edit overlay in DataModeTab / ProfileFormModal, derived default profile in CreateDeviceModal, async-init in TemplateForm); `handleExport` moved out of `ImportExportButtons.tsx` into `exportTemplate.ts` (react-refresh). WS reconnect verified end-to-end: Monitor shows Live → backend stopped → Disconnected → backend restarted → Live restores automatically.
+
 - **Monitor WebSocket now connects same-origin** (`wss://`/`ws://` + current host + `/ws/monitor`) instead of hardcoding `ws://<hostname>:8000`. The dev server (vite `/ws` proxy) and production nginx (`location /ws/`) have always proxied WebSocket traffic, but the client bypassed them — so live values only worked when the backend port was directly reachable (Tailscale), and broke behind any reverse proxy or HTTPS tunnel (mixed-content `ws://` is blocked on https pages).
 
 ## [0.4.2] - 2026-06-11

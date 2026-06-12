@@ -19,19 +19,21 @@ export function MqttBrokerSettings() {
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    try {
-      const resp = await mqttApi.getBrokerSettings();
-      if (resp.data) {
-        form.setFieldsValue(resp.data);
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await mqttApi.getBrokerSettings();
+        if (!cancelled && resp.data) {
+          form.setFieldsValue(resp.data);
+        }
+      } catch {
+        // Use defaults
       }
-    } catch {
-      // Use defaults
-    }
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [form]);
 
   const handleSave = async () => {
     setLoading(true);

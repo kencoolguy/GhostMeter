@@ -14,7 +14,7 @@ interface TemplateState {
   currentTemplate: TemplateDetail | null;
   loading: boolean;
   fetchTemplates: () => Promise<void>;
-  fetchTemplate: (id: string) => Promise<void>;
+  fetchTemplate: (id: string) => Promise<TemplateDetail | null>;
   createTemplate: (data: CreateTemplate) => Promise<TemplateDetail | null>;
   updateTemplate: (
     id: string,
@@ -48,6 +48,7 @@ export const useTemplateStore = create<TemplateState>((set) => ({
     try {
       const response = await templateApi.get(id);
       set({ currentTemplate: response.data });
+      return response.data;
     } finally {
       set({ loading: false });
     }
