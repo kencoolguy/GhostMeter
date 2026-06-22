@@ -19,6 +19,19 @@ export interface MqttStats {
   error_count: number;
 }
 
+export interface WriteEventSummary {
+  timestamp: string;
+  function_code: number;
+  address: number;
+  values: number[];
+  register_name: string | null;
+}
+
+export interface DeviceWriteEvents {
+  unread: number;
+  latest: WriteEventSummary | null;
+}
+
 export interface FaultInfo {
   fault_type: string;
   params: Record<string, unknown>;
@@ -36,6 +49,7 @@ export interface DeviceMonitorData {
   active_fault: FaultInfo | null;
   stats: CommunicationStats;
   mqtt_stats: MqttStats | null;
+  write_events: DeviceWriteEvents;
 }
 
 export interface MonitorEvent {
