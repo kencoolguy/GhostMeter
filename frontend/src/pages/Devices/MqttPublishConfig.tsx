@@ -14,7 +14,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { mqttApi } from "../../services/mqttApi";
 import type { MqttPublishConfig as MqttConfig, MqttPublishConfigWrite } from "../../types/mqtt";
 
@@ -29,16 +29,20 @@ export function MqttPublishConfig({ deviceId, onPublishStateChange }: MqttPublis
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Keep the latest callback without retriggering the load effect.
+  const onPublishStateChangeRef = useRef(onPublishStateChange);
   useEffect(() => {
-    loadConfig();
-  }, [deviceId]);
+    onPublishStateChangeRef.current = onPublishStateChange;
+  }, [onPublishStateChange]);
 
-  const loadConfig = async () => {
-    try {
-      const resp = await mqttApi.getDeviceConfig(deviceId);
-      if (resp.data) {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await mqttApi.getDeviceConfig(deviceId);
+        if (cancelled || !resp.data) return;
         setConfig(resp.data);
-        onPublishStateChange?.(resp.data.enabled);
+        onPublishStateChangeRef.current?.(resp.data.enabled);
         form.setFieldsValue({
           topic_template: resp.data.topic_template,
           payload_mode: resp.data.payload_mode,
@@ -46,11 +50,14 @@ export function MqttPublishConfig({ deviceId, onPublishStateChange }: MqttPublis
           qos: resp.data.qos,
           retain: resp.data.retain,
         });
+      } catch {
+        // No config yet
       }
-    } catch {
-      // No config yet
-    }
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, form]);
 
   const updateConfig = (newConfig: MqttConfig) => {
     setConfig(newConfig);

@@ -34,24 +34,30 @@ export default function TemplateForm() {
   );
 
   useEffect(() => {
+    let cancelled = false;
     if (id) {
-      fetchTemplate(id);
+      (async () => {
+        const template = await fetchTemplate(id);
+        if (cancelled || !template) return;
+        form.setFieldsValue({
+          name: template.name,
+          protocol: template.protocol,
+          description: template.description,
+        });
+        setRegisters(
+          template.registers.map((reg) => {
+            const rest = { ...reg };
+            delete rest.id;
+            return rest;
+          })
+        );
+      })();
     }
-    return () => clearCurrentTemplate();
-  }, [id, fetchTemplate, clearCurrentTemplate]);
-
-  useEffect(() => {
-    if (currentTemplate && isEdit) {
-      form.setFieldsValue({
-        name: currentTemplate.name,
-        protocol: currentTemplate.protocol,
-        description: currentTemplate.description,
-      });
-      setRegisters(
-        currentTemplate.registers.map(({ id: _id, ...rest }) => rest)
-      );
-    }
-  }, [currentTemplate, isEdit, form]);
+    return () => {
+      cancelled = true;
+      clearCurrentTemplate();
+    };
+  }, [id, fetchTemplate, clearCurrentTemplate, form]);
 
   const handleSubmit = async () => {
     const values = await form.validateFields();
