@@ -17,8 +17,10 @@ export function CreateDeviceModal({ open, onClose }: CreateDeviceModalProps) {
   const { createDevice, batchCreateDevices, fetchDevices } = useDeviceStore();
   const { profiles, loading: profilesLoading, fetchProfiles, clearProfiles } =
     useProfileStore();
+  // undefined = no explicit user choice; the default profile (derived below)
+  // applies until the user picks one.
   const [selectedProfileId, setSelectedProfileId] = useState<
-    string | null | undefined
+    string | undefined
   >(undefined);
 
   useEffect(() => {
@@ -27,23 +29,14 @@ export function CreateDeviceModal({ open, onClose }: CreateDeviceModalProps) {
     }
   }, [open, fetchTemplates]);
 
-  // Pre-select default profile when profiles load
-  useEffect(() => {
-    if (profiles.length > 0) {
-      const defaultProfile = profiles.find((p) => p.is_default);
-      setSelectedProfileId(defaultProfile?.id ?? undefined);
-    } else {
-      setSelectedProfileId(undefined);
-    }
-  }, [profiles]);
+  const defaultProfileId = profiles.find((p) => p.is_default)?.id;
+  const effectiveProfileId = selectedProfileId ?? defaultProfileId;
 
-  // Clean up on close
-  useEffect(() => {
-    if (!open) {
-      clearProfiles();
-      setSelectedProfileId(undefined);
-    }
-  }, [open, clearProfiles]);
+  const handleClose = () => {
+    clearProfiles();
+    setSelectedProfileId(undefined);
+    onClose();
+  };
 
   const handleTemplateChange = (templateId: string) => {
     fetchProfiles(templateId);
@@ -65,31 +58,31 @@ export function CreateDeviceModal({ open, onClose }: CreateDeviceModalProps) {
 
   const handleSingleSubmit = async () => {
     const values = await singleForm.validateFields();
-    if (selectedProfileId === "__none__") {
+    if (effectiveProfileId === "__none__") {
       values.profile_id = null;
-    } else if (selectedProfileId) {
-      values.profile_id = selectedProfileId;
+    } else if (effectiveProfileId) {
+      values.profile_id = effectiveProfileId;
     }
     const result = await createDevice(values);
     if (result) {
       singleForm.resetFields();
       await fetchDevices();
-      onClose();
+      handleClose();
     }
   };
 
   const handleBatchSubmit = async () => {
     const values = await batchForm.validateFields();
-    if (selectedProfileId === "__none__") {
+    if (effectiveProfileId === "__none__") {
       values.profile_id = null;
-    } else if (selectedProfileId) {
-      values.profile_id = selectedProfileId;
+    } else if (effectiveProfileId) {
+      values.profile_id = effectiveProfileId;
     }
     const success = await batchCreateDevices(values);
     if (success) {
       batchForm.resetFields();
       await fetchDevices();
-      onClose();
+      handleClose();
     }
   };
 
@@ -105,7 +98,7 @@ export function CreateDeviceModal({ open, onClose }: CreateDeviceModalProps) {
     <Form.Item label="Simulation Profile">
       <Select
         options={profileOptions}
-        value={selectedProfileId ?? undefined}
+        value={effectiveProfileId}
         onChange={(v) => setSelectedProfileId(v)}
         placeholder={
           profilesLoading ? "Loading profiles..." : "Select profile"
@@ -122,7 +115,7 @@ export function CreateDeviceModal({ open, onClose }: CreateDeviceModalProps) {
       title="Create Device"
       open={open}
       onOk={handleOk}
-      onCancel={onClose}
+      onCancel={handleClose}
       destroyOnClose
     >
       <Tabs

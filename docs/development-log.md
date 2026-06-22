@@ -1,5 +1,40 @@
 # Development Log
 
+## 2026-06-12 — 修復 14 個既存 ESLint 問題（issue #63，P1）
+
+### 重點修復
+
+1. **`useWebSocket` 重寫**（唯一的真 bug 風險）：原本 `connect` useCallback 在
+   自己的 closure 裡引用自己（reconnect 的 setTimeout），React Compiler 拒絕
+   編譯且有 stale-closure 風險；另外 `onMessage` 在 deps 裡，callback identity
+   一變就整個斷線重連。改成：連線生命週期收進單一 effect（local function 自然
+   hoist 可自我引用）、`onMessage` 走 ref（handler 更新不再觸發重連）、
+   `disposed` flag 防止 unmount 後的 timer 重連。
+2. **六處 setState-in-effect** 改為 derived state：
+   - DataModeTab / ProfileFormModal：rows = `useMemo` 的 server-derived base +
+     user-edit overlay（`edits` keyed by register name），存檔/關閉時清 overlay
+   - CreateDeviceModal：default profile 改為 render 期 derive（`??` fallback），
+     關閉清理移到 `handleClose` 事件
+   - TemplateForm：`fetchTemplate` 改回傳資料，初始化收進 async effect
+     （順帶消掉 `_id` unused var）
+   - AnomalyTab / DataModeTab 的 register fetch 內聯進 effect（async IIFE +
+     cancelled flag）
+3. 其他：`UpdateTemplate` 空 interface → type alias；`handleExport` 搬出
+   component 檔成 `exportTemplate.ts`（react-refresh）；DeviceDetail 的
+   `useMemo` deps 抽出 optional chain；Mqtt 兩處 exhaustive-deps warning
+   內聯修正。
+
+### 驗證
+
+- `npm run lint` → **0 error 0 warning**；`npm run build` 通過
+- WS 重連 e2e 實測（Playwright + 本機 dev compose）：Monitor 顯示 Live →
+  `docker compose stop backend` → Disconnected → `start backend` → 自動恢復
+  Live，無需重整
+- TemplateForm 編輯頁實測：名稱/registers 正確載入（驗證新的 async 初始化）
+- DataModeTab 實測：rows 正確渲染、改 interval 只動該 row、Save All 後
+  server 回讀值正確、overlay 清空
+
+
 ## 2026-06-12 — 部署文件補 team member 存取章節
 
 ### 背景
