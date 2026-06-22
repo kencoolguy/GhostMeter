@@ -70,10 +70,6 @@ export function MainLayout() {
             }
             onClick={toggleSidebar}
           />
-          <span className="gm-header-live">
-            <span className="gm-header-live-dot" />
-            <span>Live</span>
-          </span>
         </Header>
         <Content className="gm-content">
           <Outlet />

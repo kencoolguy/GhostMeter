@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-22
+
+### Documentation
+- Deployment guide: new "team member access" coverage — add teammate emails to the Cloudflare Access policy for Web UI/API, and share the Linode via **Tailscale node sharing** (single-machine share, no tailnet membership needed) for the protocol ports (Modbus 502 / OPC UA 4840 / SNMP 161), including Windows client setup and connectivity checks.
+
+### Added
+- **Built-in Cloudflare Tunnel support** for deploy hosts: `docker-compose.prod.yml` gains an opt-in `cloudflared` sidecar (compose profile `tunnel`); `deploy.sh` enables it only when `CLOUDFLARE_TUNNEL_TOKEN` is set in `.env`, so tokenless deployments are unaffected. Deployment guide rewritten with the full Zero Trust procedure — **a Cloudflare Access policy is mandatory before exposing a Public Hostname** (the API has no authentication of its own).
+
+### Changed
+- **Backend dependencies are now fully locked**: direct deps moved to `requirements.in` / `requirements-dev.in`; `requirements.txt` / `requirements-dev.txt` are compiled cross-platform locks (`uv pip compile --universal`, 45 + 17 pinned packages) installed with plain pip everywhere. Test/lint deps (pytest, pytest-asyncio, pytest-cov, httpx, ruff) moved out of the runtime set — **the production Docker image no longer ships pytest** — and CI no longer installs unpinned `ruff`/`pytest-cov` ad hoc. Frontend was already locked (`package-lock.json` + `npm ci`).
+
+### Removed
+- **Fake "Live" badge in the app header**: it was static decoration — always glowing regardless of actual WebSocket state — and its height overflowed the 64px header (antd's inherited `line-height: 64px` + badge padding). The real connection indicator lives on the Monitor page title (green "Live" / red "Disconnected", bound to WS state).
+
+### Fixed
+- **All 14 pre-existing ESLint problems fixed (12 errors / 2 warnings) — `npm run lint` is now clean** (issue #63). Highlights: `useWebSocket` rewrote its self-referencing reconnect closure into an effect-scoped lifecycle — the message handler now lives in a ref, so a changed callback identity no longer tears down and reopens the socket; six setState-in-effect occurrences replaced with derived state (`useMemo` base + user-edit overlay in DataModeTab / ProfileFormModal, derived default profile in CreateDeviceModal, async-init in TemplateForm); `handleExport` moved out of `ImportExportButtons.tsx` into `exportTemplate.ts` (react-refresh). WS reconnect verified end-to-end: Monitor shows Live → backend stopped → Disconnected → backend restarted → Live restores automatically.
+
+- **Monitor WebSocket now connects same-origin** (`wss://`/`ws://` + current host + `/ws/monitor`) instead of hardcoding `ws://<hostname>:8000`. The dev server (vite `/ws` proxy) and production nginx (`location /ws/`) have always proxied WebSocket traffic, but the client bypassed them — so live values only worked when the backend port was directly reachable (Tailscale), and broke behind any reverse proxy or HTTPS tunnel (mixed-content `ws://` is blocked on https pages).
+
 ## [0.4.2] - 2026-06-11
 
 ### Fixed

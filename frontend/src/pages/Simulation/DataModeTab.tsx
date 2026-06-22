@@ -1,6 +1,6 @@
 import { Button, Input, InputNumber, Select, Switch, Table, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { deviceApi } from "../../services/deviceApi";
 import { useSimulationStore } from "../../stores/simulationStore";
 import type { RegisterValue, SimulationConfigRequest } from "../../types";
@@ -26,29 +26,32 @@ interface ConfigRow {
 export function DataModeTab({ deviceId }: { deviceId: string }) {
   const { configs, loading, fetchConfigs, saveConfigs } = useSimulationStore();
   const [registers, setRegisters] = useState<RegisterValue[]>([]);
-  const [rows, setRows] = useState<ConfigRow[]>([]);
-
-  const loadRegisters = useCallback(async () => {
-    try {
-      const response = await deviceApi.get(deviceId);
-      setRegisters(response.data?.registers ?? []);
-    } catch {
-      message.error("Failed to load device registers");
-    }
-  }, [deviceId]);
+  // User edits overlaid on the server-derived base rows, keyed by register name.
+  const [edits, setEdits] = useState<Record<string, Partial<ConfigRow>>>({});
 
   useEffect(() => {
-    loadRegisters();
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await deviceApi.get(deviceId);
+        if (!cancelled) {
+          setRegisters(response.data?.registers ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          message.error("Failed to load device registers");
+        }
+      }
+    })();
     fetchConfigs(deviceId);
-  }, [deviceId, loadRegisters, fetchConfigs]);
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, fetchConfigs]);
 
-  // Build rows when registers or configs change
-  useEffect(() => {
-    if (registers.length === 0) return;
-
+  const rows: ConfigRow[] = useMemo(() => {
     const configMap = new Map(configs.map((c) => [c.register_name, c]));
-
-    const newRows: ConfigRow[] = registers.map((reg) => {
+    return registers.map((reg) => {
       const existing = configMap.get(reg.name);
       return {
         key: reg.name,
@@ -58,15 +61,13 @@ export function DataModeTab({ deviceId }: { deviceId: string }) {
         mode_params: existing ? JSON.stringify(existing.mode_params, null, 2) : "{}",
         is_enabled: existing?.is_enabled ?? false,
         update_interval_ms: existing?.update_interval_ms ?? 1000,
+        ...edits[reg.name],
       };
     });
-    setRows(newRows);
-  }, [registers, configs]);
+  }, [registers, configs, edits]);
 
   const updateRow = (key: string, field: keyof ConfigRow, value: unknown) => {
-    setRows((prev) =>
-      prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)),
-    );
+    setEdits((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   };
 
   const handleSave = async () => {
@@ -87,7 +88,11 @@ export function DataModeTab({ deviceId }: { deviceId: string }) {
         update_interval_ms: row.update_interval_ms,
       });
     }
-    await saveConfigs(deviceId, { configs: configRequests });
+    const success = await saveConfigs(deviceId, { configs: configRequests });
+    if (success) {
+      // Saved values are now in the store-backed base rows; drop the overlay.
+      setEdits({});
+    }
   };
 
   const columns: ColumnsType<ConfigRow> = [

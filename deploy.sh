@@ -24,6 +24,14 @@ fi
 
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
 
+# Enable the Cloudflare Tunnel sidecar only when a token is configured in
+# .env (see docs/deployment.md section 5 — an Access policy must be set up
+# in Cloudflare Zero Trust BEFORE exposing a Public Hostname).
+if grep -q '^CLOUDFLARE_TUNNEL_TOKEN=..*' .env; then
+  export COMPOSE_PROFILES=tunnel
+  echo "==> Cloudflare Tunnel enabled (CLOUDFLARE_TUNNEL_TOKEN is set)"
+fi
+
 echo "==> Building backend and frontend images"
 "${COMPOSE[@]}" build backend frontend
 

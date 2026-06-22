@@ -291,6 +291,8 @@
 - [x] **v0.4.0 released** (2026-06-11): PRs #47/#48/#49 merged with CI green, `v0.4.0` tag + GitHub Release published
 - [x] Deferred /simplify findings resolved per Ken's rulings: **PR #50** (negative max_drift seed bug — sign flip at the clamp — fixed + Alembic data repair + unified `AnomalyParamsBase` validation across inject/schedule/scenario) and **PR #51** (OPC UA delay fault moved to async PreRead hook — no longer blocks the event loop; red-test verified)
 - [x] **v0.4.1 released** (2026-06-11): the two fixes above
+- [x] **v0.4.2 released** (2026-06-11): builtin scenarios never seeded (seed template-name mismatch + WARN-only loader) fixed with guard tests; `.env.example` stale `APP_VERSION=0.1.0` pin removed
+- [x] **v0.4.3 released** (2026-06-22): opt-in Cloudflare Tunnel sidecar (PR #59); Monitor WebSocket same-origin (PR #58); fake header "Live" badge removed (PR #68); backend deps fully locked + dev/prod split, pytest out of prod image (PR #69, issue #60); 14 ESLint problems fixed incl. `useWebSocket` reconnect rewrite (PR #73, issue #63); team-member access deploy guide (PR #70)
 - [ ] Remaining follow-ups (no decision needed): monitor_service per-tick DB query caching, per-adapter fault decision trees → shared resolver, MQTT-specific monitor payload fields → generic adapter_status, monitorStore singleton WS connection
 - [ ] Address issues surfaced during audit: #21 (Cloudflare Pages build config), #22 (npm audit vulnerabilities), #23 (frontend bundle >500KB)
 

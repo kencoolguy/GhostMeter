@@ -77,15 +77,16 @@ export default function DeviceDetail() {
 
   const { connected } = useWebSocket({ url: MONITOR_WS_URL, onMessage });
 
+  const deviceRegisters = currentDevice?.registers;
   const registersWithLiveValues = useMemo(() => {
-    if (!currentDevice?.registers) return [];
-    if (liveRegisters.length === 0) return currentDevice.registers;
+    if (!deviceRegisters) return [];
+    if (liveRegisters.length === 0) return deviceRegisters;
     const liveMap = new Map(liveRegisters.map((r) => [r.name, r.value]));
-    return currentDevice.registers.map((reg) => ({
+    return deviceRegisters.map((reg) => ({
       ...reg,
       value: liveMap.get(reg.name) ?? reg.value,
     }));
-  }, [currentDevice?.registers, liveRegisters]);
+  }, [deviceRegisters, liveRegisters]);
 
   const handleInlineUpdate = async (field: "name" | "description", value: string) => {
     if (!currentDevice || !id) return;

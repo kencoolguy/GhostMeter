@@ -9,7 +9,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import type {
   DataMode,
@@ -53,11 +53,13 @@ export function ProfileFormModal({
   const [form] = Form.useForm();
   const { createProfile, updateProfile, fetchProfiles, loading } =
     useProfileStore();
-  const [rows, setRows] = useState<ConfigRow[]>([]);
+  // User edits overlaid on the profile-derived base rows, keyed by register name.
+  const [edits, setEdits] = useState<Record<string, Partial<ConfigRow>>>({});
 
   const isEdit = Boolean(profile);
   const isBuiltinConfigs = Boolean(profile?.is_builtin);
 
+  // Sync the antd form (an external store) with the profile being edited.
   useEffect(() => {
     if (!open) return;
 
@@ -69,13 +71,13 @@ export function ProfileFormModal({
     } else {
       form.resetFields();
     }
+  }, [open, profile, form]);
 
-    // Build config rows from template registers
+  const rows: ConfigRow[] = useMemo(() => {
     const configMap = new Map(
       (profile?.configs ?? []).map((c) => [c.register_name, c]),
     );
-
-    const newRows: ConfigRow[] = registers.map((reg) => {
+    return registers.map((reg) => {
       const existing = configMap.get(reg.name);
       return {
         key: reg.name,
@@ -86,15 +88,18 @@ export function ProfileFormModal({
           : "{}",
         is_enabled: existing?.is_enabled ?? true,
         update_interval_ms: existing?.update_interval_ms ?? 1000,
+        ...edits[reg.name],
       };
     });
-    setRows(newRows);
-  }, [open, profile, registers, form]);
+  }, [profile, registers, edits]);
 
   const updateRow = (key: string, field: keyof ConfigRow, value: unknown) => {
-    setRows((prev) =>
-      prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)),
-    );
+    setEdits((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  };
+
+  const handleClose = () => {
+    setEdits({});
+    onClose();
   };
 
   const handleSubmit = async () => {
@@ -138,7 +143,7 @@ export function ProfileFormModal({
 
     if (success) {
       await fetchProfiles(templateId);
-      onClose();
+      handleClose();
     }
   };
 
@@ -217,7 +222,7 @@ export function ProfileFormModal({
       title={isEdit ? "Edit Profile" : "New Profile"}
       open={open}
       onOk={handleSubmit}
-      onCancel={onClose}
+      onCancel={handleClose}
       width={900}
       destroyOnClose
       confirmLoading={loading}

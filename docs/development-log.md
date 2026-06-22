@@ -1,5 +1,176 @@
 # Development Log
 
+## 2026-06-12 — 後端依賴 lock + dev/prod 依賴分離（P1）
+
+### 現況盤點
+
+- 前端早已 lock（`package-lock.json` tracked、CI 與 Dockerfile 都用 `npm ci`），無需動作。
+- 後端 `requirements.txt` 全是 `>=` 浮動範圍——每次 build/CI 解析到的版本都可能不同。
+- 測試依賴（pytest 等）混在唯一一份 requirements 裡 → 進了 prod image；
+  `httpx` 確認只有測試在用（app/ 無 import）。CI 另外裸裝未釘版的 `ruff`、`pytest-cov`。
+
+### 做法
+
+採 compile 式 lock（`.in` 寫直接依賴 → 編譯出全 pin 的 `.txt`）：
+
+- `requirements.in`（14 個 runtime 直接依賴）→ `requirements.txt`（45 pinned）
+- `requirements-dev.in`（pytest/pytest-asyncio/pytest-cov/httpx/ruff，
+  `-c requirements.txt` 約束共用 transitive 與 runtime 一致）→ `requirements-dev.txt`（17 pinned）
+- 編譯器選 `uv pip compile --universal`：跨平台 lock（macOS 本機 venv 與
+  Linux CI/Docker 共用同一份，靠 environment markers），pip-tools 做不到 universal。
+  uv 只是開發機上的編譯工具——CI 與 Dockerfile 仍用純 pip 安裝 lock 檔，專案不依賴 uv。
+- Dockerfile 不變（本來就只裝 `requirements.txt`）→ 測試依賴搬走後 prod image 自動排除 pytest。
+- CI 改 `pip install -r requirements.txt -r requirements-dev.txt`。
+
+### 驗證
+
+- 乾淨 venv + 純 pip 裝兩份 lock → 完整測試 385 passed；唯一 fail 是
+  `test_health` 寫死 `version == "0.1.0"`（CI 靠 workflow env `APP_VERSION: 0.1.0`
+  蓋掉真實版本才會過）——**既有問題、與 lock 無關**（同 env 重跑即過），
+  屬 PR #54 那類 stale version pin 的殘留，另案處理。
+- `docker build` 通過；image 內 `pip list` 無 pytest/httpx/ruff；`import app.main` OK。
+- 關鍵版本 sanity:pymodbus 3.12.1（維持已知相容 pin）、fastapi 0.136.3、SQLAlchemy 2.0.50。
+## 2026-06-12 — 修復 14 個既存 ESLint 問題（issue #63，P1）
+
+### 重點修復
+
+1. **`useWebSocket` 重寫**（唯一的真 bug 風險）：原本 `connect` useCallback 在
+   自己的 closure 裡引用自己（reconnect 的 setTimeout），React Compiler 拒絕
+   編譯且有 stale-closure 風險；另外 `onMessage` 在 deps 裡，callback identity
+   一變就整個斷線重連。改成：連線生命週期收進單一 effect（local function 自然
+   hoist 可自我引用）、`onMessage` 走 ref（handler 更新不再觸發重連）、
+   `disposed` flag 防止 unmount 後的 timer 重連。
+2. **六處 setState-in-effect** 改為 derived state：
+   - DataModeTab / ProfileFormModal：rows = `useMemo` 的 server-derived base +
+     user-edit overlay（`edits` keyed by register name），存檔/關閉時清 overlay
+   - CreateDeviceModal：default profile 改為 render 期 derive（`??` fallback），
+     關閉清理移到 `handleClose` 事件
+   - TemplateForm：`fetchTemplate` 改回傳資料，初始化收進 async effect
+     （順帶消掉 `_id` unused var）
+   - AnomalyTab / DataModeTab 的 register fetch 內聯進 effect（async IIFE +
+     cancelled flag）
+3. 其他：`UpdateTemplate` 空 interface → type alias；`handleExport` 搬出
+   component 檔成 `exportTemplate.ts`（react-refresh）；DeviceDetail 的
+   `useMemo` deps 抽出 optional chain；Mqtt 兩處 exhaustive-deps warning
+   內聯修正。
+
+### 驗證
+
+- `npm run lint` → **0 error 0 warning**；`npm run build` 通過
+- WS 重連 e2e 實測（Playwright + 本機 dev compose）：Monitor 顯示 Live →
+  `docker compose stop backend` → Disconnected → `start backend` → 自動恢復
+  Live，無需重整
+- TemplateForm 編輯頁實測：名稱/registers 正確載入（驗證新的 async 初始化）
+- DataModeTab 實測：rows 正確渲染、改 interval 只動該 row、Save All 後
+  server 回讀值正確、overlay 清空
+
+
+## 2026-06-12 — 部署文件補 team member 存取章節
+
+### 背景
+
+Ken 要讓 team member 連 GhostMeter：Web UI 走 Cloudflare、協議埠（502/4840/161）
+走 Tailscale。討論釐清兩個常見誤解：
+
+1. **Cloudflare**：不是把對方 email 加成 Cloudflare 帳號成員（那是 dashboard
+   管理權限），而是加進 Zero Trust 的 **Access policy**（對方不需要 Cloudflare
+   帳號，登入走 email OTP）。
+2. **Tailscale**：協議埠只綁 Tailscale IP，對方必須走 tailnet。比較後選
+   **node sharing**（只分享 Linode 單機）而非邀請進 tailnet——最小權限、
+   不佔免費方案 6 人名額、被分享機器預設隔離不能反連。
+
+### 處置
+
+- `docs/deployment.md` 第 5 節 Access policy 步驟補「加 team member email /
+  同網域用 Emails ending in」說明
+- 新增第 6 節「協議埠給 team member（Tailscale Node Sharing）」：分享端、
+  接收端（含 Windows 安裝）、驗證與收回權限步驟
+
+純文件變更，無程式碼異動。
+
+## 2026-06-12 — 移除 header 假 Live badge
+
+### 問題
+
+Ken 回報右上角 LIVE 格子超出 header 底線，並質疑它的實際功用。查證結果：
+
+1. **跑版根因**：antd `.ant-layout-header` 預設 `line-height: 64px` 被 badge
+   內的 `<span>Live</span>` 繼承，inline-flex 子元素高度由 line box 決定，
+   加上 badge 自身 `padding: 4px` 後整體約 72px，超過 64px 的 header。
+2. **更根本的問題**：這顆 badge 是純靜態裝飾（`MainLayout.tsx`），沒綁任何
+   state——WS 斷線、backend 掛掉時照樣亮綠燈，是會誤導的假指示燈。真正的
+   連線指示在 Monitor 頁標題旁（綁 WS `connected`，斷線變紅）。
+
+### 處置
+
+Ken 裁示方案 A：直接移除（而非接上 monitorStore 變成真指示燈）。理由：真
+指示燈 Monitor 頁已有，header 重複一顆資訊價值低。
+
+- `MainLayout.tsx` 移除 badge JSX
+- `global.css` 移除 `.gm-header-live`、`.gm-header-live-dot`、`@keyframes
+  gm-pulse`（grep 確認僅此 badge 使用）
+
+驗證：`npm run build` 通過；bundle 內 grep 無 `gm-header-live`/`gm-pulse` 殘留。
+
+
+## 2026-06-11 — Cloudflare Tunnel 內建支援（opt-in sidecar）
+
+### 做了什麼
+
+Ken 確認理想架構為「公網 → Cloudflare Access → Tunnel → Linode frontend（nginx
+proxy /api、/ws）」。盤點確認 Linode 本來就有完整前端（nginx :3002，僅
+Tailscale 可達），Pages 那份是 CI 副產品壞殼（issue #21，待 dashboard 停用）。
+
+實作（VM/repo 端；dashboard 端由 Ken 操作）：
+
+- `docker-compose.prod.yml` 新增 `cloudflared` sidecar，掛 compose profile
+  `tunnel`——profile 未啟用時 `config --services` 驗證不含該服務，行為不變。
+- `deploy.sh` 偵測 `.env` 的 `CLOUDFLARE_TUNNEL_TOKEN` 非空才 export
+  `COMPOSE_PROFILES=tunnel`（grep 邏輯以空值/有值兩種 .env 實測過）。
+- `.env.example` 新增 `CLOUDFLARE_TUNNEL_TOKEN=`（含安全警語）。
+- `docs/deployment.md` 第 5 節改寫為完整流程：dashboard 三步（建 tunnel、
+  Public Hostname → `http://frontend:80`、**Access policy 必設**）+ VM 端
+  一行 token + `update.sh` + 驗證清單（含無痕打 `/api` 應被 Access 擋）。
+
+### 設計取捨
+
+- 用 compose profile 而非獨立 override 檔：單一檔案、deploy.sh 一個 if、
+  token 不存在時零影響（與 BIND_IP 預設 127.0.0.1 的 fail-safe 哲學一致）。
+- 認證放 Cloudflare Access 而非應用層 API key：零程式碼、天然涵蓋 `/api` 與
+  `/ws` 全路徑、SSO/OTP 現成。應用層認證等真正多用戶需求出現再說。
+- WS 經 tunnel 可用的前提是 same-origin（PR #58）已先落地。
+
+
+## 2026-06-11 — Monitor WS 改 same-origin（P0 安全盤點的修正項）
+
+### 盤點結論（先於修正）
+
+針對「API 無認證但公網可達」的 P0 疑慮做了實地查證：
+
+- Linode 上**沒有** Cloudflare Tunnel（無 cloudflared 容器/程序/token）——
+  API 與前端只綁 Tailscale IP，公網不可達，風險不成立。
+- `ghostmeter.pages.dev` 是活的（CI 的 Cloudflare Pages 整合每次 push 自動
+  部署），但其 `/api` 打回 SPA fallback——是個無後端的壞 UI 殼（= issue #21），
+  無資料暴露。處置（停用 Pages 專案或加 Access）需在 Cloudflare dashboard
+  操作，記錄於 issue。
+
+### 修正：WS 硬編碼 :8000
+
+`MONITOR_WS_URL` 硬編碼 `ws://<hostname>:8000`，但 vite dev（`/ws` proxy）
+與 production nginx（`location /ws/`）其實都早已支援 WS 代理——client 繞過
+它們導致：(a) 任何 reverse proxy / tunnel 後面 Monitor 即時值都是死的；
+(b) https 頁面上 `ws://` 會被瀏覽器以 mixed content 擋掉。改為 same-origin
+（協議依 `location.protocol` 切 wss/ws）。
+
+### 驗證
+
+- `npm run build` 通過。
+- 本地 production nginx 容器（:3002）實測 WS upgrade：
+  `curl -H "Upgrade: websocket" ... http://localhost:3002/ws/monitor` →
+  **HTTP/1.1 101 Switching Protocols**。
+- 部署 Linode 後以 Tailscale IP:3002 再驗一次 101。
+
+
 ## 2026-06-11 — 內建 scenario 從未 seed 成功 + .env 版本覆寫（v0.4.1 部署驗證發現）
 
 ### 根因

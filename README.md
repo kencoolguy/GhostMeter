@@ -2,7 +2,7 @@
 
 > Multi-protocol device simulator for energy management systems.
 
-[![Version](https://img.shields.io/badge/version-0.4.2-blue)]()
+[![Version](https://img.shields.io/badge/version-0.4.3-blue)]()
 [![Python](https://img.shields.io/badge/python-3.12+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
@@ -111,7 +111,7 @@ docker compose up -d postgres
 cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
@@ -156,6 +156,15 @@ cd ~/ghostmeter && ./update.sh
 `update.sh` pulls the latest `dev`, checks `.env`, then runs `deploy.sh`. See
 [`docs/deployment.md`](docs/deployment.md) for the full guide (Tailscale +
 Cloudflare Tunnel).
+
+Tip: define an SSH alias for the deploy host in your private `~/.ssh/config`
+(host/IP and key stay out of the repo), then updating is one command from
+anywhere:
+
+```bash
+ssh <alias>                                    # key-authed login
+ssh <alias> 'cd ~/ghostmeter && ./update.sh'   # one-shot update + redeploy
+```
 
 ## Tech Stack
 
