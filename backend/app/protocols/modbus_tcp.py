@@ -117,6 +117,10 @@ class ModbusTcpAdapter(ProtocolAdapter):
                     if stats:
                         stats.request_count += 1
 
+                    # Record client write attempts (read-only sim: accept + record)
+                    if pdu.function_code in (5, 6, 15, 16):
+                        self._record_write(dev_id, pdu)
+
                     from app.simulation import fault_simulator
                     from app.simulation.fault_simulator import get_failure_rate
                     fault = fault_simulator.get_fault(dev_id)
@@ -168,6 +172,36 @@ class ModbusTcpAdapter(ProtocolAdapter):
 
         return trace_pdu
 
+    def _lookup_register_name(
+        self, device_id: UUID, function_code: int, address: int
+    ) -> str | None:
+        """Resolve a write target to a template register name, or None.
+
+        Write FC 6/16 target holding registers (RegisterInfo.function_code == 3);
+        FC 5/15 target coils, which builtin templates don't define.
+        """
+        if function_code not in (6, 16):
+            return None
+        for reg in self._device_registers.get(device_id, []):
+            if reg.function_code == 3 and reg.address == address:
+                return reg.name
+        return None
+
+    def _record_write(self, device_id: UUID, pdu) -> None:
+        """Record a client write attempt. Must never raise into the serving path."""
+        try:
+            from app.simulation import write_tracker
+
+            fc = pdu.function_code
+            if fc in (6, 16):
+                values = list(pdu.registers)
+            else:  # 5, 15 — coils
+                values = [1 if b else 0 for b in pdu.bits]
+            register_name = self._lookup_register_name(device_id, fc, pdu.address)
+            write_tracker.record(device_id, fc, pdu.address, values, register_name)
+        except Exception:  # pragma: no cover — defensive; must not break the response
+            logger.warning("Failed to record write event for %s", device_id, exc_info=True)
+
     def _suppress_slave(self, slave_id: int) -> None:
         """Temporarily remove slave from context to simulate no-response.
 
@@ -218,6 +252,9 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._server = None
         self._server_task = None
         self._context = None
+        from app.simulation import write_tracker
+        for device_id in list(self._device_to_slave.keys()):
+            write_tracker.clear(device_id)
         self._device_to_slave.clear()
         self._slave_contexts.clear()
         self._device_registers.clear()
@@ -275,6 +312,8 @@ class ModbusTcpAdapter(ProtocolAdapter):
         self._slave_to_device.pop(slave_id, None)
         self._slave_contexts.pop(slave_id, None)
         self._device_registers.pop(device_id, None)
+        from app.simulation import write_tracker
+        write_tracker.clear(device_id)
         if self._context is not None:
             self._context._devices.pop(slave_id, None)
         logger.info("Removed device %s (slave %d)", device_id, slave_id)
