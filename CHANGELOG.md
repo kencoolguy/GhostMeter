@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-22
+
 ### Documentation
 - Deployment guide: new "team member access" coverage — add teammate emails to the Cloudflare Access policy for Web UI/API, and share the Linode via **Tailscale node sharing** (single-machine share, no tailnet membership needed) for the protocol ports (Modbus 502 / OPC UA 4840 / SNMP 161), including Windows client setup and connectivity checks.
 
