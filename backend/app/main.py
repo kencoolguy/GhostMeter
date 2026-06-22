@@ -15,6 +15,7 @@ from app.api.routes.simulation import router as simulation_router
 from app.api.routes.simulation_profiles import router as profiles_router
 from app.api.routes.system import router as system_router
 from app.api.routes.templates import router as templates_router
+from app.api.routes.write_events import router as write_events_router
 from app.api.websocket import router as ws_router
 from app.api.websocket import start_broadcast, stop_broadcast
 from app.config import get_settings
@@ -184,6 +185,7 @@ api_v1_router.include_router(templates_router, prefix="/templates", tags=["templ
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
 api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simulation"])
 api_v1_router.include_router(anomaly_router, prefix="/devices", tags=["anomaly"])
+api_v1_router.include_router(write_events_router, prefix="/devices", tags=["write-events"])
 api_v1_router.include_router(
     profiles_router, prefix="/simulation-profiles", tags=["simulation-profiles"],
 )
