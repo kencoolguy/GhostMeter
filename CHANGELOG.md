@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Modbus client write detection** (issue #71): the read-only simulator now records client write attempts (FC05/06/15/16) into a per-device in-memory ring buffer (50 events) without persisting the written values — accept-and-ignore, so the simulation engine still overwrites on the next tick. Each write resolves to its template register name when the address matches a holding register. Surfaced as an unread badge on the Monitor device card (rides the existing 1Hz snapshot) plus a write-events drawer listing recent writes; backed by `GET /api/v1/devices/{id}/write-events` (pure list, newest first) and `POST /api/v1/devices/{id}/write-events/ack` (reset unread). Lets EMS developers verify their system issued the expected writes. Write detection for the other protocols (OPC UA / BACnet / SNMP / MQTT) is tracked in #72.
+
 ## [0.4.3] - 2026-06-22
 
 ### Documentation
