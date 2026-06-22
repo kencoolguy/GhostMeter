@@ -1,9 +1,11 @@
 import { App, Tag } from "antd";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deviceApi } from "../../services/deviceApi";
 import type { DeviceMonitorData, RegisterHistoryPoint } from "../../types";
 import { pickPrimaryAndSecondary } from "../../utils/pickPrimary";
 import { Sparkline } from "./Sparkline";
+import { WriteEventsDrawer } from "./WriteEventsDrawer";
 
 interface DeviceCardProps {
   device: DeviceMonitorData;
@@ -14,6 +16,15 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const { primary, secondary } = pickPrimaryAndSecondary(device);
+
+  const [writeDrawerOpen, setWriteDrawerOpen] = useState(false);
+  const { unread, latest } = device.write_events;
+  const hasWrites = unread > 0 || latest !== null;
+
+  const onWriteTagClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // don't navigate to device detail
+    setWriteDrawerOpen(true);
+  };
 
   const isStopped = device.status === "stopped";
   const isError = device.status === "error";
@@ -115,6 +126,15 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
       )}
 
       <div style={{ display: "flex", gap: 5, marginTop: 10, flexWrap: "wrap" }}>
+        {hasWrites && (
+          <Tag
+            color={unread > 0 ? "gold" : "default"}
+            style={{ fontSize: 10, cursor: "pointer" }}
+            onClick={onWriteTagClick}
+          >
+            {unread > 0 ? `✎ ${unread} write${unread > 1 ? "s" : ""}` : "✎ writes"}
+          </Tag>
+        )}
         {device.mqtt_stats && (
           <Tag color={device.mqtt_stats.error_count > 0 ? "orange" : "cyan"} style={{ fontSize: 10 }}>
             {device.mqtt_stats.error_count > 0 ? "MQTT err" : "MQTT"}
@@ -150,6 +170,14 @@ export function DeviceCard({ device, history }: DeviceCardProps) {
           ▶ Start
         </span>
       )}
+      <div onClick={(e) => e.stopPropagation()}>
+        <WriteEventsDrawer
+          deviceId={device.device_id}
+          deviceName={device.name}
+          open={writeDrawerOpen}
+          onClose={() => setWriteDrawerOpen(false)}
+        />
+      </div>
     </div>
   );
 }
