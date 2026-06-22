@@ -93,7 +93,10 @@ ghostmeter/
 │   │   └── seed/                # Built-in template JSON files
 │   ├── alembic/
 │   ├── tests/
-│   ├── requirements.txt
+│   ├── requirements.in      # Direct runtime deps (edit this)
+│   ├── requirements.txt     # Compiled lock (uv pip compile, do not hand-edit)
+│   ├── requirements-dev.in  # Direct dev/test deps (edit this)
+│   ├── requirements-dev.txt # Compiled dev lock
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
@@ -195,12 +198,23 @@ ghostmeter/
 ### Start Development Environment
 ```bash
 docker compose up -d postgres
-cd backend && pip install -r requirements.txt
+cd backend && pip install -r requirements.txt -r requirements-dev.txt
 alembic upgrade head
 python -m app.main
 
 # In another terminal
 cd frontend && npm install && npm run dev
+```
+
+### Manage Backend Dependencies
+```bash
+# Direct deps live in requirements.in / requirements-dev.in — edit those, never the .txt locks.
+# Recompile after editing (uv is a dev-only tool; CI and Docker install the locks with plain pip):
+cd backend
+uv pip compile --universal --python-version 3.12 requirements.in -o requirements.txt
+uv pip compile --universal --python-version 3.12 requirements-dev.in -o requirements-dev.txt
+
+# Upgrade all packages within the .in ranges: add --upgrade (or -P <pkg> for one package)
 ```
 
 ### Run Tests

@@ -111,7 +111,7 @@ docker compose up -d postgres
 cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 

@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **Built-in Cloudflare Tunnel support** for deploy hosts: `docker-compose.prod.yml` gains an opt-in `cloudflared` sidecar (compose profile `tunnel`); `deploy.sh` enables it only when `CLOUDFLARE_TUNNEL_TOKEN` is set in `.env`, so tokenless deployments are unaffected. Deployment guide rewritten with the full Zero Trust procedure — **a Cloudflare Access policy is mandatory before exposing a Public Hostname** (the API has no authentication of its own).
 
+### Changed
+- **Backend dependencies are now fully locked**: direct deps moved to `requirements.in` / `requirements-dev.in`; `requirements.txt` / `requirements-dev.txt` are compiled cross-platform locks (`uv pip compile --universal`, 45 + 17 pinned packages) installed with plain pip everywhere. Test/lint deps (pytest, pytest-asyncio, pytest-cov, httpx, ruff) moved out of the runtime set — **the production Docker image no longer ships pytest** — and CI no longer installs unpinned `ruff`/`pytest-cov` ad hoc. Frontend was already locked (`package-lock.json` + `npm ci`).
+
 ### Removed
 - **Fake "Live" badge in the app header**: it was static decoration — always glowing regardless of actual WebSocket state — and its height overflowed the 64px header (antd's inherited `line-height: 64px` + badge padding). The real connection indicator lives on the Monitor page title (green "Live" / red "Disconnected", bound to WS state).
 

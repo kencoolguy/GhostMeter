@@ -1,0 +1,9 @@
+# Direct dev/test dependencies. Compiled to requirements-dev.txt with:
+#   uv pip compile --universal --python-version 3.12 requirements-dev.in -o requirements-dev.txt
+# The constraint keeps shared transitives identical to the runtime lock.
+-c requirements.txt
+pytest>=8.0
+pytest-asyncio>=0.25
+pytest-cov>=6.0
+httpx>=0.28
+ruff>=0.9

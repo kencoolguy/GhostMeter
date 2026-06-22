@@ -1,0 +1,17 @@
+# Direct runtime dependencies. Compiled to requirements.txt with:
+#   uv pip compile --universal --python-version 3.12 requirements.in -o requirements.txt
+# To upgrade everything within these ranges, add --upgrade (or -P <pkg> for one package).
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
+sqlalchemy[asyncio]>=2.0
+asyncpg>=0.30
+alembic>=1.15
+pydantic>=2.0
+pydantic-settings>=2.0
+pymodbus>=3.12,<3.13
+python-dotenv>=1.0
+aiomqtt>=2.0.0
+pysnmp>=7.0.0
+asyncua>=1.1,<2
+bacpypes3>=0.0.98,<0.1
