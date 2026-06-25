@@ -114,10 +114,7 @@ class OpcUaAdapter(ProtocolAdapter):
                 CallbackType.PreRead, self._pre_read_fault_delay,
             )
             self._server.subscribe_server_callback(
-                CallbackType.PreWrite, self._pre_write_coerce,
-            )
-            self._server.subscribe_server_callback(
-                CallbackType.PostWrite, self._post_write_record,
+                CallbackType.PreWrite, self._pre_write_record,
             )
             self._running = True
             logger.info("OPC UA server started on %s", self._endpoint)
@@ -295,70 +292,48 @@ class OpcUaAdapter(ProtocolAdapter):
 
         return cb
 
-    async def _pre_write_coerce(self, event, dispatcher) -> None:  # noqa: ANN001
-        """PreWrite callback: coerce incoming Variant types to match the node's declared type.
+    async def _pre_write_record(self, event, dispatcher) -> None:  # noqa: ANN001
+        """PreWrite server callback: record client writes, then coerce their type.
 
-        asyncua enforces strict type matching on write; a standard OPC UA client that does
-        not know the node's exact VariantType (e.g. Float vs Double) may send a Double for a
-        Float node and receive BadTypeMismatch. We coerce in-place so the actual write succeeds
-        and the value round-trips correctly (read-back friendly).
-        Only applies to external (client) writes — internal simulation updates are already typed."""
-        if not getattr(event, "is_external", False):
-            return
-        try:
-            for wv in getattr(event.request_params, "NodesToWrite", None) or []:
-                if wv.AttributeId != ua.AttributeIds.Value:
-                    continue
-                meta = self._node_write_meta.get(wv.NodeId)
-                if meta is None:
-                    continue
-                _address, _name, expected_vtype = meta
-                dv = wv.Value
-                if dv is None or dv.Value is None:
-                    continue
-                if dv.Value.VariantType != expected_vtype:
-                    # Coerce: cast python scalar to the expected type and re-wrap
-                    scalar = dv.Value.Value
-                    coerced = _coerce_to_range(scalar, expected_vtype)
-                    wv.Value = ua.DataValue(ua.Variant(coerced, expected_vtype))
-        except Exception:  # pragma: no cover — defensive; must not disrupt the server
-            logger.warning("Failed to coerce OPC UA write type", exc_info=True)
+        Records the client's ORIGINAL value (before any coercion) so the audit
+        trail faithfully reflects what the client sent — coercing first would
+        misreport e.g. a Double 55.9 written to an Int16 node as "55". Then
+        coerces a type-mismatched Variant to the node's declared type in place so
+        asyncua accepts the write and the value round-trips (read-back friendly
+        until the next simulation tick overwrites it).
 
-    async def _post_write_record(self, event, dispatcher) -> None:  # noqa: ANN001
-        """PostWrite server callback: record client writes to our Variable nodes.
-
-        Fires after asyncua applied the write, so the node holds the written
-        value until the next simulation tick overwrites it (read-back friendly).
-        Only external (OPC UA client) writes are recorded — internal simulation
-        updates must not appear as client write events.
-        Defensive: a recording failure must not disrupt the server."""
+        Only external (network client) writes are handled — internal simulation
+        updates (update_register → node.write_value, is_external=False) are
+        skipped so they don't appear as client writes. Defensive: a failure here
+        must not disrupt the server."""
         if not getattr(event, "is_external", False):
             return
         try:
             from app.simulation import write_tracker
 
-            results = getattr(event.response_params, "__iter__", None)
-            result_list = list(event.response_params) if results is not None else []
-            nodes_to_write = getattr(event.request_params, "NodesToWrite", None) or []
-            for idx, wv in enumerate(nodes_to_write):
+            for wv in getattr(event.request_params, "NodesToWrite", None) or []:
                 if wv.AttributeId != ua.AttributeIds.Value:
                     continue  # ignore non-Value attribute writes (e.g. Description)
-                # Only record if write was accepted by the server
-                if result_list and idx < len(result_list) and not result_list[idx].is_good():
-                    continue
                 meta = self._node_write_meta.get(wv.NodeId)
                 if meta is None:
                     continue  # not one of our register nodes
                 device_id = self._node_device.get(wv.NodeId)
                 if device_id is None:
                     continue
-                address, node_name, _vtype = meta
-                value = wv.Value.Value.Value  # DataValue → Variant → python scalar
+                address, node_name, expected_vtype = meta
+                dv = wv.Value
+                if dv is None or dv.Value is None:
+                    continue
+                # Record the client's original value (faithful — before coercion).
                 write_tracker.record(
-                    device_id, "Write", address, [str(value)], node_name
+                    device_id, "Write", address, [str(dv.Value.Value)], node_name
                 )
+                # Coerce a mismatched Variant type so the write applies cleanly.
+                if dv.Value.VariantType != expected_vtype:
+                    coerced = _coerce_to_range(dv.Value.Value, expected_vtype)
+                    wv.Value = ua.DataValue(ua.Variant(coerced, expected_vtype))
         except Exception:  # pragma: no cover — defensive; must not disrupt the server
-            logger.warning("Failed to record OPC UA write", exc_info=True)
+            logger.warning("Failed to handle OPC UA client write", exc_info=True)
 
     async def _pre_read_fault_delay(self, event, dispatcher) -> None:  # noqa: ANN001
         """PreRead server callback: apply delay faults without blocking.
