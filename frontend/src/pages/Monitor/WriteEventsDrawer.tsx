@@ -5,13 +5,6 @@ import type { WriteEventSummary } from "../../types";
 
 const { Text } = Typography;
 
-const FC_LABELS: Record<number, string> = {
-  5: "Write Coil",
-  6: "Write Register",
-  15: "Write Coils",
-  16: "Write Registers",
-};
-
 interface WriteEventsDrawerProps {
   deviceId: string;
   deviceName: string;
@@ -65,7 +58,7 @@ export function WriteEventsDrawer({
                     {time}
                   </Text>
                   <Tag color="geekblue" style={{ fontSize: 10 }}>
-                    {FC_LABELS[e.function_code] ?? `FC${e.function_code}`}
+                    {e.operation}
                   </Tag>
                 </div>
                 <Text style={{ fontSize: 12 }}>

@@ -21,9 +21,9 @@ export interface MqttStats {
 
 export interface WriteEventSummary {
   timestamp: string;
-  function_code: number;
+  operation: string;
   address: number;
-  values: number[];
+  values: string[];
   register_name: string | null;
 }
 
