@@ -519,7 +519,7 @@ List recorded client write attempts for a device, newest first. The simulator is
 | Field | Type | Description |
 |-------|------|-------------|
 | `timestamp` | datetime | When the write was received (UTC) |
-| `operation` | string | Human-readable write operation label (e.g. `Write Register`, `Write Registers`, `Write Coil`, `WriteProperty`) |
+| `operation` | string | Human-readable write operation label (e.g. `Write Register`, `Write Registers`, `Write Coil` for Modbus, `WriteProperty` for BACnet, `Write` for OPC UA) |
 | `address` | int | Modbus register/coil address, or BACnet object instance |
 | `values` | string[] | Stringified written values (Modbus words, coil `0`/`1`, or a BACnet float present-value) |
 | `register_name` | string\|null | Matching register/object name, or `null` if the address maps to none |

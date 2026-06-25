@@ -85,14 +85,21 @@ device's tracker state before the maps are cleared (mirroring Modbus/BACnet).
 
 ## 5. Not doing this iteration (documented limitation, not a silent cut)
 
-- **OPC UA write fault-gating.** Reads honour faults (PreRead delay + value-callback Bad
-  status). Writes are applied through asyncua's internal write path and PostWrite fires only
-  *after* the response; asyncua offers no clean way to turn a write into a timeout/no-response.
-  So a device under a timeout/intermittent fault still accepts + acks writes (the attempt is
-  still recorded). This differs from Modbus/BACnet, which reuse a request-path drop gate.
-  Tracked as a #72 follow-up; called out in the PR + CHANGELOG so the asymmetry is explicit.
-- OPC UA writes that target a node currently carrying a fault value-callback: the write still
-  applies and is recorded; interaction with the read-fault callback is out of scope.
+- **OPC UA write fault-gating** (decided 2026-06-25: document + follow-up, not fixed here).
+  Reads honour faults (PreRead delay + value-callback Bad status). Writes apply through
+  asyncua's internal write path; asyncua offers no clean way to turn a write into a
+  timeout/no-response. So a device under a timeout/intermittent fault still accepts + applies
+  writes — **the attempt is still recorded** (detection works under fault), but the response
+  is not gated. This differs from Modbus/BACnet, which reuse a request-path drop gate.
+- **Worse sub-case — a client write to a faulted node clears that node's fault callback.**
+  asyncua's `attribute_service.write` sets `attval.value = ...; attval.value_callback = None`
+  (`address_space.py`), so applying a client write to a node that currently carries a fault
+  value-callback **removes the callback**, and `update_register` will not re-attach it (it
+  skips faulted devices). Net effect: a client write silently disables the fault for that node
+  until the fault is removed and re-applied. This is a real fault-sim correctness gap, but an
+  edge case (writing to a device while it is faulted). Tracked as a #72 follow-up; the fix
+  (gate faulted-device writes, or re-attach the callback post-write) needs its own design +
+  asyncua experimentation. Called out in the PR + CHANGELOG so the gap is explicit.
 
 ## 6. Testing
 
