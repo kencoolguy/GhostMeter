@@ -114,3 +114,38 @@ async def test_clear_on_remove_device():
         assert write_tracker.get_unread_count(device_id) == 1
         await adapter.remove_device(device_id)
         assert write_tracker.get_events(device_id) == []
+
+
+async def test_write_recorded_but_not_acked_under_timeout_fault():
+    """A device under a timeout fault records the write attempt but goes dark
+    on the response — consistent with reads and with Modbus writes."""
+    import asyncio
+    import contextlib as _contextlib
+
+    from app.simulation import fault_simulator, write_tracker
+    from app.simulation.fault_simulator import FaultConfig
+
+    write_tracker.clear_all()
+    device_id = uuid.uuid4()
+    async with _running_adapter() as adapter:
+        await adapter.add_device(device_id, 1, _regs())
+        fault_simulator.set_fault(device_id, FaultConfig(fault_type="timeout", params={}))
+        try:
+            async with _client_app() as client:
+                addr = _device_addr(adapter._port, 1)
+                # No response comes back → the client write times out / aborts.
+                with _contextlib.suppress(Exception):
+                    await asyncio.wait_for(
+                        client.write_property(
+                            addr, ObjectIdentifier(("analog-input", 0)), "present-value", 9.0
+                        ),
+                        timeout=3,
+                    )
+        finally:
+            fault_simulator.clear_all()
+
+        # The attempt was still recorded even though no ack was sent.
+        events = write_tracker.get_events(device_id)
+        assert len(events) == 1
+        assert events[0].operation == "WriteProperty"
+        assert float(events[0].values[0]) == 9.0

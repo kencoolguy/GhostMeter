@@ -127,11 +127,19 @@ class _DeviceApplication(Application):
 
     async def do_WritePropertyRequest(self, apdu) -> None:
         """Read-only sim: record the client write attempt, then ack success
-        without persisting (the simulation engine owns the value)."""
+        without persisting (the simulation engine owns the value).
+
+        The write attempt is recorded first (even under a fault — consistent
+        with Modbus), then the same comm-fault gate as reads applies to the
+        response: timeout/intermittent go dark, delay sleeps, exception returns
+        a BACnet Error. A faulted device must not silently ack writes while its
+        reads fail."""
         obj = self.get_object_id(apdu.objectIdentifier)
         if obj is None:
             raise ExecutionError(errorClass="object", errorCode="unknownObject")
         self._record_write(apdu, obj)
+        if await self._drop_for_fault():
+            return
         await self.response(SimpleAckPDU(context=apdu))
 
     def _record_write(self, apdu, obj) -> None:
@@ -149,7 +157,7 @@ class _DeviceApplication(Application):
                 "WriteProperty",
                 instance,
                 [str(value)],
-                obj.objectName,
+                str(obj.objectName),  # objectName is a bacpypes3 CharacterString
             )
         except Exception:  # pragma: no cover — defensive; must not break the ack
             logger.warning(
