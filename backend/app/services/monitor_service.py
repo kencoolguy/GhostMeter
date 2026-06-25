@@ -65,7 +65,7 @@ class MonitorService:
         if latest is not None:
             latest_data = {
                 "timestamp": latest.timestamp.isoformat(),
-                "function_code": latest.function_code,
+                "operation": latest.operation,
                 "address": latest.address,
                 "values": latest.values,
                 "register_name": latest.register_name,

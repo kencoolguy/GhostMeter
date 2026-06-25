@@ -9,9 +9,9 @@ class WriteEventResponse(BaseModel):
     """A single recorded client write attempt."""
 
     timestamp: datetime
-    function_code: int
+    operation: str
     address: int
-    values: list[int]
+    values: list[str]
     register_name: str | None = None
 
 

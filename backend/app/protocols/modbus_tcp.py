@@ -19,6 +19,7 @@ from app.protocols.base import ProtocolAdapter, RegisterInfo
 
 logger = logging.getLogger(__name__)
 
+_MODBUS_WRITE_OPS = {5: "Write Coil", 6: "Write Register", 15: "Write Coils", 16: "Write Registers"}
 
 # Data type → register count
 DATA_TYPE_REGISTER_COUNT: dict[str, int] = {
@@ -194,11 +195,12 @@ class ModbusTcpAdapter(ProtocolAdapter):
 
             fc = pdu.function_code
             if fc in (6, 16):
-                values = list(pdu.registers)
+                values = [str(v) for v in pdu.registers]
             else:  # 5, 15 — coils
-                values = [1 if b else 0 for b in pdu.bits]
+                values = [str(1 if b else 0) for b in pdu.bits]
+            operation = _MODBUS_WRITE_OPS.get(fc, f"FC{fc}")
             register_name = self._lookup_register_name(device_id, fc, pdu.address)
-            write_tracker.record(device_id, fc, pdu.address, values, register_name)
+            write_tracker.record(device_id, operation, pdu.address, values, register_name)
         except Exception:  # pragma: no cover — defensive; must not break the response
             logger.warning("Failed to record write event for %s", device_id, exc_info=True)
 

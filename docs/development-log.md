@@ -1,5 +1,43 @@
 # Development Log
 
+## 2026-06-25 — BACnet 寫入偵測 + 寫入事件模型一般化（#72）
+
+### 背景
+
+#71 為 Modbus 做了寫入偵測，但它的 `write_tracker` 資料模型其實是 Modbus 形狀的
+（`function_code: int`、`values: list[int]`）。接 BACnet 時暴露出來：BACnet 沒有
+function code（是 WriteProperty），寫的是 **float** present-value 不是 16-bit words。
+所以這次先把模型一般化，再接 BACnet。
+
+### 做法
+
+- **模型一般化**：`WriteEvent.function_code: int` → `operation: str`（人類標籤）、
+  `values: list[int]` → `list[str]`（字串化，統一容納 Modbus int 與 BACnet float）。
+  Modbus 的 FC→label 對應從前端搬進 Modbus adapter（`_MODBUS_WRITE_OPS`），前端 drawer
+  直接顯示 `operation`、移除 `FC_LABELS`。同步更新 #71 的 4 份測試斷言。
+- **BACnet 記錄 + accept-and-ignore**：`bacnet_agent.py` 的
+  `do_WritePropertyRequest` 原本直接 `raise writeAccessDenied`，改成「取 obj +
+  `apdu.propertyValue.cast_out(property_type, ...)` 解出值 → `write_tracker.record(
+  device_id, "WriteProperty", instance, [str(value)], obj.objectName)` → 回
+  `SimpleAckPDU`」，**不呼叫 `obj.write_property`**（值不持久化，sim engine 仍擁有值）。
+  `object instance == register address`、`obj.objectName` 即 register name。記錄包
+  try/except，絕不影響 ack。`stop()` / `_do_remove_device` 加 `write_tracker.clear`。
+- **行為變更**：BACnet 寫入從「拒絕」變「接受」。既有 `test_write_property_rejected`
+  記錄的是舊行為，改名 `test_write_property_accepted_but_not_persisted`，斷言寫入被
+  ack 且 sim 值不被覆蓋（client 寫 999 後仍維持 220）。
+
+### 驗證
+
+- 後端：BACnet 整合測試（真 bacpypes3 client write → 斷言 operation/address/value/name
+  + 回成功、clear-on-remove）2 passed；BACnet regression 30/30；#71 既有測試（改成
+  operation/string）18 passed。ruff clean。
+- 前端：tsc + eslint + build 全乾淨。
+
+### 待辦
+
+- #72 續：OPC UA（read-back/subscription 前提要重新 brainstorm）、SNMP（SET，最低優先）、
+  MQTT（command topic 需獨立設計 topic/payload）。共用 ring buffer + API + UI 已就位。
+
 ## 2026-06-22 — Modbus 寫入偵測（#71）
 
 ### 問題
