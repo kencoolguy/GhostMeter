@@ -50,9 +50,9 @@ async def test_fc6_single_register_write_recorded(client):
 
     events = write_tracker.get_events(DEVICE_ID)
     assert len(events) == 1
-    assert events[0].function_code == 6
+    assert events[0].operation == "Write Register"
     assert events[0].address == SETPOINT_ADDR
-    assert events[0].values == [1234]
+    assert events[0].values == ["1234"]
     assert events[0].register_name == "power_setpoint"
     assert write_tracker.get_unread_count(DEVICE_ID) == 1
 
@@ -63,9 +63,9 @@ async def test_fc16_multi_register_write_recorded(client):
 
     events = write_tracker.get_events(DEVICE_ID)
     assert len(events) == 1
-    assert events[0].function_code == 16
+    assert events[0].operation == "Write Registers"
     assert events[0].address == SETPOINT_ADDR
-    assert events[0].values == [11, 22]
+    assert events[0].values == ["11", "22"]
 
 
 async def test_coil_write_recorded_even_when_address_illegal(client):
@@ -75,8 +75,8 @@ async def test_coil_write_recorded_even_when_address_illegal(client):
 
     events = write_tracker.get_events(DEVICE_ID)
     assert len(events) == 1
-    assert events[0].function_code == 5
-    assert events[0].values == [1]
+    assert events[0].operation == "Write Coil"
+    assert events[0].values == ["1"]
     assert events[0].register_name is None
 
 
@@ -116,4 +116,4 @@ async def test_write_recorded_even_when_timeout_fault_active(adapter, client):
 
     events = write_tracker.get_events(DEVICE_ID)
     assert len(events) == 1
-    assert events[0].values == [55]
+    assert events[0].values == ["55"]

@@ -20,10 +20,10 @@ class WriteEvent:
     """A single recorded client write attempt."""
 
     timestamp: datetime          # UTC
-    function_code: int           # 5 / 6 / 15 / 16
-    address: int                 # starting address
-    values: list[int]            # raw 16-bit words; coils as 0 | 1
-    register_name: str | None    # resolved template register name, or None
+    operation: str               # human label, e.g. "Write Register" / "WriteProperty"
+    address: int                 # Modbus address / BACnet object instance
+    values: list[str]            # stringified written values
+    register_name: str | None    # resolved register/object name, or None
 
 
 class WriteTracker:
@@ -36,9 +36,9 @@ class WriteTracker:
     def record(
         self,
         device_id: UUID,
-        function_code: int,
+        operation: str,
         address: int,
-        values: list[int],
+        values: list[str],
         register_name: str | None = None,
     ) -> None:
         """Append a write event and bump the device's unread count."""
@@ -49,7 +49,7 @@ class WriteTracker:
         buf.append(
             WriteEvent(
                 timestamp=datetime.now(timezone.utc),
-                function_code=function_code,
+                operation=operation,
                 address=address,
                 values=list(values),
                 register_name=register_name,

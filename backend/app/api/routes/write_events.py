@@ -29,7 +29,7 @@ async def list_write_events(
         data=[
             WriteEventResponse(
                 timestamp=e.timestamp,
-                function_code=e.function_code,
+                operation=e.operation,
                 address=e.address,
                 values=e.values,
                 register_name=e.register_name,
