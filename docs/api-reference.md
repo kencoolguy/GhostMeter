@@ -519,10 +519,10 @@ List recorded client write attempts for a device, newest first. The simulator is
 | Field | Type | Description |
 |-------|------|-------------|
 | `timestamp` | datetime | When the write was received (UTC) |
-| `function_code` | int | Modbus function code (5 / 6 / 15 / 16) |
-| `address` | int | Starting register/coil address |
-| `values` | int[] | Raw written words (registers) or 0/1 (coils) |
-| `register_name` | string\|null | Matching template register name, or `null` if the address maps to no holding register |
+| `operation` | string | Human-readable write operation label (e.g. `Write Register`, `Write Registers`, `Write Coil`, `WriteProperty`) |
+| `address` | int | Modbus register/coil address, or BACnet object instance |
+| `values` | string[] | Stringified written values (Modbus words, coil `0`/`1`, or a BACnet float present-value) |
+| `register_name` | string\|null | Matching register/object name, or `null` if the address maps to none |
 
 **Error cases:**
 - `404` — device not found
