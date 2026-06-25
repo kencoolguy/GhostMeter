@@ -508,6 +508,40 @@ Get register definitions for a device. Phase 3: values are always `null`.
 
 ---
 
+#### `GET /api/v1/devices/{device_id}/write-events`
+
+List recorded client write attempts for a device, newest first. The simulator is read-only: writes (Modbus FC05/06/15/16) are accepted-and-ignored, but each attempt is recorded in a per-device in-memory ring buffer (max 50). This is a **pure read** — it does not reset the unread count.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[WriteEvent[]]`, where each `WriteEvent` is:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | datetime | When the write was received (UTC) |
+| `function_code` | int | Modbus function code (5 / 6 / 15 / 16) |
+| `address` | int | Starting register/coil address |
+| `values` | int[] | Raw written words (registers) or 0/1 (coils) |
+| `register_name` | string\|null | Matching template register name, or `null` if the address maps to no holding register |
+
+**Error cases:**
+- `404` — device not found
+
+---
+
+#### `POST /api/v1/devices/{device_id}/write-events/ack`
+
+Reset the device's unread write count to 0. The event buffer itself is retained (the list endpoint still returns past events). Called by the UI when the write-events drawer is opened.
+
+**Path param:** `device_id` (UUID)
+
+**Response** `200 OK` — `ApiResponse[{ unread: 0 }]`
+
+**Error cases:**
+- `404` — device not found
+
+---
+
 ### Template Deletion Protection
 
 When a template has associated devices, `DELETE /api/v1/templates/{template_id}` returns:

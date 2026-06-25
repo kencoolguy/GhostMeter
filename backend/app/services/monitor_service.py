@@ -56,6 +56,25 @@ class MonitorService:
         """Return all events as dicts (newest first)."""
         return [asdict(e) for e in reversed(self._event_log)]
 
+    def build_write_events_payload(self, device_id: UUID) -> dict[str, Any]:
+        """Per-device write-event summary for the monitor snapshot."""
+        from app.simulation import write_tracker
+
+        latest = write_tracker.latest(device_id)
+        latest_data = None
+        if latest is not None:
+            latest_data = {
+                "timestamp": latest.timestamp.isoformat(),
+                "function_code": latest.function_code,
+                "address": latest.address,
+                "values": latest.values,
+                "register_name": latest.register_name,
+            }
+        return {
+            "unread": write_tracker.get_unread_count(device_id),
+            "latest": latest_data,
+        }
+
     async def get_snapshot(self) -> dict[str, Any]:
         """Build a complete monitor snapshot for WebSocket broadcast.
 
@@ -148,6 +167,7 @@ class MonitorService:
                 "active_fault": active_fault,
                 "stats": stats_data,
                 "mqtt_stats": mqtt_stats_data,
+                "write_events": self.build_write_events_payload(device_id),
             })
 
         # MQTT broker connection state

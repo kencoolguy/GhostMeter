@@ -1,5 +1,46 @@
 # Development Log
 
+## 2026-06-22 — Modbus 寫入偵測（#71）
+
+### 問題
+
+GhostMeter 是唯讀模擬器，EMS 開發者無法驗證自家系統「確實發出了正確的 Modbus 寫入」
+（寫 setpoint 等）。寫入 holding register（FC06/16）被 pymodbus 默默接受、下一 tick 被覆蓋，
+且完全沒有任何記錄（log / API / WS / UI 都看不到）。
+
+### 設計決策
+
+- **accept-and-ignore + record**：接受寫入（client 收到成功回應），但不持久化寫入值
+  （模擬引擎下一 tick 照常覆蓋）。前提已確認 EMS 不做 write-then-read-back 驗證。
+  核心價值在「偵測 + 記錄」，讓使用者驗證 EMS 行為。
+- **記錄層**：仿 `fault_simulator` 做 `write_tracker` singleton — per-device
+  `deque(maxlen=50)` ring buffer + unread 計數，純 in-memory（device stop / server
+  restart 即清空），protocol-agnostic 以便 #72 重用。
+- **攔截點**：`modbus_tcp.py` 的 `trace_pdu` incoming 分支（與 fault 同一 hook，跑在
+  asyncio loop 上、無跨 thread）。FC6/16 從 `pdu.registers` 取值、FC5/15 從 `pdu.bits`
+  取值（pymodbus 3.12.1 實測屬性名）。記錄包 try/except，**絕不影響 Modbus 回應**；
+  fault 抑制（timeout）的寫入也照記，因為使用者要驗證的是 client 是否發出寫入。
+- **投遞**：摘要（unread + latest）搭現有 1Hz monitor snapshot 推前端（不另開 WS channel）。
+- **REST 走乾淨語意**：`GET /write-events` 純讀不改狀態；另開 `POST /write-events/ack`
+  歸零 unread（UI 開抽屜時呼叫）。捨棄「GET 帶 side effect」的捷徑。
+- **UI**：DeviceCard 上 antd `<Tag>` badge（unread>0 金色、已讀過仍可點開灰色），
+  點開 `WriteEventsDrawer` 拉清單；drawer 在 portal 內，外層 stopPropagation 避免觸發
+  卡片導航。
+
+### 驗證
+
+- 後端：write_tracker 單元測試（ring buffer / unread / mark_read / clear）；
+  modbus client 實寫整合測試（FC06/FC16/FC05 coil / 未知 address / read 不記 /
+  remove 清空 / timeout-fault 下仍記錄）；snapshot payload 測試；API list/ack 測試。
+  全套件 **403 passed**（唯一 fail 是既有 `test_health` 版本 pin，與本次無關）。
+- 前端：`tsc --noEmit` + `eslint` + `build` 全乾淨。
+
+### 待辦
+
+- #72：寫入偵測擴展到 OPC UA / BACnet / SNMP / MQTT（共用 ring buffer + API + UI，
+  等實際需求再排）。
+- 既有 `test_health` 寫死 `version == "0.1.0"` 靠 CI env 覆寫才過，屬 stale pin，另案修。
+
 ## 2026-06-12 — 後端依賴 lock + dev/prod 依賴分離（P1）
 
 ### 現況盤點
