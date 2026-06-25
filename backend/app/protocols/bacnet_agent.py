@@ -24,6 +24,7 @@ import socket
 import time
 from uuid import UUID
 
+from bacpypes3.apdu import SimpleAckPDU
 from bacpypes3.app import Application
 from bacpypes3.errors import ExecutionError
 from bacpypes3.local.analog import AnalogInputObject
@@ -125,9 +126,35 @@ class _DeviceApplication(Application):
         await self._faulted_counted_read(super().do_ReadPropertyMultipleRequest, apdu)
 
     async def do_WritePropertyRequest(self, apdu) -> None:
-        """Simulated devices are read-only; values come from the simulation
-        engine. bacpypes3's local objects would otherwise accept the write."""
-        raise ExecutionError(errorClass="property", errorCode="writeAccessDenied")
+        """Read-only sim: record the client write attempt, then ack success
+        without persisting (the simulation engine owns the value)."""
+        obj = self.get_object_id(apdu.objectIdentifier)
+        if obj is None:
+            raise ExecutionError(errorClass="object", errorCode="unknownObject")
+        self._record_write(apdu, obj)
+        await self.response(SimpleAckPDU(context=apdu))
+
+    def _record_write(self, apdu, obj) -> None:
+        """Record a client write attempt. Must never raise into the response path."""
+        try:
+            from app.simulation import write_tracker
+
+            property_type = obj.get_property_type(apdu.propertyIdentifier)
+            value = apdu.propertyValue.cast_out(
+                property_type, null=(apdu.priority is not None)
+            )
+            instance = apdu.objectIdentifier[1]  # (objectType, instance); == register address
+            write_tracker.record(
+                self._ghost_device_id,
+                "WriteProperty",
+                instance,
+                [str(value)],
+                obj.objectName,
+            )
+        except Exception:  # pragma: no cover — defensive; must not break the ack
+            logger.warning(
+                "Failed to record BACnet write for %s", self._ghost_device_id, exc_info=True
+            )
 
     async def do_WhoIsRequest(self, apdu) -> None:
         """A device under timeout/intermittent fault goes fully dark (no I-Am),
@@ -251,6 +278,9 @@ class BacnetAdapter(ProtocolAdapter):
         logger.info("BACnet adapter stopped")
 
     def _teardown(self) -> None:
+        from app.simulation import write_tracker
+        for device_id in list(self._device_apps.keys()):
+            write_tracker.clear(device_id)
         for app in self._device_apps.values():
             try:
                 app.close()
@@ -477,6 +507,8 @@ class BacnetAdapter(ProtocolAdapter):
             if dev != device_id
         }
         self._device_meta.pop(device_id, None)
+        from app.simulation import write_tracker
+        write_tracker.clear(device_id)
         logger.info("BACnet: removed device %s", device_id)
 
     async def update_register(
