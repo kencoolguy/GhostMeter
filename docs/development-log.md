@@ -1,5 +1,36 @@
 # Development Log
 
+## 2026-06-25 — OPC UA 寫入偵測（#72）
+
+### 設計
+
+- **accept + 保留到下一 tick**（read-back friendly）：OPC UA client 常 read-back/subscribe
+  驗證，所以不像 Modbus/BACnet 的 strict accept-and-ignore——node 設 `set_writable(True)`、
+  寫入實際套用、下一 sim tick 才覆蓋。
+- **機制**：`subscribe_server_callback(CallbackType.PreWrite, ...)`（與既有 PreRead fault
+  hook 同一套）。`InternalSession.write` 先 dispatch PreWrite 再套用。callback 從
+  `event.request_params.NodesToWrite` 取值（`wv.Value.Value.Value`）。
+- **只記 external（網路 client）寫入**：`event.is_external` 過濾——PostWrite/PreWrite 對
+  「所有」寫入觸發，包括 `update_register()` 每個 tick 的內部 `node.write_value()`；不過濾
+  的話每個 tick 都被記成 client 寫入。（review 確認 internal session external=False。）
+- **型別 coercion**：asyncua 嚴格型別檢查，loose client 寫 Double 到 Float node 會
+  BadTypeMismatch。PreWrite in-place coerce 到 node 型別讓寫入成功。
+- **記錄忠實性**（review REQUEST-CHANGES 修正）：原本在 PostWrite 取「coerce 後」的值記錄，
+  導致 Double 55.9 寫 Int16 被記成 "55"——誤報 client 意圖。改成單一 PreWrite callback
+  **先記 client 原值、再 coerce 套用**。值的審計忠實，套用值仍 read-back friendly。
+
+### 驗證
+
+- 4 個整合測試（真 asyncua client）：寫入記錄+套用、clear-on-remove、internal 更新不記錄
+  （is_external）、記錄值是 client 原值非 coerced 值。+ 13 OPC UA fault regression。全 17 passed。
+
+### 已知限制（#72 follow-up，已與 Ken 確認記錄為限制）
+
+- OPC UA 寫入未 fault-gating（faulted 設備仍接受寫入，但 attempt 仍記錄）。
+- 更糟：client 寫入 faulted node 會清掉該 node 的 fault value-callback（asyncua 寫入時
+  重設），update_register 不重掛 → 該 node 的 fault 被悄悄停用直到 re-apply。邊緣情境
+  （測試時同時寫入又注入 fault）。正解需 gate faulted 寫入或寫後重掛，另案設計。
+
 ## 2026-06-25 — BACnet 寫入偵測 + 寫入事件模型一般化（#72）
 
 ### 背景
