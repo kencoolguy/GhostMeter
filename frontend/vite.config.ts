@@ -27,6 +27,12 @@ export default defineConfig({
         "src/hooks/**",
       ],
       reporter: ["text", "text-summary"],
+      thresholds: {
+        statements: 20,
+        branches: 40,
+        functions: 20,
+        lines: 20,
+      },
     },
   },
 });
