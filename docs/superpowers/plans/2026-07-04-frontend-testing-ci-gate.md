@@ -39,8 +39,13 @@ Stands up the runner (deps, config, setup, scripts) and proves it with the two p
 
 ```bash
 cd frontend
-npm install -D vitest@^3 @vitest/coverage-v8@^3 jsdom@^25 @testing-library/react@^16 @testing-library/jest-dom@^6
+npm install -D vitest@^4 @vitest/coverage-v8@^4 jsdom@^25 @testing-library/react@^16 @testing-library/jest-dom@^6
 ```
+
+> **Version note:** vitest **4** is required — the entire vitest 3.x line caps
+> its Vite dependency at `^7`, which nests a second `vite@7` whose types clash
+> with the repo's `vite@8` (`@vitejs/plugin-react`) and breaks `tsc`. vitest 4
+> uses the top-level Vite 8.
 
 - [ ] **Step 2: Add the setup file**
 
@@ -48,14 +53,28 @@ Create `frontend/src/test/setup.ts`:
 
 ```ts
 import "@testing-library/jest-dom/vitest";
+import { Blob } from "node:buffer";
+
+// jsdom's Blob does not implement .text()/.arrayBuffer(); Node's does, and
+// download.ts only needs Blob for the download path, so restoring the Node
+// implementation globally is safe here.
+globalThis.Blob = Blob as unknown as typeof globalThis.Blob;
 ```
+
+> **tsconfig routing:** `setup.ts` imports `node:buffer`, which needs Node
+> types, but `tsconfig.app.json` restricts `types` to `["vite/client"]`. Add
+> `setup.ts` to `tsconfig.node.json`'s `include` and exclude it from
+> `tsconfig.app.json` (`"exclude": ["src/test/setup.ts"]`) so `tsc -b` resolves
+> the Node types. The test files themselves stay under `tsconfig.app.json`.
 
 - [ ] **Step 3: Merge the vitest config into `vite.config.ts`**
 
-Change the import line and add a `test` block. The file becomes:
+Change the import to `vitest/config` and add a `test` block. Do **not** add a
+`/// <reference types="vitest/config" />` triple-slash directive — eslint's
+`@typescript-eslint/triple-slash-reference` forbids it and the `vitest/config`
+import already provides the `test` field types. The file becomes:
 
 ```ts
-/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -73,6 +92,9 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: false,
+    // Scope to unit tests under src/; the Playwright e2e specs in e2e/ use
+    // @playwright/test and must not be collected by vitest.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     coverage: {
       provider: "v8",
       include: [
