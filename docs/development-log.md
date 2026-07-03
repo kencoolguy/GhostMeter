@@ -1,5 +1,42 @@
 # Development Log
 
+## 2026-07-04 — Frontend vitest 測試骨架 + CI gate（#62）
+
+### 背景
+
+前端從 Phase 1 至今零測試——`frontend/src` 只有 `npm run build`/`tsc -b` 把關型別，
+邏輯層（utils/services/stores/hooks）沒有任何自動化驗證，迴歸只能靠手動點測。CI
+`frontend` job 也只跑 typecheck + build，eslint 早在 #63 修乾淨後從沒被 CI 強制執行過。
+
+### 做法
+
+- **測試框架：vitest + jsdom + Testing Library**，不是 Jest——專案已用 Vite 建置
+  （`vite build`），vitest 直接吃同一份 `vite.config.ts`/esbuild pipeline，不需要額外
+  的 babel/ts-jest 轉譯層，設定成本最低。`jsdom` 提供 DOM 環境給 `useWebSocket` 這類
+  依賴 `WebSocket`/`window` 的 hook 測試。
+- **範圍限定在 pure-logic 目錄**：`vite.config.ts` 的 `test.coverage.include` 只收
+  `src/utils/**`、`src/stores/**`、`src/services/**`、`src/hooks/**`，不含
+  `src/pages`、`src/components`——components/pages 需要更重的渲染 + antd mock 成本，
+  這次先把邏輯層的安全網建起來，UI 層測試留給後續（見下方 deferred）。
+- **36 個測試**：涵蓋 utils（純函式）、services（axios API 封裝，`api.test.ts` 用
+  `unknown` cast 存取 axios 內部型別，刻意不用 `any` 以通過 lint gate）、stores
+  （zustand store 的 action/selector 行為）、`useWebSocket` hook（連線/重連生命週期）。
+- **Ratchet coverage threshold**：實測 baseline 為 statements 24.84 / branches 42.04 /
+  functions 20.67 / lines 24.45（`npm run test:coverage` 對上述 4 個目錄的覆蓋率）。
+  門檻鎖在略低於實測值的 **20/40/20/20**——ratchet 用意是「不能倒退」而非要求滿分，
+  之後每加一批測試，門檻可以跟著提高，但這次先用保守值避免一有小改動就紅。
+- **CI 新增兩道 gate**：`.github/workflows/ci.yml` 的 `frontend` job 在 `npm ci` 之後
+  依序插入 `Lint`（`npm run lint`）與（typecheck 之後的）`Test with coverage`
+  （`npm run test:coverage`），順序為 lint → typecheck → test → build，四步驟皆為
+  CI 必要條件（non-zero exit 會讓 job 失敗）。backend job 未變動。
+
+### 已知限制 / Deferred（追蹤於 #62）
+
+- Components/pages 測試（antd 元件渲染、頁面互動）本次不做，覆蓋率門檻刻意只鎖
+  pure-logic 目錄。
+- Playwright e2e（`frontend/e2e/`，`test:e2e` script 已存在）目前不在 CI 跑，仍是
+  本機手動執行；CI 整合留待後續 issue。
+
 ## 2026-06-25 — OPC UA 寫入偵測（#72）
 
 ### 設計
