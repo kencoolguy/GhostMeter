@@ -1167,7 +1167,11 @@ Get global MQTT broker settings. Returns defaults if never configured.
 
 #### `PUT /api/v1/system/mqtt`
 
-Create or update global MQTT broker settings.
+Create or update global MQTT broker settings. The running MQTT adapter
+reconnects with the new settings immediately (no backend restart needed);
+publish tasks of enabled configs on running devices are restarted after a
+successful reconnect. A failed reconnect still saves the settings — use
+`POST /api/v1/system/mqtt/test` to verify connectivity.
 
 **Request body:** `MqttBrokerSettingsWrite`
 
@@ -1223,6 +1227,8 @@ Delete MQTT publish config for a device.
 #### `POST /api/v1/system/devices/{device_id}/mqtt/start`
 
 Start MQTT publishing for a device. Requires existing publish config.
+Device metadata (name / slave ID / template name) is loaded and handed to the
+adapter before the publish loop starts, so topic templates render correctly.
 
 **Path param:** `device_id` (UUID)
 

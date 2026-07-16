@@ -6,7 +6,9 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.device import DeviceInstance
 from app.models.mqtt import MqttBrokerSettings, MqttPublishConfig
+from app.models.template import DeviceTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,63 @@ async def delete_publish_config(
     await session.delete(config)
     await session.commit()
     return True
+
+
+async def get_device_meta(
+    session: AsyncSession, device_id: uuid.UUID,
+) -> tuple[str, int, str] | None:
+    """Device name, slave_id and template name for MQTT topic rendering."""
+    result = await session.execute(
+        select(DeviceInstance.name, DeviceInstance.slave_id, DeviceTemplate.name)
+        .join(DeviceTemplate, DeviceInstance.template_id == DeviceTemplate.id)
+        .where(DeviceInstance.id == device_id)
+    )
+    row = result.first()
+    if row is None:
+        return None
+    return (row[0], row[1], row[2])
+
+
+async def resume_enabled_publishing(session: AsyncSession) -> int:
+    """(Re)start publish tasks for enabled configs on running devices.
+
+    Needed after an adapter reconnect, which cancels every publish task.
+    Returns the number of devices whose publishing was started.
+    """
+    from app.protocols import protocol_manager
+
+    adapter = protocol_manager.get_adapter("mqtt")
+    if adapter is None:
+        return 0
+
+    result = await session.execute(
+        select(
+            MqttPublishConfig,
+            DeviceInstance.name,
+            DeviceInstance.slave_id,
+            DeviceTemplate.name,
+        )
+        .join(DeviceInstance, MqttPublishConfig.device_id == DeviceInstance.id)
+        .join(DeviceTemplate, DeviceInstance.template_id == DeviceTemplate.id)
+        .where(
+            MqttPublishConfig.enabled.is_(True),
+            DeviceInstance.status == "running",
+        )
+    )
+    started = 0
+    for config, device_name, slave_id, template_name in result.all():
+        try:
+            adapter.set_device_meta(  # type: ignore[attr-defined]
+                config.device_id, device_name, slave_id, template_name,
+            )
+            await adapter.start_publishing(config.device_id, config)  # type: ignore[attr-defined]
+            started += 1
+        except Exception as e:
+            logger.warning(
+                "Failed to resume MQTT publishing for device %s: %s",
+                config.device_id, e,
+            )
+    return started
 
 
 async def set_publish_enabled(
