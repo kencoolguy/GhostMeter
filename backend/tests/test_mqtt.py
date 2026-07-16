@@ -421,3 +421,193 @@ class TestMqttAdapter:
             uuid.uuid4(), address=0, function_code=3,
             value=1.0, data_type="float32", byte_order="big",
         )
+
+
+# === Route ↔ Adapter Integration Tests (fake adapter) ===
+
+
+class FakeMqttAdapter:
+    """Records adapter calls so route behavior can be asserted without a broker."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+        self.connected = True
+
+    def set_device_meta(
+        self, device_id, device_name, slave_id=0, template_name="",
+    ) -> None:
+        self.calls.append(
+            ("set_device_meta", device_id, device_name, slave_id, template_name)
+        )
+
+    async def start_publishing(self, device_id, config) -> None:
+        self.calls.append(("start_publishing", device_id, config.topic_template))
+
+    async def stop_publishing(self, device_id) -> None:
+        self.calls.append(("stop_publishing", device_id))
+
+    async def reconnect(
+        self, host, port, username, password, client_id, use_tls,
+    ) -> None:
+        self.calls.append(
+            ("reconnect", host, port, username, password, client_id, use_tls)
+        )
+
+    def get_status(self) -> dict:
+        return {
+            "connected": self.connected,
+            "available": self.connected,
+            "publishing_devices": 0,
+        }
+
+
+@pytest.fixture
+def fake_mqtt_adapter():
+    """Swap a recording fake in for the mqtt adapter; restore afterwards."""
+    from app.protocols import protocol_manager
+
+    fake = FakeMqttAdapter()
+    prev = protocol_manager._adapters.get("mqtt")
+    protocol_manager.register_adapter("mqtt", fake)
+    yield fake
+    if prev is None:
+        protocol_manager._adapters.pop("mqtt", None)
+    else:
+        protocol_manager._adapters["mqtt"] = prev
+
+
+async def _put_publish_config(client: AsyncClient, device_id: str) -> None:
+    resp = await client.put(f"/api/v1/system/devices/{device_id}/mqtt", json={
+        "topic_template": "gm/{device_name}",
+        "payload_mode": "batch",
+        "publish_interval_seconds": 5,
+        "qos": 0,
+        "retain": False,
+    })
+    assert resp.status_code == 200
+
+
+async def _set_device_status(device_id: str, status: str) -> None:
+    """Flip a device's status directly in the (test) DB."""
+    from sqlalchemy import update
+
+    import app.database as db
+    from app.models.device import DeviceInstance
+
+    async with db.async_session_factory() as session:
+        await session.execute(
+            update(DeviceInstance)
+            .where(DeviceInstance.id == uuid.UUID(device_id))
+            .values(status=status)
+        )
+        await session.commit()
+
+
+class TestStartPublishingSetsMeta:
+    """POST /mqtt/start must give the adapter device meta before publishing (#82)."""
+
+    async def test_start_sets_meta_before_publishing(
+        self, client: AsyncClient, fake_mqtt_adapter: FakeMqttAdapter,
+    ):
+        template = await _create_template(client)
+        device = await _create_device(client, template["id"])
+        await _put_publish_config(client, device["id"])
+
+        resp = await client.post(f"/api/v1/system/devices/{device['id']}/mqtt/start")
+        assert resp.status_code == 200
+
+        kinds = [c[0] for c in fake_mqtt_adapter.calls]
+        assert "set_device_meta" in kinds, "adapter never received device meta"
+        meta_call = next(
+            c for c in fake_mqtt_adapter.calls if c[0] == "set_device_meta"
+        )
+        assert meta_call[1] == uuid.UUID(device["id"])
+        assert meta_call[2] == device["name"]
+        assert meta_call[3] == device["slave_id"]
+        assert meta_call[4] == template["name"]
+        # Meta must be in place before the publish loop starts
+        assert kinds.index("set_device_meta") < kinds.index("start_publishing")
+
+
+class TestBrokerSettingsReconnect:
+    """PUT /system/mqtt must apply new settings to the running adapter (#81)."""
+
+    async def test_update_reconnects_adapter(
+        self, client: AsyncClient, fake_mqtt_adapter: FakeMqttAdapter,
+    ):
+        resp = await client.put("/api/v1/system/mqtt", json={
+            "host": "broker.example.com",
+            "port": 2883,
+            "username": "u1",
+            "password": "pw1",
+            "client_id": "gm-test",
+            "use_tls": False,
+        })
+        assert resp.status_code == 200
+
+        reconnects = [c for c in fake_mqtt_adapter.calls if c[0] == "reconnect"]
+        assert reconnects, "adapter.reconnect() was never called"
+        assert reconnects[-1][1:] == (
+            "broker.example.com", 2883, "u1", "pw1", "gm-test", False,
+        )
+
+    async def test_reconnect_uses_stored_password_when_masked(
+        self, client: AsyncClient, fake_mqtt_adapter: FakeMqttAdapter,
+    ):
+        await client.put("/api/v1/system/mqtt", json={
+            "host": "h1", "port": 1883, "username": "u1",
+            "password": "real-secret", "client_id": "gm", "use_tls": False,
+        })
+        # Frontend echoes the masked value back on unrelated edits
+        await client.put("/api/v1/system/mqtt", json={
+            "host": "h2", "port": 1883, "username": "u1",
+            "password": "****", "client_id": "gm", "use_tls": False,
+        })
+
+        reconnects = [c for c in fake_mqtt_adapter.calls if c[0] == "reconnect"]
+        assert len(reconnects) >= 2
+        assert reconnects[-1][1] == "h2"
+        assert reconnects[-1][4] == "real-secret", (
+            "reconnect must use the stored password, not the '****' mask"
+        )
+
+    async def test_update_resumes_enabled_publishing_on_running_devices(
+        self, client: AsyncClient, fake_mqtt_adapter: FakeMqttAdapter,
+    ):
+        template = await _create_template(client)
+        device = await _create_device(client, template["id"])
+        await _put_publish_config(client, device["id"])
+        resp = await client.post(f"/api/v1/system/devices/{device['id']}/mqtt/start")
+        assert resp.status_code == 200
+        await _set_device_status(device["id"], "running")
+        fake_mqtt_adapter.calls.clear()
+
+        resp = await client.put("/api/v1/system/mqtt", json={
+            "host": "h3", "port": 1883, "username": "",
+            "password": "", "client_id": "gm", "use_tls": False,
+        })
+        assert resp.status_code == 200
+
+        kinds = [c[0] for c in fake_mqtt_adapter.calls]
+        assert "reconnect" in kinds
+        # reconnect() kills all publish loops — the route must restart enabled ones
+        assert "start_publishing" in kinds, (
+            "publishing for enabled devices was not resumed after reconnect"
+        )
+        assert kinds.index("set_device_meta") < kinds.index("start_publishing")
+
+    async def test_update_without_adapter_still_saves(self, client: AsyncClient):
+        """No mqtt adapter registered (e.g. startup failure) → settings still save."""
+        from app.protocols import protocol_manager
+
+        prev = protocol_manager._adapters.pop("mqtt", None)
+        try:
+            resp = await client.put("/api/v1/system/mqtt", json={
+                "host": "h4", "port": 1883, "username": "",
+                "password": "", "client_id": "gm", "use_tls": False,
+            })
+            assert resp.status_code == 200
+            assert resp.json()["data"]["host"] == "h4"
+        finally:
+            if prev is not None:
+                protocol_manager.register_adapter("mqtt", prev)

@@ -1,5 +1,45 @@
 # Development Log
 
+## 2026-07-17 — MQTT 設定即時生效 + publish topic meta 修復（#81、#82）
+
+### 背景
+
+把 Linode GhostMeter 的 MQTT 發布接到 EnOL 的 EMQX broker 時，實地踩到兩個 bug：
+
+1. **#81**：`PUT /api/v1/system/mqtt` 只把 broker 設定寫進 DB，跑著的
+   `MqttAdapter` 完全不知情——`MqttAdapter.reconnect()` 從 PR 實作以來就是
+   dead code，沒有任何呼叫點。改完設定必須重啟 backend 才生效（實測就是靠
+   `docker compose restart backend` 繞過的）。
+2. **#82**：`POST /api/v1/system/devices/{id}/mqtt/start` 呼叫
+   `start_publishing()` 前沒有先 `set_device_meta()`，publish loop 渲染 topic
+   template 時 meta 缺失、fallback 成 `unknown`——實測訊息全部發到
+   `gm/unknown`（EMQX topic metrics 證實），batch payload 的 `device` 欄位是
+   裸 UUID。唯一會正確設 meta 的路徑是 `device_service.start_device()` 的
+   auto-start（設備啟動時已有 enabled config），所以 UI 上「對運行中設備開啟
+   publishing」這條主要流程是壞的，workaround 是 stop/start 設備一次。
+
+### 做法（TDD：先寫 5 個失敗測試，再實作）
+
+- `mqtt_service.get_device_meta()`：join device + template 撈 topic 渲染需要的
+  (name, slave_id, template_name)；`mqtt/start` 路由在 `start_publishing()` 前
+  先 `set_device_meta()`。
+- `PUT /system/mqtt` 存檔後對 adapter 呼叫 `reconnect()`（用 service 回傳的
+  ORM 物件取「解析後」的密碼——request 可能帶 masked `****`，不能直接用）。
+- `reconnect()` 會取消所有 publish task，所以新增
+  `mqtt_service.resume_enabled_publishing()`：重連成功後把 enabled config ×
+  running device 的 publish task 全部帶 meta 重啟。adapter 未註冊（啟動失敗）
+  時設定照存，行為與舊版一致。
+- 測試用 `FakeMqttAdapter`（錄呼叫順序）替換 protocol_manager 裡的 mqtt
+  adapter，驗證 meta 先於 start_publishing、masked 密碼解析、reconnect 後
+  resume、無 adapter 時仍可存檔。
+
+### 驗證
+
+- `tests/test_mqtt.py` 27 passed（22 既有 + 5 新增）；全套 backend 415 passed。
+- `test_health.py::test_health_returns_200` 本機失敗為既有環境問題（測試硬編
+  version `0.1.0`，CI 用 workflow env `APP_VERSION: 0.1.0` 釘住，本機無 `.env`
+  吃到預設 `0.4.3`）——與本次修改無關，未動。
+
 ## 2026-07-04 — Frontend vitest 測試骨架 + CI gate（#62）
 
 ### 背景

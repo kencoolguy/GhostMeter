@@ -47,11 +47,25 @@ async def update_broker_settings(
     data: MqttBrokerSettingsWrite,
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[MqttBrokerSettingsRead]:
-    """Update global MQTT broker settings."""
+    """Update global MQTT broker settings and apply them to the running adapter."""
     settings = await mqtt_service.upsert_broker_settings(
         session, data.host, data.port, data.username,
         data.password, data.client_id, data.use_tls,
     )
+
+    # Apply immediately: reconnect with the resolved (unmasked) settings, then
+    # restart publish tasks that the reconnect cancelled.
+    from app.protocols import protocol_manager
+
+    mqtt_adapter = protocol_manager.get_adapter("mqtt")
+    if mqtt_adapter is not None:
+        await mqtt_adapter.reconnect(  # type: ignore[attr-defined]
+            settings.host, settings.port, settings.username,
+            settings.password, settings.client_id, settings.use_tls,
+        )
+        if mqtt_adapter.get_status().get("connected"):
+            await mqtt_service.resume_enabled_publishing(session)
+
     result = MqttBrokerSettingsRead(
         host=settings.host,
         port=settings.port,
@@ -170,6 +184,14 @@ async def start_mqtt_publishing(
         mqtt_adapter = protocol_manager.get_adapter("mqtt")
         if mqtt_adapter is None:
             raise RuntimeError("MQTT protocol adapter is not registered")
+        # The publish loop renders topics from device meta — set it first,
+        # otherwise topics come out as "unknown" (issue #82).
+        meta = await mqtt_service.get_device_meta(session, device_id)
+        if meta is not None:
+            device_name, slave_id, template_name = meta
+            mqtt_adapter.set_device_meta(  # type: ignore[attr-defined]
+                device_id, device_name, slave_id, template_name,
+            )
         await mqtt_adapter.start_publishing(device_id, config)  # type: ignore[attr-defined]
     except Exception as e:
         # Revert enabled flag on failure
