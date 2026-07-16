@@ -611,3 +611,51 @@ class TestBrokerSettingsReconnect:
         finally:
             if prev is not None:
                 protocol_manager.register_adapter("mqtt", prev)
+
+
+class TestStartupResume:
+    """Startup resume must bring MQTT publish tasks back (#84)."""
+
+    async def test_resume_running_devices_resumes_publishing(
+        self, client: AsyncClient, fake_mqtt_adapter: FakeMqttAdapter,
+    ):
+        template = await _create_template(client)
+        device = await _create_device(client, template["id"])
+        await _put_publish_config(client, device["id"])
+        resp = await client.post(f"/api/v1/system/devices/{device['id']}/mqtt/start")
+        assert resp.status_code == 200
+        await _set_device_status(device["id"], "running")
+        fake_mqtt_adapter.calls.clear()
+
+        # Simulates the lifespan startup path after a backend restart
+        import app.database as db
+        from app.services import device_service
+
+        async with db.async_session_factory() as session:
+            await device_service.resume_running_devices(session)
+
+        kinds = [c[0] for c in fake_mqtt_adapter.calls]
+        assert "start_publishing" in kinds, (
+            "startup resume did not restart enabled MQTT publishing"
+        )
+        assert kinds.index("set_device_meta") < kinds.index("start_publishing")
+
+    async def test_resume_skips_publishing_for_stopped_devices(
+        self, client: AsyncClient, fake_mqtt_adapter: FakeMqttAdapter,
+    ):
+        template = await _create_template(client)
+        device = await _create_device(client, template["id"])
+        await _put_publish_config(client, device["id"])
+        resp = await client.post(f"/api/v1/system/devices/{device['id']}/mqtt/start")
+        assert resp.status_code == 200
+        # Device stays "stopped" — enabled config alone must not publish
+        fake_mqtt_adapter.calls.clear()
+
+        import app.database as db
+        from app.services import device_service
+
+        async with db.async_session_factory() as session:
+            await device_service.resume_running_devices(session)
+
+        kinds = [c[0] for c in fake_mqtt_adapter.calls]
+        assert "start_publishing" not in kinds

@@ -33,9 +33,19 @@
   adapter，驗證 meta 先於 start_publishing、masked 密碼解析、reconnect 後
   resume、無 adapter 時仍可存檔。
 
+### 追加：#84 startup resume 不恢復 publishing（同日第二個 PR）
+
+部署 #83 時發現第三個 gap：`main.py` lifespan 的 startup resume 只重建設備
+runtime，不會恢復 MQTT publish task——config 還是 `enabled=true` 但 loop 已死，
+每次重啟/部署 backend 發布就默默斷掉。修法：把 resume 區塊從 lifespan 抽成
+`device_service.resume_running_devices()`（可測），結尾呼叫 #83 新增的
+`resume_enabled_publishing()`。TDD 兩個測試：running+enabled 會恢復（meta 先於
+start_publishing）、stopped+enabled 不會。
+
 ### 驗證
 
-- `tests/test_mqtt.py` 27 passed（22 既有 + 5 新增）；全套 backend 415 passed。
+- `tests/test_mqtt.py` 27 passed（22 既有 + 5 新增）；#84 後 29 passed；全套
+  backend 417 passed。
 - `test_health.py::test_health_returns_200` 本機失敗為既有環境問題（測試硬編
   version `0.1.0`，CI 用 workflow env `APP_VERSION: 0.1.0` 釘住，本機無 `.env`
   吃到預設 `0.4.3`）——與本次修改無關，未動。
