@@ -1,5 +1,7 @@
 from httpx import AsyncClient
 
+from app.config import get_settings
+
 # Reuse template creation helper
 TEMPLATE_PAYLOAD = {
     "name": "Test Meter",
@@ -231,11 +233,12 @@ class TestProtocolSlaveIdLimits:
         assert bacnet_resp.status_code == 201
 
     async def test_device_port_reflects_protocol(self, client: AsyncClient) -> None:
+        settings = get_settings()
         cases = [
-            ("modbus_tcp", 502),
-            ("snmp", 10161),
-            ("opcua", 4840),
-            ("bacnet", 47808),
+            ("modbus_tcp", settings.MODBUS_PORT),
+            ("snmp", settings.SNMP_PORT),
+            ("opcua", settings.OPCUA_PORT),
+            ("bacnet", settings.BACNET_PORT),
         ]
         for protocol, expected_port in cases:
             template = await create_protocol_template(client, protocol, f"{protocol} Meter")

@@ -39,7 +39,6 @@ async def _create_device(
             "name": name,
             "template_id": template_id,
             "slave_id": slave_id,
-            "port": 502,
         },
     )
     assert resp.status_code == 201
@@ -397,7 +396,7 @@ class TestSystemImportEdgeCases:
     async def test_import_updates_existing_device(self, client: AsyncClient) -> None:
         """Import updates device if (slave_id, port) already exists."""
         template = await _create_template(client)
-        await _create_device(client, template["id"])
+        device = await _create_device(client, template["id"])
 
         payload = {
             "version": "1.0",
@@ -406,7 +405,7 @@ class TestSystemImportEdgeCases:
                     "name": "Updated Device",
                     "template_name": "Export Test Meter",
                     "slave_id": 1,
-                    "port": 502,
+                    "port": device["port"],
                     "description": "Updated via import",
                 }
             ],
