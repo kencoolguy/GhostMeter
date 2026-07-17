@@ -267,35 +267,46 @@ Base path: `/api/v1/devices`
 |-------|------|----------|---------|-------------|
 | `template_id` | UUID | yes | — | Template to use |
 | `name` | string | yes | — | Device name |
-| `slave_id` | integer | yes | — | Modbus Slave ID (1–247) |
-| `port` | integer | no | `502` | Modbus TCP port |
+| `slave_id` | integer | yes | — | Slave ID, ≥1 (upper bound depends on the template's protocol — see below) |
 | `description` | string\|null | no | `null` | Description |
 | `profile_id` | UUID\|null | no | `null` | Simulation profile to apply. Absent = auto-apply default; explicit `null` = skip |
+
+> `port` is not a request field — the server derives it from the template's protocol (see `DeviceSummary.port` below) and ignores any client-supplied value.
 
 #### `DeviceBatchCreate` (request)
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `template_id` | UUID | yes | — | Template to use |
-| `slave_id_start` | integer | yes | — | Start of Slave ID range (1–247) |
-| `slave_id_end` | integer | yes | — | End of Slave ID range (inclusive, 1–247) |
-| `port` | integer | no | `502` | Modbus TCP port |
+| `slave_id_start` | integer | yes | — | Start of Slave ID range, ≥1 |
+| `slave_id_end` | integer | yes | — | End of Slave ID range (inclusive); upper bound depends on protocol |
 | `name_prefix` | string\|null | no | `null` | Name prefix; defaults to template name |
 | `description` | string\|null | no | `null` | Description for all created devices |
 | `profile_id` | UUID\|null | no | `null` | Simulation profile to apply. Absent = auto-apply default; explicit `null` = skip |
 
-> Batch limit: 50 devices per call. Naming: `"{prefix} {N}"` if prefix given, else `"{template_name} - Slave {N}"`.
+> Batch limit: 50 devices per call. Naming: `"{prefix} {N}"` if prefix given, else `"{template_name} - Slave {N}"`. `port` is server-derived, same as `DeviceCreate`.
 
 #### `DeviceUpdate` (request)
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Device name |
-| `slave_id` | integer | yes | — | Modbus Slave ID (1–247) |
-| `port` | integer | no | `502` | Modbus TCP port |
+| `slave_id` | integer | yes | — | Slave ID, ≥1 (upper bound depends on the device's protocol) |
 | `description` | string\|null | no | `null` | Description |
 
-> Full replacement — caller must re-send all fields. `template_id` and `status` are not updatable.
+> Full replacement — caller must re-send all fields. `template_id` and `status` are not updatable. `port` is server-derived, same as `DeviceCreate`.
+
+#### Per-protocol Slave ID limits
+
+| Protocol | Slave ID ceiling | Why |
+|----------|-------------------|-----|
+| `modbus_tcp` | 247 | Modbus unit identifier is a 1-byte field (1–247; 0 and 248–255 are broadcast/reserved) |
+| `bacnet` | 247 | Devices sit on a virtual BACnet/IP network keyed by a 1-byte MAC (`slave_id`); MAC 254 is reserved for the router |
+| `snmp` | none | Devices are keyed by OID, not slave_id — slave_id is a display label only |
+| `opcua` | none | Devices are keyed by node, not slave_id — slave_id is a display label only |
+| `mqtt` | none | Devices are keyed by topic, not slave_id — slave_id is a display label only |
+
+Each protocol also gets its own `port` value (see `DeviceSummary.port`), so `(slave_id, port)` uniqueness is scoped per protocol — e.g. a Modbus device and a BACnet device can both use `slave_id=5`. For SNMP/OPC UA/MQTT the practical ceiling is host memory and per-adapter event-loop throughput, not a coded limit.
 
 #### `DeviceSummary` (response — list items)
 
@@ -305,9 +316,9 @@ Base path: `/api/v1/devices`
 | `template_id` | UUID | Template ID |
 | `template_name` | string | Template name (joined) |
 | `name` | string | Device name |
-| `slave_id` | integer | Modbus Slave ID |
+| `slave_id` | integer | Slave ID |
 | `status` | string | `stopped`, `running`, or `error` |
-| `port` | integer | Modbus TCP port |
+| `port` | integer | Server-derived per protocol: Modbus 502, SNMP 10161, OPC UA 4840, BACnet 47808, MQTT 1883 (nominal — MQTT has no listening port; see Per-protocol Slave ID limits above) |
 | `description` | string\|null | Description |
 | `mqtt_publishing` | boolean | Whether MQTT publishing is enabled for this device |
 | `created_at` | datetime | ISO 8601 UTC |

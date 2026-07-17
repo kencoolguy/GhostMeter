@@ -60,22 +60,22 @@ A single Modbus register entry within a device template. Stores address, data ty
 
 ### `device_instances`
 
-A virtual device instance created from a template. Devices bind to a Modbus slave ID and port, and have a status state machine (stopped/running/error).
+A virtual device instance created from a template. Devices bind to a slave ID and a (server-derived) port, and have a status state machine (stopped/running/error).
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
 | `template_id` | UUID | NOT NULL | — | FK → `device_templates.id` (RESTRICT) |
 | `name` | VARCHAR(200) | NOT NULL | — | Device name |
-| `slave_id` | INTEGER | NOT NULL | — | Modbus Slave ID (1–247) |
+| `slave_id` | INTEGER | NOT NULL | — | Slave ID, ≥1. Ceiling of 247 for `modbus_tcp`/`bacnet` (1-byte protocol fields); unbounded for `snmp`/`opcua`/`mqtt` (display label only — see `app/services/device_service.py::_PROTOCOL_SLAVE_ID_MAX`) |
 | `status` | VARCHAR(20) | NOT NULL | `'stopped'` | `stopped`, `running`, or `error` |
-| `port` | INTEGER | NOT NULL | `502` | Modbus TCP port |
+| `port` | INTEGER | NOT NULL | `502` | Not client-settable — derived server-side from the template's protocol (`_resolve_port`): Modbus 502, SNMP 10161, OPC UA 4840, BACnet 47808, MQTT 1883 (nominal, MQTT has no real listening port). Exists so `(slave_id, port)` partitions the uniqueness check by protocol instead of colliding across them |
 | `description` | TEXT | NULL | — | Human-readable description |
 | `created_at` | TIMESTAMPTZ | NOT NULL | `now()` | Creation time (UTC) |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | `now()` | Last update time (UTC) |
 
 **Constraints:**
-- `UNIQUE (slave_id, port)` — same slave ID cannot be used twice on the same port
+- `UNIQUE (slave_id, port)` — same slave ID cannot be used twice within the same protocol's port
 - `FK template_id → device_templates.id ON DELETE RESTRICT` — templates with devices cannot be deleted
 
 **Relations:**

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.models.device import DeviceInstance
 from app.models.mqtt import MqttPublishConfig
@@ -22,6 +23,41 @@ from app.services.template_service import get_template as get_template_with_regi
 from app.simulation import simulation_engine
 
 logger = logging.getLogger(__name__)
+
+# Modbus's unit identifier and BACnet's virtual-network MAC are both 1-byte
+# protocol fields, so 247 (1-247, excluding broadcast/reserved values) is a
+# real ceiling for those two. The other adapters key devices by OID/node/topic
+# (arbitrary strings) — slave_id there is just a display label, so no ceiling.
+_PROTOCOL_SLAVE_ID_MAX: dict[str, int] = {
+    "modbus_tcp": 247,
+    "bacnet": 247,
+}
+
+
+def _resolve_port(protocol: str) -> int:
+    """Map a protocol to its dedicated DeviceInstance.port value.
+
+    This isn't a real listening port for every protocol (MQTT has none) —
+    it exists so the (slave_id, port) uniqueness constraint partitions
+    devices by protocol instead of colliding across unrelated protocols.
+    """
+    settings = get_settings()
+    return {
+        "modbus_tcp": settings.MODBUS_PORT,
+        "snmp": settings.SNMP_PORT,
+        "opcua": settings.OPCUA_PORT,
+        "bacnet": settings.BACNET_PORT,
+        "mqtt": settings.MQTT_NOMINAL_PORT,
+    }[protocol]
+
+
+def _validate_slave_id_ceiling(protocol: str, slave_id: int) -> None:
+    """Raise if slave_id exceeds the protocol's slave_id ceiling, if any."""
+    limit = _PROTOCOL_SLAVE_ID_MAX.get(protocol)
+    if limit is not None and slave_id > limit:
+        raise ValidationException(
+            f"Slave ID must be between 1 and {limit} for {protocol} devices"
+        )
 
 
 async def _get_device_raw(
@@ -196,14 +232,16 @@ async def create_device(
     session: AsyncSession, data: DeviceCreate,
 ) -> dict:
     """Create a single device."""
-    await get_template_with_registers(session, data.template_id)
-    await _check_slave_id_available(session, data.slave_id, data.port)
+    template = await get_template_with_registers(session, data.template_id)
+    _validate_slave_id_ceiling(template.protocol, data.slave_id)
+    port = _resolve_port(template.protocol)
+    await _check_slave_id_available(session, data.slave_id, port)
 
     device = DeviceInstance(
         template_id=data.template_id,
         name=data.name,
         slave_id=data.slave_id,
-        port=data.port,
+        port=port,
         description=data.description,
     )
     session.add(device)
@@ -232,10 +270,12 @@ async def batch_create_devices(
         raise ValidationException("Batch create limited to 50 devices")
 
     template = await get_template_with_registers(session, data.template_id)
+    _validate_slave_id_ceiling(template.protocol, data.slave_id_end)
+    port = _resolve_port(template.protocol)
 
     # Check all slave IDs are available
     for sid in range(data.slave_id_start, data.slave_id_end + 1):
-        await _check_slave_id_available(session, sid, data.port)
+        await _check_slave_id_available(session, sid, port)
 
     # Build name prefix
     prefix = data.name_prefix or template.name
@@ -256,7 +296,7 @@ async def batch_create_devices(
             template_id=data.template_id,
             name=name,
             slave_id=sid,
-            port=data.port,
+            port=port,
             description=data.description,
         )
         session.add(device)
@@ -292,13 +332,17 @@ async def update_device(
             error_code="DEVICE_RUNNING",
         )
 
+    template = await get_template_with_registers(session, device.template_id)
+    _validate_slave_id_ceiling(template.protocol, data.slave_id)
+    port = _resolve_port(template.protocol)
+
     await _check_slave_id_available(
-        session, data.slave_id, data.port, exclude_device_id=device_id
+        session, data.slave_id, port, exclude_device_id=device_id
     )
 
     device.name = data.name
     device.slave_id = data.slave_id
-    device.port = data.port
+    device.port = port
     device.description = data.description
 
     try:

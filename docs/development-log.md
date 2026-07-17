@@ -1,5 +1,84 @@
 # Development Log
 
+## 2026-07-17 — 各協定獨立 slave_id 上限（Modbus/BACnet 247，SNMP/OPC UA/MQTT 不設上限）
+
+### 背景
+
+跟 Ken 討論「GhostMeter 一台能建幾台裝置」時發現一個非預期耦合：`DeviceCreate`/
+`DeviceBatchCreate`/`DeviceUpdate` 的 `port` 欄位 default 一律是 `502`，前端
+Create Modal 也從來不讓使用者填 port。結果 5 種協定（Modbus/SNMP/OPC UA/
+BACnet/MQTT）建立裝置時，`DeviceInstance.port` 全部存成同一個值 `502`，而
+`(slave_id, port)` 又是全系統共用的 DB unique constraint（`device_service.py`
+的 `_check_slave_id_available`）——即使 SNMP 實際監聽的是 10161、OPC UA 是
+4840，跟 Modbus 的 502 毫無關係。
+
+實際後果：`slave_id` 的 1-247 schema validator（原本只是為了符合 Modbus unit
+identifier 是 1-byte 欄位的協定限制）被無差別套用到全部協定，且因為 port 全部
+共用 502，5 種協定其實是在搶同一個「最多 247」的名額池，而不是各自獨立 247。
+
+### 根因與設計判斷
+
+- **真限制（協定規格本身要求）**：Modbus unit identifier、BACnet 的 VLAN MAC
+  都是 1-byte 欄位，1-247 是物理上限，改不掉。
+- **假限制（純粹是程式耦合造成）**：SNMP 用 OID 當 key、OPC UA 用 node、MQTT
+  用 topic 字串，`slave_id` 在這三個協定裡只是顯示用途的標籤，本來就不需要
+  1-247 這個上限；會被卡住純粹是因為 schema validator 跟 `(slave_id, port)`
+  constraint 沒有分協定處理。
+
+修法是把 `port` 從「使用者可填的欄位」改成「後端依 `template.protocol` 推導」
+（`device_service._resolve_port`），讓每個協定各自拿到自己的 `(slave_id, port)`
+命名空間；`slave_id` 的上限檢查則搬到 service 層（`_validate_slave_id_ceiling`），
+因為只有拿到 `template.protocol` 之後才知道該套用哪個協定的規則。Modbus/
+BACnet 保留 247 上限，SNMP/OPC UA/MQTT 不設上限（純受記憶體/event loop
+throughput 限制，非程式碼寫死）。MQTT 沒有真正的監聽 port（devices 是主動
+publish 到 broker），給了一個 nominal 值 `1883`（`MQTT_NOMINAL_PORT`）純粹用
+來讓它跟其他協定分開命名空間，不代表 broker 的真實 port（那是
+`MqttBrokerSettings` 管的）。
+
+### 範圍決策
+
+跟 Ken 確認過，這次**只改後端**：前端 Create/Edit Modal 的 Slave ID 輸入框
+仍然寫死 `max={247}`（`EditDeviceModal.tsx`），且 `DeviceSummary` 沒有回傳
+`protocol` 欄位可供前端判斷。也就是說 SNMP/OPC UA/MQTT 裝置理論上限已經解除，
+但透過現有 UI 仍然建不到 248 台以上——要用的話得直接呼叫 API。`EditDeviceModal`
+的 Port 輸入框現在送出的值會被後端忽略（server 一律重新推導），這是刻意保留
+前端不動的已知副作用，不是遺漏。
+
+### 做法（TDD）
+
+- 先在 `tests/test_devices.py` 加 8 個測試（BACnet 上限阻擋、SNMP/OPC UA/MQTT
+  超過 247 允許、跨協定同 slave_id 共存、`port` 回傳值符合協定、batch 版本的
+  上限/放寬），確認全部因現有行為而失敗（RED，6 fail / 2 pass——BACnet 阻擋
+  的 2 個因為舊 validator 本來就會擋 248 而先過）。
+- `schemas/device.py`：拿掉 `port` 欄位，`slave_id` validator 只留下界
+  （`>= 1`），上界判斷移到 service 層。
+- `services/device_service.py`：新增 `_PROTOCOL_SLAVE_ID_MAX`（只有
+  `modbus_tcp`/`bacnet` 有值）、`_resolve_port()`、`_validate_slave_id_ceiling()`；
+  `create_device`/`batch_create_devices`/`update_device` 都先取得
+  `template.protocol` 再驗證上限、推導 port（`update_device` 原本沒有 fetch
+  template，這次補上）。
+- `config.py`：新增 `MQTT_NOMINAL_PORT = 1883`，附註說明用途。
+
+### 驗證
+
+- `tests/test_devices.py` 34 passed（8 新增全綠）。
+- 全套 backend `pytest`：423 passed, 1 failed——失敗是既有無關的
+  `test_health.py::test_health_returns_200`（硬編版本字串 `0.1.0` vs 目前
+  `0.4.3`，跟這次改動無關，未修）。
+- `ruff check` 通過（`schemas/device.py`、`services/device_service.py`、
+  `config.py`）。
+- 全部既有測試中原本明確傳 `port`（`test_opcua_fault.py` 傳 `port: 4840`、
+  `test_system_export_import.py`/`test_batch_device_ops.py` 傳 `port: 502`）
+  的案例，剛好都跟新的 server-derived 值一致，零改動零破壞。
+
+### 已知後續（未做，等 Ken 要用時再說）
+
+- 前端 Slave ID 上限/協定顯示未同步，若要在 UI 上真的建立 248+ 台 SNMP/OPC
+  UA/MQTT 裝置需要另外處理（`DeviceSummary` 加 `protocol`、Modal 動態調整
+  `max`）。
+- `EditDeviceModal` 的 Port 欄位變成無效輸入（送出會被忽略），沒有拿掉或加
+  提示——維持現狀是本次明確決定，非疏漏。
+
 ## 2026-07-17 — MQTT 設定即時生效 + publish topic meta 修復（#81、#82）
 
 ### 背景
