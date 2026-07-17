@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     BACNET_DEVICE_INSTANCE_BASE: int = 100000  # device instance = base + slave_id; router = base
     BACNET_NETWORK: int = 100  # virtual (VLAN) network number
 
+    # MQTT has no per-adapter listening port (devices publish outbound to a
+    # broker configured via MqttBrokerSettings). This nominal value only
+    # gives MQTT devices their own slot in DeviceInstance's (slave_id, port)
+    # uniqueness check, separate from the other protocols.
+    MQTT_NOMINAL_PORT: int = 1883
+
     # Direct override (takes precedence if set)
     DATABASE_URL: str | None = None
 

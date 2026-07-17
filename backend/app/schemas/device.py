@@ -6,30 +6,32 @@ from pydantic import BaseModel, ConfigDict, field_validator
 # --- Request Schemas ---
 
 class DeviceCreate(BaseModel):
-    """Schema for creating a single device."""
+    """Schema for creating a single device.
+
+    ``port`` is not client-settable: the service layer derives it from the
+    template's protocol (see app.services.device_service._resolve_port).
+    """
 
     template_id: UUID
     name: str
     slave_id: int
-    port: int = 502
     description: str | None = None
     profile_id: UUID | None = None  # See model_fields_set for absent vs null
 
     @field_validator("slave_id")
     @classmethod
     def validate_slave_id(cls, v: int) -> int:
-        if v < 1 or v > 247:
-            raise ValueError("Slave ID must be between 1 and 247")
+        if v < 1:
+            raise ValueError("Slave ID must be 1 or greater")
         return v
 
 
 class DeviceBatchCreate(BaseModel):
-    """Schema for batch creating devices."""
+    """Schema for batch creating devices. See DeviceCreate re: port."""
 
     template_id: UUID
     slave_id_start: int
     slave_id_end: int
-    port: int = 502
     name_prefix: str | None = None
     description: str | None = None
     profile_id: UUID | None = None  # See model_fields_set for absent vs null
@@ -37,24 +39,26 @@ class DeviceBatchCreate(BaseModel):
     @field_validator("slave_id_start", "slave_id_end")
     @classmethod
     def validate_slave_ids(cls, v: int) -> int:
-        if v < 1 or v > 247:
-            raise ValueError("Slave ID must be between 1 and 247")
+        if v < 1:
+            raise ValueError("Slave ID must be 1 or greater")
         return v
 
 
 class DeviceUpdate(BaseModel):
-    """Schema for updating a device (full replacement, no template_id/status)."""
+    """Schema for updating a device (full replacement, no template_id/status).
+
+    See DeviceCreate re: port.
+    """
 
     name: str
     slave_id: int
-    port: int = 502
     description: str | None = None
 
     @field_validator("slave_id")
     @classmethod
     def validate_slave_id(cls, v: int) -> int:
-        if v < 1 or v > 247:
-            raise ValueError("Slave ID must be between 1 and 247")
+        if v < 1:
+            raise ValueError("Slave ID must be 1 or greater")
         return v
 
 
