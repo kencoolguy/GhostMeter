@@ -60,7 +60,8 @@ export type {
 export type { ImportResult, SystemExport } from "./system";
 
 export type {
-  MqttBrokerSettings,
+  MqttBroker,
+  MqttBrokerWrite,
   MqttPublishConfig,
   MqttPublishConfigWrite,
   MqttTestResult,
