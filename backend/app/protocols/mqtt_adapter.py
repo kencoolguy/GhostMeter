@@ -1,4 +1,10 @@
-"""MQTT publish adapter using aiomqtt."""
+"""MQTT publish adapter using aiomqtt.
+
+Manages one aiomqtt client per configured broker; publish tasks are keyed by
+(device_id, broker_id) so one device can publish to several brokers with
+independent configs, and one broker's failure or reconnect never touches
+another broker's tasks.
+"""
 
 import asyncio
 import json
@@ -23,21 +29,20 @@ class MqttAdapter(ProtocolAdapter):
 
     def __init__(self) -> None:
         super().__init__()
-        self._client: aiomqtt.Client | None = None
-        self._connected: bool = False
+        self._clients: dict[UUID, aiomqtt.Client] = {}
+        self._broker_info: dict[UUID, dict] = {}
         self._available: bool = False
-        self._host: str = ""
-        self._port: int = 1883
         self._device_registers: dict[UUID, list[RegisterInfo]] = {}
         self._device_meta: dict[UUID, dict] = {}
-        self._publish_tasks: dict[UUID, asyncio.Task] = {}
-        self._publish_configs: dict[UUID, dict] = {}
+        self._publish_tasks: dict[tuple[UUID, UUID], asyncio.Task] = {}
+        self._publish_configs: dict[tuple[UUID, UUID], dict] = {}
 
     async def start(self) -> None:
-        """Load broker settings from DB and connect.
+        """Load all broker rows from DB and connect each one independently.
 
-        If no broker settings exist, mark as unavailable (no-op).
-        This prevents blocking other adapters in start_all().
+        If no brokers are configured, mark as unavailable (no-op). A broker
+        that fails to connect is recorded as disconnected but never blocks
+        the others (or start_all()).
         """
         from sqlalchemy import select
 
@@ -45,53 +50,111 @@ class MqttAdapter(ProtocolAdapter):
         from app.models.mqtt import MqttBrokerSettings
 
         async with async_session_factory() as session:
-            result = await session.execute(select(MqttBrokerSettings).limit(1))
-            settings = result.scalar_one_or_none()
+            result = await session.execute(select(MqttBrokerSettings))
+            brokers = result.scalars().all()
 
-        if settings is None:
-            logger.info("No MQTT broker settings configured — adapter inactive")
+        if not brokers:
+            logger.info("No MQTT brokers configured — adapter inactive")
             self._available = False
             return
 
-        self._host = settings.host
-        self._port = settings.port
-
-        try:
-            self._client = aiomqtt.Client(
-                hostname=settings.host,
-                port=settings.port,
-                username=settings.username or None,
-                password=settings.password or None,
-                identifier=settings.client_id,
-            )
-            await self._client.__aenter__()
-            self._connected = True
-            self._available = True
-            logger.info("MQTT connected to %s:%d", settings.host, settings.port)
-        except Exception:
-            logger.warning("MQTT broker connection failed — adapter inactive", exc_info=True)
-            self._available = False
-            self._connected = False
+        self._available = True
+        for broker in brokers:
+            await self.connect_broker(broker.id, broker)
 
     async def stop(self) -> None:
-        """Stop all publish tasks and disconnect."""
-        for device_id in list(self._publish_tasks):
-            await self.stop_publishing(device_id)
+        """Stop all publish tasks and disconnect every broker."""
+        for device_id, broker_id in list(self._publish_tasks):
+            await self._cancel_publish_task(device_id, broker_id)
         self._publish_tasks.clear()
         self._publish_configs.clear()
         self._device_registers.clear()
         self._device_meta.clear()
         self._device_stats.clear()
 
-        if self._client and self._connected:
-            try:
-                await self._client.__aexit__(None, None, None)
-            except Exception:
-                pass
-        self._client = None
-        self._connected = False
+        for broker_id in list(self._clients):
+            await self._close_client(broker_id)
+        self._clients.clear()
+        self._broker_info.clear()
         self._available = False
         logger.info("MQTT adapter stopped")
+
+    # --- Broker lifecycle ---
+
+    async def connect_broker(self, broker_id: UUID, settings) -> bool:
+        """Connect a client for one broker; record its state either way.
+
+        `settings` needs name/host/port/username/password/client_id attrs
+        (ORM row or schema object). Returns True when connected.
+        """
+        self._available = True
+        info = {
+            "name": settings.name,
+            "host": settings.host,
+            "port": settings.port,
+            "connected": False,
+        }
+        self._broker_info[broker_id] = info
+        try:
+            client = aiomqtt.Client(
+                hostname=settings.host,
+                port=settings.port,
+                username=settings.username or None,
+                password=settings.password or None,
+                identifier=settings.client_id,
+            )
+            await client.__aenter__()
+        except Exception:
+            logger.warning(
+                "MQTT broker '%s' (%s:%d) connection failed",
+                settings.name, settings.host, settings.port, exc_info=True,
+            )
+            return False
+        self._clients[broker_id] = client
+        info["connected"] = True
+        logger.info(
+            "MQTT connected to broker '%s' (%s:%d)",
+            settings.name, settings.host, settings.port,
+        )
+        return True
+
+    async def disconnect_broker(self, broker_id: UUID) -> None:
+        """Cancel this broker's publish tasks and drop its client."""
+        for device_id, task_broker_id in list(self._publish_tasks):
+            if task_broker_id == broker_id:
+                await self._cancel_publish_task(device_id, task_broker_id)
+        await self._close_client(broker_id)
+        self._broker_info.pop(broker_id, None)
+
+    async def reconnect_broker(self, broker_id: UUID, settings) -> bool:
+        """Apply new settings to one broker without touching the others.
+
+        Cancels only this broker's publish tasks; the caller is responsible
+        for resuming enabled configs afterwards.
+        """
+        for device_id, task_broker_id in list(self._publish_tasks):
+            if task_broker_id == broker_id:
+                await self._cancel_publish_task(device_id, task_broker_id)
+        await self._close_client(broker_id)
+        return await self.connect_broker(broker_id, settings)
+
+    def is_broker_connected(self, broker_id: UUID) -> bool:
+        """Whether this broker currently has a live client."""
+        return bool(self._broker_info.get(broker_id, {}).get("connected"))
+
+    async def _close_client(self, broker_id: UUID) -> None:
+        """Close and forget one broker's client, ignoring close errors."""
+        client = self._clients.pop(broker_id, None)
+        if client is not None:
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:
+                pass
+        info = self._broker_info.get(broker_id)
+        if info is not None:
+            info["connected"] = False
+
+    # --- ProtocolAdapter interface ---
 
     async def _do_add_device(
         self, device_id: UUID, slave_id: int, registers: list[RegisterInfo],
@@ -104,7 +167,6 @@ class MqttAdapter(ProtocolAdapter):
         await self.stop_publishing(device_id)
         self._device_registers.pop(device_id, None)
         self._device_meta.pop(device_id, None)
-        self._publish_configs.pop(device_id, None)
 
     async def update_register(
         self, device_id: UUID, address: int, function_code: int,
@@ -113,13 +175,22 @@ class MqttAdapter(ProtocolAdapter):
         """No-op. MQTT reads values from SimulationEngine at publish time."""
 
     def get_status(self) -> dict:
-        """Return adapter status."""
+        """Return adapter status with per-broker connection states."""
+        brokers = [
+            {
+                "id": str(broker_id),
+                "name": info["name"],
+                "host": info["host"],
+                "port": info["port"],
+                "connected": info["connected"],
+            }
+            for broker_id, info in self._broker_info.items()
+        ]
         return {
-            "broker_host": self._host,
-            "broker_port": self._port,
-            "connected": self._connected,
             "available": self._available,
-            "publishing_devices": len(self._publish_tasks),
+            "connected": any(b["connected"] for b in brokers),
+            "brokers": brokers,
+            "publishing_devices": len({d for d, _ in self._publish_tasks}),
         }
 
     # --- MQTT-specific ---
@@ -135,77 +206,63 @@ class MqttAdapter(ProtocolAdapter):
             "template_name": template_name,
         }
 
-    async def start_publishing(self, device_id: UUID, config) -> None:
-        """Start a per-device publish task."""
-        if not self._connected or not self._client:
+    async def start_publishing(
+        self, device_id: UUID, broker_id: UUID, config,
+    ) -> None:
+        """Start the publish task for one (device, broker) pair."""
+        if not self.is_broker_connected(broker_id):
             raise RuntimeError("MQTT broker not connected")
 
-        await self.stop_publishing(device_id)
+        await self.stop_publishing(device_id, broker_id)
 
-        self._publish_configs[device_id] = {
+        key = (device_id, broker_id)
+        self._publish_configs[key] = {
             "topic_template": config.topic_template,
             "payload_mode": config.payload_mode,
             "interval": config.publish_interval_seconds,
             "qos": config.qos,
             "retain": config.retain,
         }
-        task = asyncio.create_task(self._publish_loop(device_id))
-        self._publish_tasks[device_id] = task
-        logger.info("Started MQTT publishing for device %s", device_id)
+        task = asyncio.create_task(self._publish_loop(device_id, broker_id))
+        self._publish_tasks[key] = task
+        logger.info(
+            "Started MQTT publishing for device %s to broker %s",
+            device_id, broker_id,
+        )
 
-    async def stop_publishing(self, device_id: UUID) -> None:
-        """Cancel a device's publish task."""
-        task = self._publish_tasks.pop(device_id, None)
+    async def stop_publishing(
+        self, device_id: UUID, broker_id: UUID | None = None,
+    ) -> None:
+        """Cancel a device's publish tasks — one broker's, or all of them."""
+        for task_device_id, task_broker_id in list(self._publish_tasks):
+            if task_device_id != device_id:
+                continue
+            if broker_id is not None and task_broker_id != broker_id:
+                continue
+            await self._cancel_publish_task(task_device_id, task_broker_id)
+        logger.info(
+            "Stopped MQTT publishing for device %s (broker=%s)",
+            device_id, broker_id or "all",
+        )
+
+    async def _cancel_publish_task(self, device_id: UUID, broker_id: UUID) -> None:
+        """Cancel and await one (device, broker) publish task."""
+        key = (device_id, broker_id)
+        task = self._publish_tasks.pop(key, None)
         if task and not task.done():
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
                 pass
-        self._publish_configs.pop(device_id, None)
-        logger.info("Stopped MQTT publishing for device %s", device_id)
+        self._publish_configs.pop(key, None)
 
-    async def reconnect(
-        self, host: str, port: int,
-        username: str, password: str,
-        client_id: str, use_tls: bool,
-    ) -> None:
-        """Reconnect with new broker settings."""
-        # Stop all publishing
-        for device_id in list(self._publish_tasks):
-            await self.stop_publishing(device_id)
-
-        # Disconnect old
-        if self._client and self._connected:
-            try:
-                await self._client.__aexit__(None, None, None)
-            except Exception:
-                pass
-
-        # Connect new
-        self._host = host
-        self._port = port
-        try:
-            self._client = aiomqtt.Client(
-                hostname=host, port=port,
-                username=username or None,
-                password=password or None,
-                identifier=client_id,
-            )
-            await self._client.__aenter__()
-            self._connected = True
-            self._available = True
-            logger.info("MQTT reconnected to %s:%d", host, port)
-        except Exception:
-            logger.warning("MQTT reconnect failed", exc_info=True)
-            self._connected = False
-
-    async def _publish_loop(self, device_id: UUID) -> None:
-        """Per-device publish loop."""
+    async def _publish_loop(self, device_id: UUID, broker_id: UUID) -> None:
+        """Publish loop for one (device, broker) pair."""
         from app.simulation import fault_simulator, simulation_engine
         from app.simulation.fault_simulator import get_delay_seconds, get_failure_rate
 
-        config = self._publish_configs.get(device_id)
+        config = self._publish_configs.get((device_id, broker_id))
         if not config:
             return
 
@@ -231,7 +288,7 @@ class MqttAdapter(ProtocolAdapter):
                         await asyncio.sleep(get_delay_seconds(fault.params))
                     # "exception" is excluded via supported_fault_types (422 at REST)
 
-                if not self._connected or not self._client:
+                if not self.is_broker_connected(broker_id):
                     stats = self._device_stats.get(device_id)
                     if stats:
                         stats.request_count += 1
@@ -252,7 +309,8 @@ class MqttAdapter(ProtocolAdapter):
                         "values": values,
                     })
                     await self._publish_one(
-                        device_id, topic, payload, config["qos"], config["retain"],
+                        device_id, broker_id, topic, payload,
+                        config["qos"], config["retain"],
                     )
                 else:  # per_register
                     for reg_name, reg_value in values.items():
@@ -264,27 +322,33 @@ class MqttAdapter(ProtocolAdapter):
                             "timestamp": now,
                         })
                         await self._publish_one(
-                            device_id, topic, payload, config["qos"], config["retain"],
+                            device_id, broker_id, topic, payload,
+                            config["qos"], config["retain"],
                         )
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.error("MQTT publish error for device %s: %s", device_id, e)
+                logger.error(
+                    "MQTT publish error for device %s to broker %s: %s",
+                    device_id, broker_id, e,
+                )
                 stats = self._device_stats.get(device_id)
                 if stats:
                     stats.request_count += 1
                     stats.error_count += 1
 
     async def _publish_one(
-        self, device_id: UUID, topic: str, payload: str, qos: int, retain: bool,
+        self, device_id: UUID, broker_id: UUID,
+        topic: str, payload: str, qos: int, retain: bool,
     ) -> None:
-        """Publish a single message and update stats."""
+        """Publish a single message and update the device's stats."""
         stats = self._device_stats.get(device_id)
         if stats:
             stats.request_count += 1
         try:
-            await self._client.publish(topic, payload, qos=qos, retain=retain)  # type: ignore[union-attr]
+            client = self._clients[broker_id]
+            await client.publish(topic, payload, qos=qos, retain=retain)
             if stats:
                 stats.success_count += 1
         except Exception:

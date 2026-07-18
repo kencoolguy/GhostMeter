@@ -348,6 +348,16 @@ class TestPublishConfigValidation:
 # === MQTT Adapter Unit Tests ===
 
 
+def _connect_fake_broker(adapter, name: str = "test-broker"):
+    """Register a fake connected broker on the adapter; returns its id."""
+    broker_id = uuid.uuid4()
+    adapter._clients[broker_id] = object()  # never used by these tests
+    adapter._broker_info[broker_id] = {
+        "name": name, "host": "fake", "port": 1883, "connected": True,
+    }
+    return broker_id
+
+
 class TestMqttAdapter:
     """Unit tests for MqttAdapter logic (no real broker needed)."""
 
@@ -384,14 +394,30 @@ class TestMqttAdapter:
         assert topic == "data/unknown/0"
 
     async def test_get_status_initial(self):
-        """Initial status shows not connected."""
+        """Initial status shows no brokers and nothing publishing."""
         from app.protocols.mqtt_adapter import MqttAdapter
 
         adapter = MqttAdapter()
         status = adapter.get_status()
         assert status["connected"] is False
         assert status["available"] is False
+        assert status["brokers"] == []
         assert status["publishing_devices"] == 0
+
+    async def test_get_status_lists_brokers(self):
+        """Status lists each broker with its connection state."""
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        adapter = MqttAdapter()
+        b1 = _connect_fake_broker(adapter, "emqx-a")
+        adapter._broker_info[uuid.uuid4()] = {
+            "name": "emqx-b", "host": "down", "port": 1883, "connected": False,
+        }
+        status = adapter.get_status()
+        assert status["connected"] is True  # at least one connected
+        names = {b["name"]: b["connected"] for b in status["brokers"]}
+        assert names == {"emqx-a": True, "emqx-b": False}
+        assert any(b["id"] == str(b1) for b in status["brokers"])
 
     async def test_set_device_meta(self):
         """set_device_meta stores metadata for topic rendering."""
@@ -403,13 +429,67 @@ class TestMqttAdapter:
         assert adapter._device_meta[device_id]["device_name"] == "Test-Device"
         assert adapter._device_meta[device_id]["slave_id"] == 10
 
-    async def test_start_publishing_fails_without_connection(self):
-        """start_publishing raises when not connected."""
+    async def test_start_publishing_fails_without_broker_connection(self):
+        """start_publishing raises when the target broker is not connected."""
         from app.protocols.mqtt_adapter import MqttAdapter
 
         adapter = MqttAdapter()
         with pytest.raises(RuntimeError, match="not connected"):
-            await adapter.start_publishing(uuid.uuid4(), None)
+            await adapter.start_publishing(uuid.uuid4(), uuid.uuid4(), None)
+
+    async def test_stop_publishing_only_targets_given_broker(self):
+        """stop_publishing(device, broker) leaves other brokers' tasks running."""
+        import asyncio
+
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        adapter = MqttAdapter()
+        dev = uuid.uuid4()
+        b1, b2 = uuid.uuid4(), uuid.uuid4()
+        adapter._publish_tasks[(dev, b1)] = asyncio.create_task(asyncio.sleep(3600))
+        adapter._publish_tasks[(dev, b2)] = asyncio.create_task(asyncio.sleep(3600))
+
+        await adapter.stop_publishing(dev, b1)
+        assert (dev, b1) not in adapter._publish_tasks
+        assert (dev, b2) in adapter._publish_tasks
+
+        # No broker given -> all of the device's tasks stop
+        await adapter.stop_publishing(dev)
+        assert not adapter._publish_tasks
+
+    async def test_disconnect_broker_cancels_only_its_tasks(self):
+        """Disconnecting one broker leaves other brokers' publish tasks alone."""
+        import asyncio
+
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        adapter = MqttAdapter()
+        b1 = _connect_fake_broker(adapter, "gone")
+        b2 = _connect_fake_broker(adapter, "stays")
+        d1, d2 = uuid.uuid4(), uuid.uuid4()
+        adapter._publish_tasks[(d1, b1)] = asyncio.create_task(asyncio.sleep(3600))
+        adapter._publish_tasks[(d2, b2)] = asyncio.create_task(asyncio.sleep(3600))
+
+        await adapter.disconnect_broker(b1)
+        assert (d1, b1) not in adapter._publish_tasks
+        assert (d2, b2) in adapter._publish_tasks
+        assert b1 not in adapter._broker_info
+        assert adapter.is_broker_connected(b2)
+        await adapter.stop_publishing(d2)
+
+    async def test_publishing_devices_counts_distinct_devices(self):
+        """A device publishing to two brokers counts once."""
+        import asyncio
+
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        adapter = MqttAdapter()
+        dev = uuid.uuid4()
+        b1, b2 = uuid.uuid4(), uuid.uuid4()
+        adapter._publish_tasks[(dev, b1)] = asyncio.create_task(asyncio.sleep(3600))
+        adapter._publish_tasks[(dev, b2)] = asyncio.create_task(asyncio.sleep(3600))
+        assert adapter.get_status()["publishing_devices"] == 1
+        await adapter.stop_publishing(dev)
 
     async def test_update_register_is_noop(self):
         """update_register is a no-op for MQTT (reads from SimulationEngine)."""
