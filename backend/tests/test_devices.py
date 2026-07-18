@@ -424,9 +424,9 @@ class TestDeviceMqttPublishing:
 
         # Enable it directly in the DB — the flag must flip to True (and the
         # multi-config join must not duplicate the device row)
-        import app.database as db
         from sqlalchemy import update as sa_update
 
+        import app.database as db
         from app.models.mqtt import MqttPublishConfig
 
         async with db.async_session_factory() as session:
