@@ -124,22 +124,25 @@ async def export_system(session: AsyncSession) -> SystemExport:
             )
         )
 
-    # MQTT broker settings
-    mqtt_broker_export = None
-    stmt = select(MqttBrokerSettings).limit(1)
+    # MQTT brokers
+    stmt = select(MqttBrokerSettings).order_by(MqttBrokerSettings.name)
     result = await session.execute(stmt)
-    broker = result.scalar_one_or_none()
-    if broker is not None:
-        mqtt_broker_export = MqttBrokerSettingsExport(
-            host=broker.host,
-            port=broker.port,
-            username=broker.username,
-            password=broker.password,
-            client_id=broker.client_id,
-            use_tls=broker.use_tls,
+    brokers = result.scalars().all()
+    broker_id_to_name = {b.id: b.name for b in brokers}
+    mqtt_broker_exports = [
+        MqttBrokerSettingsExport(
+            name=b.name,
+            host=b.host,
+            port=b.port,
+            username=b.username,
+            password=b.password,
+            client_id=b.client_id,
+            use_tls=b.use_tls,
         )
+        for b in brokers
+    ]
 
-    # MQTT publish configs
+    # MQTT publish configs (referenced by device and broker name)
     stmt = select(MqttPublishConfig)
     result = await session.execute(stmt)
     mqtt_configs = result.scalars().all()
@@ -147,11 +150,13 @@ async def export_system(session: AsyncSession) -> SystemExport:
     mqtt_config_exports = []
     for mc in mqtt_configs:
         device_name = device_id_to_name.get(mc.device_id)
-        if device_name is None:
+        broker_name = broker_id_to_name.get(mc.broker_id)
+        if device_name is None or broker_name is None:
             continue
         mqtt_config_exports.append(
             MqttPublishConfigExport(
                 device_name=device_name,
+                broker_name=broker_name,
                 topic_template=mc.topic_template,
                 payload_mode=mc.payload_mode,
                 publish_interval_seconds=mc.publish_interval_seconds,
@@ -168,7 +173,7 @@ async def export_system(session: AsyncSession) -> SystemExport:
         devices=device_exports,
         simulation_configs=sim_exports,
         anomaly_schedules=schedule_exports,
-        mqtt_broker_settings=mqtt_broker_export,
+        mqtt_brokers=mqtt_broker_exports,
         mqtt_publish_configs=mqtt_config_exports,
     )
 
@@ -358,16 +363,30 @@ async def import_system(session: AsyncSession, data: SystemImport) -> ImportResu
         )
         result.anomaly_schedules_set += 1
 
-    # Step 5: Import MQTT broker settings
+    # Step 5: Import MQTT brokers (upsert by name). Legacy exports carry a
+    # single mqtt_broker_settings object instead — imported as 'default',
+    # which is also where legacy configs (no broker_name) attach.
+    broker_exports = list(data.mqtt_brokers)
     if data.mqtt_broker_settings is not None:
-        bs = data.mqtt_broker_settings
-        stmt = select(MqttBrokerSettings).limit(1)
-        existing_broker = (await session.execute(stmt)).scalar_one_or_none()
+        legacy = data.mqtt_broker_settings.model_copy(update={"name": "default"})
+        broker_exports.append(legacy)
+
+    broker_name_to_id: dict[str, uuid.UUID] = {}
+    stmt = select(MqttBrokerSettings)
+    existing_brokers = {
+        b.name: b for b in (await session.execute(stmt)).scalars().all()
+    }
+    for bs in broker_exports:
+        existing_broker = existing_brokers.get(bs.name)
         if existing_broker is None:
-            session.add(MqttBrokerSettings(
-                host=bs.host, port=bs.port, username=bs.username,
+            new_broker = MqttBrokerSettings(
+                name=bs.name, host=bs.host, port=bs.port, username=bs.username,
                 password=bs.password, client_id=bs.client_id, use_tls=bs.use_tls,
-            ))
+            )
+            session.add(new_broker)
+            await session.flush()
+            existing_brokers[bs.name] = new_broker
+            broker_name_to_id[bs.name] = new_broker.id
         else:
             existing_broker.host = bs.host
             existing_broker.port = bs.port
@@ -376,19 +395,28 @@ async def import_system(session: AsyncSession, data: SystemImport) -> ImportResu
                 existing_broker.password = bs.password
             existing_broker.client_id = bs.client_id
             existing_broker.use_tls = bs.use_tls
-        result.mqtt_broker_settings_set = True
+            broker_name_to_id[bs.name] = existing_broker.id
+        result.mqtt_brokers_set += 1
+    # Configs may also reference pre-existing brokers not in this import
+    for name, broker in existing_brokers.items():
+        broker_name_to_id.setdefault(name, broker.id)
 
-    # Step 6: Import MQTT publish configs
+    # Step 6: Import MQTT publish configs (per device × broker pair)
     for mc_export in data.mqtt_publish_configs:
         device_id = device_name_to_id.get(mc_export.device_name)
-        if device_id is None:
+        broker_id = broker_name_to_id.get(mc_export.broker_name)
+        if device_id is None or broker_id is None:
             continue
 
-        stmt = select(MqttPublishConfig).where(MqttPublishConfig.device_id == device_id)
+        stmt = select(MqttPublishConfig).where(
+            MqttPublishConfig.device_id == device_id,
+            MqttPublishConfig.broker_id == broker_id,
+        )
         existing_mc = (await session.execute(stmt)).scalar_one_or_none()
         if existing_mc is None:
             session.add(MqttPublishConfig(
                 device_id=device_id,
+                broker_id=broker_id,
                 topic_template=mc_export.topic_template,
                 payload_mode=mc_export.payload_mode,
                 publish_interval_seconds=mc_export.publish_interval_seconds,
