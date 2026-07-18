@@ -163,17 +163,21 @@ async def _resolve_and_apply_profile(
 
 async def list_devices(session: AsyncSession) -> list[dict]:
     """List all devices with template name and MQTT publishing status."""
+    mqtt_enabled_exists = (
+        select(MqttPublishConfig.id)
+        .where(
+            MqttPublishConfig.device_id == DeviceInstance.id,
+            MqttPublishConfig.enabled.is_(True),
+        )
+        .exists()
+    )
     stmt = (
         select(
             DeviceInstance,
             DeviceTemplate.name.label("template_name"),
-            MqttPublishConfig.enabled.label("mqtt_enabled"),
+            mqtt_enabled_exists.label("mqtt_enabled"),
         )
         .join(DeviceTemplate, DeviceInstance.template_id == DeviceTemplate.id)
-        .outerjoin(
-            MqttPublishConfig,
-            DeviceInstance.id == MqttPublishConfig.device_id,
-        )
         .order_by(DeviceInstance.created_at)
     )
     result = await session.execute(stmt)
@@ -465,18 +469,25 @@ async def start_device(
             error_code="PROTOCOL_ERROR",
         ) from e
 
-    # Auto-start MQTT publishing if configured and enabled
-    try:
-        mqtt_config = await mqtt_service.get_publish_config(session, device.id)
-        if mqtt_config and mqtt_config.enabled:
-            mqtt_adapter = protocol_manager.get_adapter("mqtt")
+    # Auto-start MQTT publishing for every enabled (device, broker) config
+    mqtt_adapter = protocol_manager.get_adapter("mqtt")
+    if mqtt_adapter is not None:
+        configs = await mqtt_service.list_publish_configs(session, device.id)
+        enabled_configs = [(c, name) for c, name in configs if c.enabled]
+        if enabled_configs:
             mqtt_adapter.set_device_meta(  # type: ignore[attr-defined]
-                device.id, device.name, device.slave_id,
-                template.name,
+                device.id, device.name, device.slave_id, template.name,
             )
-            await mqtt_adapter.start_publishing(device.id, mqtt_config)  # type: ignore[attr-defined]
-    except Exception as e:
-        logger.warning("Failed to start MQTT publishing for device %s: %s", device_id, e)
+        for mqtt_config, broker_name in enabled_configs:
+            try:
+                await mqtt_adapter.start_publishing(  # type: ignore[attr-defined]
+                    device.id, mqtt_config.broker_id, mqtt_config,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to start MQTT publishing for device %s to broker %s: %s",
+                    device_id, broker_name, e,
+                )
 
     device.status = "running"
     await session.commit()

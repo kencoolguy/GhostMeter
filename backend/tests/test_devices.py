@@ -1,3 +1,5 @@
+import uuid
+
 from httpx import AsyncClient
 
 from app.config import get_settings
@@ -397,12 +399,19 @@ class TestDeviceMqttPublishing:
     async def test_list_devices_mqtt_publishing_reflects_enabled_config(
         self, client: AsyncClient,
     ) -> None:
-        """Device with MQTT config (enabled defaults to false) should have mqtt_publishing=False."""
+        """mqtt_publishing is False for disabled configs, True once any is enabled."""
+        broker_resp = await client.post("/api/v1/system/mqtt/brokers", json={
+            "name": "list-broker", "host": "localhost", "port": 1883,
+            "username": "", "password": "", "client_id": "gm", "use_tls": False,
+        })
+        assert broker_resp.status_code == 201
+        broker = broker_resp.json()["data"]
+
         template = await create_template(client)
         device = await create_device(client, template["id"])
         # PUT an MQTT config — enabled defaults to false
         response = await client.put(
-            f"/api/v1/system/devices/{device['id']}/mqtt",
+            f"/api/v1/system/devices/{device['id']}/mqtt/{broker['id']}",
             json={"topic_template": "test/{device_name}", "payload_mode": "batch"},
         )
         assert response.status_code == 200
@@ -412,6 +421,26 @@ class TestDeviceMqttPublishing:
         data = response.json()["data"]
         assert len(data) == 1
         assert data[0]["mqtt_publishing"] is False
+
+        # Enable it directly in the DB — the flag must flip to True (and the
+        # multi-config join must not duplicate the device row)
+        import app.database as db
+        from sqlalchemy import update as sa_update
+
+        from app.models.mqtt import MqttPublishConfig
+
+        async with db.async_session_factory() as session:
+            await session.execute(
+                sa_update(MqttPublishConfig)
+                .where(MqttPublishConfig.device_id == uuid.UUID(device["id"]))
+                .values(enabled=True)
+            )
+            await session.commit()
+
+        response = await client.get("/api/v1/devices")
+        data = response.json()["data"]
+        assert len(data) == 1
+        assert data[0]["mqtt_publishing"] is True
 
 
 class TestGetRegisters:

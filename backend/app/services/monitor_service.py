@@ -170,12 +170,15 @@ class MonitorService:
                 "write_events": self.build_write_events_payload(device_id),
             })
 
-        # MQTT broker connection state
+        # MQTT broker connection state ("connected" = any broker connected)
         mqtt_adapter = protocol_manager.get_adapter("mqtt")
         mqtt_broker_connected = False
+        mqtt_brokers: list[dict] = []
         if mqtt_adapter is not None:
             try:
-                mqtt_broker_connected = bool(mqtt_adapter.get_status().get("connected", False))
+                mqtt_status = mqtt_adapter.get_status()
+                mqtt_broker_connected = bool(mqtt_status.get("connected", False))
+                mqtt_brokers = mqtt_status.get("brokers", [])
             except Exception:  # pragma: no cover — defensive
                 logger.warning("Failed to read MQTT adapter status", exc_info=True)
 
@@ -185,6 +188,7 @@ class MonitorService:
             "devices": devices_data,
             "events": self.get_events(),
             "mqtt_broker_connected": mqtt_broker_connected,
+            "mqtt_brokers": mqtt_brokers,
         }
 
 
