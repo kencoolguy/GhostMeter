@@ -413,6 +413,34 @@ async def register_device_runtime(
         logger.error("Failed to start simulation for device %s: %s", device.id, e)
 
 
+async def resume_running_devices(session: AsyncSession) -> int:
+    """Re-register runtimes for devices marked running (startup resume path).
+
+    Also resumes MQTT publish tasks for enabled configs on those devices —
+    a backend restart kills the publish loops but leaves configs enabled
+    (issue #84). Returns the number of devices resumed.
+    """
+    result = await session.execute(
+        select(DeviceInstance).where(DeviceInstance.status == "running")
+    )
+    running_devices = result.scalars().all()
+
+    resumed = 0
+    for device in running_devices:
+        try:
+            template = await get_template_with_registers(session, device.template_id)
+            await register_device_runtime(device, template)
+            resumed += 1
+        except Exception:
+            logger.error(
+                "Failed to resume device %s (%s)",
+                device.name, device.id, exc_info=True,
+            )
+
+    await mqtt_service.resume_enabled_publishing(session)
+    return resumed
+
+
 async def start_device(
     session: AsyncSession, device_id: uuid.UUID,
 ) -> dict:
