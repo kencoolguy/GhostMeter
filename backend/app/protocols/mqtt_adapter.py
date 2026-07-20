@@ -27,10 +27,18 @@ class MqttAdapter(ProtocolAdapter):
     # protocol error on, so the "exception" fault type cannot be simulated.
     supported_fault_types = frozenset({"delay", "timeout", "intermittent"})
 
+    # aiomqtt has no built-in reconnect: a dropped connection stays dead until
+    # a new client is opened. These bound the retry backoff for the per-broker
+    # reconnect task (overridable per instance for tests).
+    RECONNECT_INITIAL_DELAY: float = 1.0
+    RECONNECT_MAX_DELAY: float = 60.0
+
     def __init__(self) -> None:
         super().__init__()
         self._clients: dict[UUID, aiomqtt.Client] = {}
         self._broker_info: dict[UUID, dict] = {}
+        self._broker_settings: dict[UUID, object] = {}
+        self._reconnect_tasks: dict[UUID, asyncio.Task] = {}
         self._available: bool = False
         self._device_registers: dict[UUID, list[RegisterInfo]] = {}
         self._device_meta: dict[UUID, dict] = {}
@@ -72,10 +80,13 @@ class MqttAdapter(ProtocolAdapter):
         self._device_meta.clear()
         self._device_stats.clear()
 
+        for broker_id in list(self._reconnect_tasks):
+            await self._cancel_reconnect_task(broker_id)
         for broker_id in list(self._clients):
             await self._close_client(broker_id)
         self._clients.clear()
         self._broker_info.clear()
+        self._broker_settings.clear()
         self._available = False
         logger.info("MQTT adapter stopped")
 
@@ -85,16 +96,47 @@ class MqttAdapter(ProtocolAdapter):
         """Connect a client for one broker; record its state either way.
 
         `settings` needs name/host/port/username/password/client_id attrs
-        (ORM row or schema object). Returns True when connected.
+        (ORM row or schema object). Returns True when connected; on failure
+        a background reconnect task keeps retrying with backoff.
         """
         self._available = True
-        info = {
+        self._broker_info[broker_id] = {
             "name": settings.name,
             "host": settings.host,
             "port": settings.port,
             "connected": False,
         }
-        self._broker_info[broker_id] = info
+        self._broker_settings[broker_id] = settings
+        if await self._try_connect(broker_id, settings):
+            return True
+        self._schedule_reconnect(broker_id)
+        return False
+
+    async def disconnect_broker(self, broker_id: UUID) -> None:
+        """Cancel this broker's publish tasks and drop its client."""
+        await self._cancel_reconnect_task(broker_id)
+        for device_id, task_broker_id in list(self._publish_tasks):
+            if task_broker_id == broker_id:
+                await self._cancel_publish_task(device_id, task_broker_id)
+        await self._close_client(broker_id)
+        self._broker_info.pop(broker_id, None)
+        self._broker_settings.pop(broker_id, None)
+
+    async def reconnect_broker(self, broker_id: UUID, settings) -> bool:
+        """Apply new settings to one broker without touching the others.
+
+        Cancels only this broker's publish tasks; the caller is responsible
+        for resuming enabled configs afterwards.
+        """
+        await self._cancel_reconnect_task(broker_id)
+        for device_id, task_broker_id in list(self._publish_tasks):
+            if task_broker_id == broker_id:
+                await self._cancel_publish_task(device_id, task_broker_id)
+        await self._close_client(broker_id)
+        return await self.connect_broker(broker_id, settings)
+
+    async def _try_connect(self, broker_id: UUID, settings) -> bool:
+        """Open a client for one broker and flip its state on success."""
         try:
             client = aiomqtt.Client(
                 hostname=settings.host,
@@ -111,32 +153,62 @@ class MqttAdapter(ProtocolAdapter):
             )
             return False
         self._clients[broker_id] = client
-        info["connected"] = True
+        info = self._broker_info.get(broker_id)
+        if info is not None:
+            info["connected"] = True
         logger.info(
             "MQTT connected to broker '%s' (%s:%d)",
             settings.name, settings.host, settings.port,
         )
         return True
 
-    async def disconnect_broker(self, broker_id: UUID) -> None:
-        """Cancel this broker's publish tasks and drop its client."""
-        for device_id, task_broker_id in list(self._publish_tasks):
-            if task_broker_id == broker_id:
-                await self._cancel_publish_task(device_id, task_broker_id)
-        await self._close_client(broker_id)
-        self._broker_info.pop(broker_id, None)
+    def _mark_broker_disconnected(self, broker_id: UUID) -> None:
+        """Record a lost connection and make sure a reconnect task is running."""
+        info = self._broker_info.get(broker_id)
+        if info is not None and info["connected"]:
+            info["connected"] = False
+            logger.warning(
+                "MQTT broker '%s' (%s:%d) connection lost — reconnecting",
+                info["name"], info["host"], info["port"],
+            )
+        self._schedule_reconnect(broker_id)
 
-    async def reconnect_broker(self, broker_id: UUID, settings) -> bool:
-        """Apply new settings to one broker without touching the others.
+    def _schedule_reconnect(self, broker_id: UUID) -> None:
+        """Start this broker's reconnect task unless one is already running."""
+        task = self._reconnect_tasks.get(broker_id)
+        if task is not None and not task.done():
+            return
+        if broker_id not in self._broker_settings:
+            return
+        self._reconnect_tasks[broker_id] = asyncio.create_task(
+            self._reconnect_loop(broker_id)
+        )
 
-        Cancels only this broker's publish tasks; the caller is responsible
-        for resuming enabled configs afterwards.
-        """
-        for device_id, task_broker_id in list(self._publish_tasks):
-            if task_broker_id == broker_id:
-                await self._cancel_publish_task(device_id, task_broker_id)
-        await self._close_client(broker_id)
-        return await self.connect_broker(broker_id, settings)
+    async def _reconnect_loop(self, broker_id: UUID) -> None:
+        """Retry connecting one broker with exponential backoff until it works."""
+        delay = self.RECONNECT_INITIAL_DELAY
+        try:
+            while True:
+                await asyncio.sleep(delay)
+                settings = self._broker_settings.get(broker_id)
+                if settings is None:  # broker was removed meanwhile
+                    return
+                await self._close_client(broker_id)
+                if await self._try_connect(broker_id, settings):
+                    return
+                delay = min(delay * 2, self.RECONNECT_MAX_DELAY)
+        finally:
+            self._reconnect_tasks.pop(broker_id, None)
+
+    async def _cancel_reconnect_task(self, broker_id: UUID) -> None:
+        """Cancel and await one broker's reconnect task, if any."""
+        task = self._reconnect_tasks.pop(broker_id, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     def is_broker_connected(self, broker_id: UUID) -> bool:
         """Whether this broker currently has a live client."""
@@ -351,6 +423,11 @@ class MqttAdapter(ProtocolAdapter):
             await client.publish(topic, payload, qos=qos, retain=retain)
             if stats:
                 stats.success_count += 1
+        except aiomqtt.MqttError:
+            if stats:
+                stats.error_count += 1
+            self._mark_broker_disconnected(broker_id)
+            raise
         except Exception:
             if stats:
                 stats.error_count += 1

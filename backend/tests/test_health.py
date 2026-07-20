@@ -8,7 +8,9 @@ async def test_health_returns_200(client):
     assert "status" in data
     assert "database" in data
     assert "version" in data
-    assert data["version"] == "0.1.0"
+    from app.config import get_settings
+
+    assert data["version"] == get_settings().APP_VERSION
 
 
 async def test_health_status_values(client):
