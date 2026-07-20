@@ -1,5 +1,55 @@
 # Development Log
 
+## 2026-07-18 — Multi-broker MQTT publishing（issue #87）
+
+### 背景
+
+2026-07-18 把 Linode GhostMeter 的 MQTT 發布從測試 broker（.125）切到 EnOL 正式
+broker（.49）時，`MqttBrokerSettings` 是全域單一設定，兩台裝置只能一起切，原本
+接 .125 的 pipeline 直接斷線。Issue #87 記錄了完整的架構調查；這次實作把 MQTT
+層全面改成 multi-broker：多筆命名 broker + 裝置 × broker 獨立 publish config。
+
+### 設計決策（已與 Ken 確認）
+
+1. **Adapter 架構**：單一 `MqttAdapter` 內部管理 `dict[broker_id, aiomqtt.Client]`，
+   publish task 以 `(device_id, broker_id)` 為 key。`ProtocolManager` 完全不動，
+   改動範圍最小。順手修掉舊 bug：以前 `reconnect()` 會取消**所有**裝置的
+   publish task，現在 reconnect/斷線都只影響該 broker 自己的 task。
+2. **API clean break**：舊的 `GET/PUT /system/mqtt` 直接移除（只有自家前端在用，
+   前後端同 PR 一起改），換成 `/system/mqtt/brokers` CRUD。per-device 端點改為
+   `PUT/DELETE /devices/{id}/mqtt/{broker_id}`，start/stop 帶 optional
+   `broker_id`（不帶 = 全部；部分失敗只回滾該 pair 的 enabled）。
+3. **範圍**：後端 + 前端一起做。Settings 頁變 broker 表格（新增/編輯/測試/刪除
+   + 連線狀態），裝置頁變 per-broker config 列表，各自獨立 start/stop。
+
+### 實作重點
+
+- **Migration `3830d1a0ba1c`**：`mqtt_broker_settings` 加 unique `name`（現有
+  單筆 → `'default'`）；`mqtt_publish_configs` 拿掉 `device_id` unique、加
+  `broker_id` FK backfill 到現有 broker，換成 `UNIQUE (device_id, broker_id)`。
+  已在本機含資料的 dev DB 驗證 upgrade → downgrade → upgrade 可逆。升級後部署
+  環境行為不變（既有 config 全掛在 default broker 上）。
+- **刪除保護**：broker 還有 config 引用時回 `409 BROKER_IN_USE`（顯式優於
+  cascade surprise）；duplicate name 回 `409 DUPLICATE_NAME`。計畫原寫 400，
+  改用專案既有的 `ConflictException`（409）慣例。
+- **Export/import**：改為 `mqtt_brokers` 列表，config 以 `broker_name` 參照
+  （name 而非 UUID，跨機器 import 才能對上）；舊格式（單一
+  `mqtt_broker_settings`）仍可 import，落地為 `default` broker。
+  `ImportResult.mqtt_broker_settings_set` → `mqtt_brokers_set`。
+- **裝置生命週期**：device start 逐一啟動所有 enabled config（單一 pair 失敗
+  log-and-continue）；device list 的 `mqtt_publishing` 從 1:1 join 改成 EXISTS
+  subquery（多 config 不會重複列裝置）。
+
+### 驗證
+
+- 後端 447 tests 全綠（`test_health` 需 CI 的 `APP_VERSION=0.1.0` env，本機差異
+  與本次無關）；前端 tsc/eslint/vitest 36 tests/build 全綠。
+- End-to-end 冒煙（本機 backend + 真 EMQX + 獨立 aiomqtt subscriber）：
+  broker A（可連）+ broker B（不通 port）→ start all 部分成功、B 的 enabled
+  正確回滾；A 每秒實際發布（subscriber 收到）；把 B 更新成可連 → 只有 B
+  reconnect，期間 A 的訊息流不中斷（15 → 18 持續遞增）；單獨 start B 後兩個
+  topic 同時進訊息；刪除有 config 的 broker 正確回 409。
+
 ## 2026-07-17 — 各協定獨立 slave_id 上限（Modbus/BACnet 247，SNMP/OPC UA/MQTT 不設上限）
 
 ### 背景

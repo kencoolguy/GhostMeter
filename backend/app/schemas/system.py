@@ -63,8 +63,9 @@ class AnomalyScheduleExport(BaseModel):
 
 
 class MqttBrokerSettingsExport(BaseModel):
-    """MQTT broker settings in export format."""
+    """One MQTT broker in export format."""
 
+    name: str = "default"
     host: str = "localhost"
     port: int = 1883
     username: str = ""
@@ -74,9 +75,10 @@ class MqttBrokerSettingsExport(BaseModel):
 
 
 class MqttPublishConfigExport(BaseModel):
-    """Per-device MQTT publish config in export format."""
+    """Per-(device, broker) MQTT publish config in export format."""
 
     device_name: str
+    broker_name: str = "default"
     topic_template: str
     payload_mode: str
     publish_interval_seconds: int
@@ -94,7 +96,7 @@ class SystemExport(BaseModel):
     devices: list[DeviceExport]
     simulation_configs: list[SimulationConfigExport]
     anomaly_schedules: list[AnomalyScheduleExport]
-    mqtt_broker_settings: MqttBrokerSettingsExport | None = None
+    mqtt_brokers: list[MqttBrokerSettingsExport] = []
     mqtt_publish_configs: list[MqttPublishConfigExport] = []
 
 
@@ -106,6 +108,8 @@ class SystemImport(BaseModel):
     devices: list[DeviceExport] = []
     simulation_configs: list[SimulationConfigExport] = []
     anomaly_schedules: list[AnomalyScheduleExport] = []
+    mqtt_brokers: list[MqttBrokerSettingsExport] = []
+    # Legacy single-broker exports (pre multi-broker) — imported as 'default'
     mqtt_broker_settings: MqttBrokerSettingsExport | None = None
     mqtt_publish_configs: list[MqttPublishConfigExport] = []
 
@@ -127,5 +131,5 @@ class ImportResult(BaseModel):
     devices_updated: int = 0
     simulation_configs_set: int = 0
     anomaly_schedules_set: int = 0
-    mqtt_broker_settings_set: bool = False
+    mqtt_brokers_set: int = 0
     mqtt_publish_configs_set: int = 0

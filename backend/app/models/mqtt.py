@@ -2,18 +2,19 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
 class MqttBrokerSettings(Base):
-    """Global MQTT broker connection settings (single row)."""
+    """A named MQTT broker connection configuration (multi-row)."""
 
     __tablename__ = "mqtt_broker_settings"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     host: Mapped[str] = mapped_column(String(255), default="localhost")
     port: Mapped[int] = mapped_column(Integer, default=1883)
     username: Mapped[str] = mapped_column(String(255), default="")
@@ -23,14 +24,20 @@ class MqttBrokerSettings(Base):
 
 
 class MqttPublishConfig(Base):
-    """Per-device MQTT publish configuration."""
+    """Per-(device, broker) MQTT publish configuration."""
 
     __tablename__ = "mqtt_publish_configs"
+    __table_args__ = (
+        UniqueConstraint("device_id", "broker_id", name="uq_mqtt_publish_device_broker"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     device_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("device_instances.id", ondelete="CASCADE"),
-        unique=True,
+        nullable=False,
+    )
+    broker_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("mqtt_broker_settings.id", ondelete="CASCADE"),
         nullable=False,
     )
     topic_template: Mapped[str] = mapped_column(

@@ -1122,16 +1122,25 @@ Delete all anomaly schedules for a device.
 
 ## MQTT
 
-Base path: `/api/v1/system` (broker) and `/api/v1/system/devices/{device_id}` (publish config)
+Base path: `/api/v1/system` (brokers) and `/api/v1/system/devices/{device_id}` (publish configs)
 
-GhostMeter can publish simulated device data to an external MQTT broker. Configuration is split into global broker settings and per-device publish configs.
+GhostMeter can publish simulated device data to multiple external MQTT brokers
+simultaneously (issue #87). Brokers are named, multi-row configuration; each
+device holds one publish config per broker it publishes to, with independent
+topic / interval / QoS / enabled state. One broker's failure or reconnect never
+affects publishing to other brokers.
+
+> **Breaking change (multi-broker rework):** the former single-settings
+> endpoints `GET /api/v1/system/mqtt` and `PUT /api/v1/system/mqtt` were
+> removed, and the per-device endpoints now take a `broker_id`.
 
 ### Schemas
 
-#### `MqttBrokerSettingsWrite` (request)
+#### `MqttBrokerWrite` (request)
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
+| `name` | string | yes | — | Unique broker name (≤ 100 chars) |
 | `host` | string | no | `"localhost"` | Broker hostname |
 | `port` | integer | no | `1883` | Broker port (1–65535) |
 | `username` | string | no | `""` | Auth username |
@@ -1139,9 +1148,10 @@ GhostMeter can publish simulated device data to an external MQTT broker. Configu
 | `client_id` | string | no | `"ghostmeter"` | MQTT client identifier |
 | `use_tls` | boolean | no | `false` | Use TLS connection |
 
-#### `MqttBrokerSettingsRead` (response)
+#### `MqttBrokerRead` (response)
 
-Same fields as write, but `password` is masked as `"****"` when non-empty.
+Same fields as write plus `id` (UUID string) and `connected` (boolean, live
+adapter state); `password` is masked as `"****"` when non-empty.
 
 #### `MqttPublishConfigWrite` (request)
 
@@ -1157,7 +1167,7 @@ Same fields as write, but `password` is masked as `"****"` when non-empty.
 
 #### `MqttPublishConfigRead` (response)
 
-Same fields as write plus `device_id` (string) and `enabled` (boolean).
+Same fields as write plus `device_id`, `broker_id`, `broker_name` (strings) and `enabled` (boolean).
 
 #### `MqttTestResult` (response)
 
@@ -1168,25 +1178,57 @@ Same fields as write plus `device_id` (string) and `enabled` (boolean).
 
 ### Endpoints
 
-#### `GET /api/v1/system/mqtt`
+#### `GET /api/v1/system/mqtt/brokers`
 
-Get global MQTT broker settings. Returns defaults if never configured.
+List all MQTT brokers (ordered by name) with their live connection state.
 
-**Response** `200 OK` — `ApiResponse[MqttBrokerSettingsRead]`
+**Response** `200 OK` — `ApiResponse[list[MqttBrokerRead]]`
 
 ---
 
-#### `PUT /api/v1/system/mqtt`
+#### `POST /api/v1/system/mqtt/brokers`
 
-Create or update global MQTT broker settings. The running MQTT adapter
-reconnects with the new settings immediately (no backend restart needed);
-publish tasks of enabled configs on running devices are restarted after a
-successful reconnect. A failed reconnect still saves the settings — use
-`POST /api/v1/system/mqtt/test` to verify connectivity.
+Create an MQTT broker. The running adapter connects to it immediately; a
+failed connection still saves the broker (shown as `connected: false`).
 
-**Request body:** `MqttBrokerSettingsWrite`
+**Request body:** `MqttBrokerWrite`
 
-**Response** `200 OK` — `ApiResponse[MqttBrokerSettingsRead]`
+**Response** `201 Created` — `ApiResponse[MqttBrokerRead]`
+
+**Error cases:**
+- `409 DUPLICATE_NAME` — another broker already uses this name
+
+---
+
+#### `PUT /api/v1/system/mqtt/brokers/{broker_id}`
+
+Update a broker. Only this broker's adapter client reconnects, and only its
+publish tasks (enabled configs on running devices) are restarted — other
+brokers keep publishing untouched. A failed reconnect still saves the settings.
+
+**Path param:** `broker_id` (UUID)
+
+**Request body:** `MqttBrokerWrite`
+
+**Response** `200 OK` — `ApiResponse[MqttBrokerRead]`
+
+**Error cases:**
+- `404` — broker not found
+- `409 DUPLICATE_NAME` — another broker already uses this name
+
+---
+
+#### `DELETE /api/v1/system/mqtt/brokers/{broker_id}`
+
+Delete a broker and disconnect its client.
+
+**Path param:** `broker_id` (UUID)
+
+**Response** `200 OK`
+
+**Error cases:**
+- `404` — broker not found
+- `409 BROKER_IN_USE` — device publish configs still reference this broker; delete those first
 
 ---
 
@@ -1194,7 +1236,7 @@ successful reconnect. A failed reconnect still saves the settings — use
 
 Test MQTT broker connection with provided settings (does not save).
 
-**Request body:** `MqttBrokerSettingsWrite`
+**Request body:** `MqttBrokerWrite`
 
 **Response** `200 OK` — `ApiResponse[MqttTestResult]`
 
@@ -1202,31 +1244,36 @@ Test MQTT broker connection with provided settings (does not save).
 
 #### `GET /api/v1/system/devices/{device_id}/mqtt`
 
-Get MQTT publish config for a device. Returns `null` data if not configured.
+List MQTT publish configs for a device (one per broker, ordered by broker
+name). Empty list if none configured.
 
 **Path param:** `device_id` (UUID)
 
-**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead | null]`
+**Response** `200 OK` — `ApiResponse[list[MqttPublishConfigRead]]`
 
 ---
 
-#### `PUT /api/v1/system/devices/{device_id}/mqtt`
+#### `PUT /api/v1/system/devices/{device_id}/mqtt/{broker_id}`
 
-Create or update MQTT publish config for a device.
+Create or update the publish config for one (device, broker) pair.
 
-**Path param:** `device_id` (UUID)
+**Path params:** `device_id`, `broker_id` (UUID)
 
 **Request body:** `MqttPublishConfigWrite`
 
 **Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
 
+**Error cases:**
+- `404` — broker not found
+
 ---
 
-#### `DELETE /api/v1/system/devices/{device_id}/mqtt`
+#### `DELETE /api/v1/system/devices/{device_id}/mqtt/{broker_id}`
 
-Delete MQTT publish config for a device.
+Delete the publish config for one (device, broker) pair (its publish task is
+stopped best-effort).
 
-**Path param:** `device_id` (UUID)
+**Path params:** `device_id`, `broker_id` (UUID)
 
 **Response** `200 OK`
 
@@ -1237,29 +1284,37 @@ Delete MQTT publish config for a device.
 
 #### `POST /api/v1/system/devices/{device_id}/mqtt/start`
 
-Start MQTT publishing for a device. Requires existing publish config.
-Device metadata (name / slave ID / template name) is loaded and handed to the
-adapter before the publish loop starts, so topic templates render correctly.
+Start MQTT publishing for a device. With the optional `broker_id` query
+parameter, only that (device, broker) pair starts; without it, **all** of the
+device's configs start. Each started config is marked `enabled`; a pair that
+fails to start (e.g. its broker is disconnected) gets its `enabled` flag
+reverted and is reported in the response `message` — other pairs still start.
+Device metadata (name / slave ID / template name) is handed to the adapter
+before the publish loops start, so topic templates render correctly.
 
 **Path param:** `device_id` (UUID)
+**Query param:** `broker_id` (UUID, optional)
 
-**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+**Response** `200 OK` — `ApiResponse[list[MqttPublishConfigRead]]` (the started configs)
 
 **Error cases:**
-- `404` — config not found or MQTT adapter not connected
+- `404` — no publish config found (for this broker, when given)
+- `500 MQTT_ERROR` — adapter not registered, or every targeted pair failed to start
 
 ---
 
 #### `POST /api/v1/system/devices/{device_id}/mqtt/stop`
 
-Stop MQTT publishing for a device.
+Stop MQTT publishing for a device — one broker with the optional `broker_id`
+query parameter, otherwise all of the device's configs.
 
 **Path param:** `device_id` (UUID)
+**Query param:** `broker_id` (UUID, optional)
 
-**Response** `200 OK` — `ApiResponse[MqttPublishConfigRead]`
+**Response** `200 OK` — `ApiResponse[list[MqttPublishConfigRead]]` (the stopped configs)
 
 **Error cases:**
-- `404` — config not found
+- `404` — no publish config found (for this broker, when given)
 
 ---
 
@@ -1281,17 +1336,21 @@ Exports the full system configuration (templates, devices, simulation configs, a
   "devices": [ "..." ],
   "simulation_configs": [ "..." ],
   "anomaly_schedules": [ "..." ],
-  "mqtt_broker_settings": {
-    "host": "broker.example.com",
-    "port": 1883,
-    "username": "admin",
-    "password": "secret",
-    "client_id": "ghostmeter",
-    "use_tls": false
-  },
+  "mqtt_brokers": [
+    {
+      "name": "emqx-production",
+      "host": "broker.example.com",
+      "port": 1883,
+      "username": "admin",
+      "password": "secret",
+      "client_id": "ghostmeter",
+      "use_tls": false
+    }
+  ],
   "mqtt_publish_configs": [
     {
       "device_name": "Meter-01",
+      "broker_name": "emqx-production",
       "topic_template": "telemetry/{device_name}",
       "payload_mode": "batch",
       "publish_interval_seconds": 5,
@@ -1303,7 +1362,12 @@ Exports the full system configuration (templates, devices, simulation configs, a
 }
 ```
 
-> `mqtt_broker_settings` is `null` if never configured. `mqtt_publish_configs` is `[]` if no devices have MQTT configs. Both fields are optional in the import payload for backward compatibility.
+> `mqtt_brokers` and `mqtt_publish_configs` are `[]` when nothing is
+> configured; both are optional in the import payload. **Legacy exports**
+> (single `mqtt_broker_settings` object, configs without `broker_name`) still
+> import: the settings become a broker named `default`, which is also where
+> the legacy configs attach. Configs referencing an unknown `broker_name` are
+> skipped.
 
 ---
 
@@ -1311,7 +1375,7 @@ Exports the full system configuration (templates, devices, simulation configs, a
 
 #### `POST /api/v1/system/import`
 
-Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port). Built-in templates are skipped. MQTT settings are upserted if present.
+Imports a system configuration snapshot. Upserts templates by name, devices by (slave_id, port), MQTT brokers by name. Built-in templates are skipped.
 
 **Request Body** — Same JSON format as export
 
@@ -1327,7 +1391,7 @@ Imports a system configuration snapshot. Upserts templates by name, devices by (
     "devices_updated": 0,
     "simulation_configs_set": 15,
     "anomaly_schedules_set": 3,
-    "mqtt_broker_settings_set": true,
+    "mqtt_brokers_set": 1,
     "mqtt_publish_configs_set": 2
   },
   "message": "Import completed successfully"
