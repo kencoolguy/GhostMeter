@@ -1,5 +1,48 @@
 # Development Log
 
+## 2026-07-20 — MQTT broker 斷線自動重連
+
+### 背景（線上事故）
+
+Linode 上兩個 MQTT broker（.49 正式 EnOL VM、.125 Mac 測試 EMQX）的發布同時
+掛掉 7+ 小時：每 5 秒噴 `[code:4] The client is not currently connected`，但
+API `/system/mqtt/brokers` 卻回報 `connected: true`。追查證據鏈：
+
+- 兩個 broker 是**各自獨立**斷線（.49 連上後 3 分鐘、.125 連上後 1.4 小時），
+  斷線後永遠不恢復；容器內到 port 1883 的 established TCP 連線為 0 條
+- 兩個 broker 從 Linode 都 TCP 可達 → 網路沒問題，缺的是重連
+
+### 根因
+
+aiomqtt 沒有內建自動重連（設計上連線生命週期 = context manager 範圍），而
+adapter 的 `connected` flag 只在 `connect_broker()` 成功時設 True，斷線後既
+不偵測也不重連 —— publish loop 在死掉的 client 上每 5 秒失敗一次直到重啟。
+追 git history 確認這是 multi-broker 之前就存在的設計缺陷（舊版 `reconnect()`
+只在改設定時觸發），不是 PR #88 regression；以前 broker 穩定沒暴露，broker
+搬到會睡眠的 Mac 與遠端 VM 後天天踩。
+
+### 修法
+
+連線生命週期補齊，不動 publish task 結構 / fault sim / REST API：
+
+1. **斷線偵測**：`_publish_one` 捕捉 `aiomqtt.MqttError` → `_mark_broker_disconnected()`
+   把 flag 翻 False（API 狀態變誠實；publish loop 走既有 guard 跳過發送，
+   error log 洪水自動停止）並排程重連。
+2. **自動重連**：每個 broker 一個 `_reconnect_loop` task，exponential backoff
+   1s → 60s cap，成功後 flag 復 True，publish loop 下一輪自動恢復發布。
+   `connect_broker` 失敗（啟動時 broker 就掛）也走同一機制。
+3. **生命週期**：`disconnect_broker` / `reconnect_broker`（手動改設定）/ `stop()`
+   都會先取消 pending 的重連 task；broker 被移除時重連 loop 自行終止。
+   `connect_broker` 現在把 settings 存進 `_broker_settings` 供重連使用。
+
+TDD：先寫 5 個失敗測試（斷線標記、backoff 重試到成功、重複標記不疊 task、
+disconnect 取消重連、啟動失敗排程重連）再實作。全套 452 tests 通過。
+
+### 順手修
+
+`test_health_returns_200` 寫死 `version == "0.1.0"`（0.4.x 起就過期，dev 上
+本來就 fail），改為對照 `get_settings().APP_VERSION`。
+
 ## 2026-07-18 — Multi-broker MQTT publishing（issue #87）
 
 ### 背景

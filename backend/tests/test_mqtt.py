@@ -547,6 +547,153 @@ class TestMqttAdapter:
 # === Route ↔ Adapter Integration Tests (fake adapter) ===
 
 
+class TestMqttAutoReconnect:
+    """A dropped broker connection must be detected and re-established."""
+
+    @staticmethod
+    def _settings(name: str = "test-broker", host: str = "fake"):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            name=name, host=host, port=1883,
+            username="", password="", client_id="test-client",
+        )
+
+    async def test_publish_error_marks_broker_disconnected_and_schedules_reconnect(self):
+        """A publish MqttError flips the broker to disconnected and starts a reconnect task."""
+        import aiomqtt
+
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        class DeadClient:
+            async def publish(self, *args, **kwargs):
+                raise aiomqtt.MqttError("The client is not currently connected.")
+
+            async def __aexit__(self, *args):
+                return None
+
+        adapter = MqttAdapter()
+        adapter.RECONNECT_INITIAL_DELAY = 3600  # keep the task idle during assertions
+        broker_id = _connect_fake_broker(adapter)
+        adapter._broker_settings[broker_id] = self._settings()
+        adapter._clients[broker_id] = DeadClient()
+
+        with pytest.raises(aiomqtt.MqttError):
+            await adapter._publish_one(
+                uuid.uuid4(), broker_id, "t/x", "{}", qos=0, retain=False,
+            )
+
+        assert not adapter.is_broker_connected(broker_id)
+        assert broker_id in adapter._reconnect_tasks
+        await adapter.stop()
+
+    async def test_reconnect_retries_until_connected(self, monkeypatch):
+        """The reconnect task retries with backoff until the broker accepts again."""
+        import asyncio
+
+        import aiomqtt
+
+        from app.protocols import mqtt_adapter as mqtt_module
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        attempts = 0
+
+        class FlakyClient:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    raise aiomqtt.MqttError("connection refused")
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+        monkeypatch.setattr(mqtt_module.aiomqtt, "Client", FlakyClient)
+
+        adapter = MqttAdapter()
+        adapter.RECONNECT_INITIAL_DELAY = 0.01
+        adapter.RECONNECT_MAX_DELAY = 0.02
+        broker_id = _connect_fake_broker(adapter)
+        adapter._broker_settings[broker_id] = self._settings()
+
+        adapter._mark_broker_disconnected(broker_id)
+        assert not adapter.is_broker_connected(broker_id)
+
+        await asyncio.wait_for(adapter._reconnect_tasks[broker_id], timeout=5)
+
+        assert attempts == 3
+        assert adapter.is_broker_connected(broker_id)
+        assert broker_id not in adapter._reconnect_tasks
+        await adapter.stop()
+
+    async def test_mark_disconnected_twice_schedules_single_task(self):
+        """Concurrent publish failures must not stack reconnect tasks."""
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        adapter = MqttAdapter()
+        adapter.RECONNECT_INITIAL_DELAY = 3600
+        broker_id = _connect_fake_broker(adapter)
+        adapter._broker_settings[broker_id] = self._settings()
+
+        adapter._mark_broker_disconnected(broker_id)
+        task = adapter._reconnect_tasks[broker_id]
+        adapter._mark_broker_disconnected(broker_id)
+
+        assert adapter._reconnect_tasks[broker_id] is task
+        await adapter.stop()
+
+    async def test_disconnect_broker_cancels_pending_reconnect(self):
+        """Removing a broker also cancels its pending reconnect task."""
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        adapter = MqttAdapter()
+        adapter.RECONNECT_INITIAL_DELAY = 3600
+        broker_id = _connect_fake_broker(adapter)
+        adapter._broker_settings[broker_id] = self._settings()
+        adapter._mark_broker_disconnected(broker_id)
+        task = adapter._reconnect_tasks[broker_id]
+
+        await adapter.disconnect_broker(broker_id)
+
+        assert broker_id not in adapter._reconnect_tasks
+        assert task.cancelled() or task.done()
+        assert broker_id not in adapter._broker_settings
+
+    async def test_connect_broker_failure_schedules_reconnect(self, monkeypatch):
+        """A broker that is down at startup keeps retrying instead of staying dead."""
+        import aiomqtt
+
+        from app.protocols import mqtt_adapter as mqtt_module
+        from app.protocols.mqtt_adapter import MqttAdapter
+
+        class DownClient:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                raise aiomqtt.MqttError("connection refused")
+
+            async def __aexit__(self, *args):
+                return None
+
+        monkeypatch.setattr(mqtt_module.aiomqtt, "Client", DownClient)
+
+        adapter = MqttAdapter()
+        adapter.RECONNECT_INITIAL_DELAY = 3600
+        broker_id = uuid.uuid4()
+
+        ok = await adapter.connect_broker(broker_id, self._settings())
+
+        assert ok is False
+        assert broker_id in adapter._reconnect_tasks
+        await adapter.stop()
+        assert not adapter._reconnect_tasks
+
+
 class FakeMqttAdapter:
     """Records adapter calls so route behavior can be asserted without a broker."""
 
