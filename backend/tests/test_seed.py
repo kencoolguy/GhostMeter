@@ -12,10 +12,11 @@ class TestSeedLoader:
         templates = body["data"]
 
         builtin = [t for t in templates if t["is_builtin"]]
-        assert len(builtin) == 6
+        assert len(builtin) == 7
 
         names = {t["name"] for t in builtin}
         assert "SDM630 Three-Phase Meter" in names
+        assert "DPM-C530 Three-Phase Power Meter" in names
         assert "SDM120 Single-Phase Meter" in names
         assert "SunSpec Solar Inverter" in names
         assert "Energy Meter (OPC UA)" in names
@@ -28,7 +29,7 @@ class TestSeedLoader:
         response = await client.get("/api/v1/templates")
         templates = response.json()["data"]
         builtin = [t for t in templates if t["is_builtin"]]
-        assert len(builtin) == 6
+        assert len(builtin) == 7
 
     async def test_seed_creates_builtin_scenarios(self, client: AsyncClient) -> None:
         """End-to-end: scenario seeds actually land in the DB.

@@ -1,0 +1,232 @@
+{
+  "template_name": "DPM-C530 Three-Phase Power Meter",
+  "name": "Normal Operation",
+  "description": "Physically consistent DPM-C530 simulation. Phase voltages ~220V gaussian, line voltages derived as sqrt(3) x phase average, currents follow a daily curve peaking at 14:00, kW/kVA computed from V x I x PF, energy counters accumulate.",
+  "is_default": true,
+  "configs": [
+    {
+      "register_name": "voltage_an",
+      "data_mode": "random",
+      "mode_params": {"base": 220, "amplitude": 2, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "voltage_bn",
+      "data_mode": "random",
+      "mode_params": {"base": 220, "amplitude": 2, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "voltage_cn",
+      "data_mode": "random",
+      "mode_params": {"base": 220, "amplitude": 2, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "p_voltage_l",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({voltage_an} + {voltage_bn} + {voltage_cn}) / 3"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "voltage_ab",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({voltage_an} + {voltage_bn}) * 0.8660254"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "voltage_bc",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({voltage_bn} + {voltage_cn}) * 0.8660254"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "voltage_ca",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({voltage_cn} + {voltage_an}) * 0.8660254"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "p_voltage_h",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({voltage_ab} + {voltage_bc} + {voltage_ca}) / 3"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "current_a",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 40, "amplitude": 25, "peak_hour": 14},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "current_b",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 38, "amplitude": 25, "peak_hour": 14},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "current_c",
+      "data_mode": "daily_curve",
+      "mode_params": {"base": 42, "amplitude": 25, "peak_hour": 14},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "p_current",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({current_a} + {current_b} + {current_c}) / 3"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "pf_a",
+      "data_mode": "random",
+      "mode_params": {"base": 0.92, "amplitude": 0.02, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "pf_b",
+      "data_mode": "random",
+      "mode_params": {"base": 0.92, "amplitude": 0.02, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "pf_c",
+      "data_mode": "random",
+      "mode_params": {"base": 0.92, "amplitude": 0.02, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "pf",
+      "data_mode": "computed",
+      "mode_params": {"expression": "({pf_a} + {pf_b} + {pf_c}) / 3"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "freq",
+      "data_mode": "random",
+      "mode_params": {"base": 60, "amplitude": 0.05, "distribution": "gaussian"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "w_a",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage_an} * {current_a} * {pf_a} / 1000"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "w_b",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage_bn} * {current_b} * {pf_b} / 1000"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "w_c",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage_cn} * {current_c} * {pf_c} / 1000"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "p_w",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{w_a} + {w_b} + {w_c}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "va_a",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage_an} * {current_a} / 1000"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "va_b",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage_bn} * {current_b} / 1000"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "va_c",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{voltage_cn} * {current_c} / 1000"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "p_va",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{va_a} + {va_b} + {va_c}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "var_a",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{va_a} * 0.392"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "var_b",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{va_b} * 0.392"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "var_c",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{va_c} * 0.392"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "p_var",
+      "data_mode": "computed",
+      "mode_params": {"expression": "{var_a} + {var_b} + {var_c}"},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "acc_kwh",
+      "data_mode": "accumulator",
+      "mode_params": {"start_value": 10000, "increment_per_second": 0.00675},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "acc_kvah",
+      "data_mode": "accumulator",
+      "mode_params": {"start_value": 11000, "increment_per_second": 0.00733},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    },
+    {
+      "register_name": "acc_kvarh",
+      "data_mode": "accumulator",
+      "mode_params": {"start_value": 4000, "increment_per_second": 0.00288},
+      "update_interval_ms": 1000,
+      "is_enabled": true
+    }
+  ]
+}
