@@ -1,5 +1,43 @@
 # Development Log
 
+## 2026-08-19 — 內建模板：DPM-C530 三相電表
+
+### 做了什麼
+
+依 Delta DPM-C520/C530 的 register map（使用者提供的點表截圖）新增內建模板
+`dpm_c530_meter.json` 與預設 profile `dpm_c530_meter_normal.json`：
+
+- **32 個 register**，全部 float32 / Holding Register（FC03），位址照點表
+  0x100 區塊（十進位 256–352）：三相＋平均相電壓、三個線電壓＋平均、
+  三相＋平均電流、三相＋總 PF、頻率、三相＋總 kW/kVAR/kVA、
+  累積 kWh/kVAh/kVARh。
+- **Normal Operation profile**（is_default）走物理一致性設計，比照 SDM630：
+  - 相電壓 gaussian ~220V；線電壓 computed `(Va+Vb)×0.866`（≈ √3×平均），
+    平均值全部 computed
+  - 電流 daily_curve（base 40/38/42、14:00 尖峰，三相刻意微幅不平衡）
+  - kW = V×I×PF/1000、kVA = V×I/1000、總量為三相相加
+  - kVAR 用 `VA × 0.392` 近似（PF 0.92 時 sin(acos(0.92))≈0.392）——
+    expression parser 只支援 + - * /，沒有 `**` 可開根號，屬刻意近似
+  - 累積電量 accumulator，increment 依平均功率換算（24.3 kW → 0.00675 kWh/s）
+
+### 決策
+
+- 點表的 Start Address 十進位值（256 = 0x100）直接當 0-based protocol
+  address 使用，與其他內建模板一致。
+- byte_order 用預設 `big_endian`（點表未載明 word order；模擬器兩端一致即可，
+  若實際 collector 解出亂數再調）。
+- 每個 builtin template 必須有 default profile（`test_seed_profiles` 強制），
+  所以 profile 跟模板同 PR 一起進。
+
+### 驗證
+
+- `test_seed.py` builtin 數量 6 → 7 並斷言新模板名稱。
+- 加寫一次性 sanity script 驗證：schema 過 `TemplateCreate`、register
+  位址無重疊（float32 佔 2 registers）、profile 的 register_name 與模板
+  一一對應、所有 computed expression 依序可求值（p_w≈24.3 kW、
+  p_va≈26.4、p_var≈10.3、線電壓≈381V，數值合理）。
+- 全套 backend pytest 452 passed。
+
 ## 2026-07-20 — MQTT broker 斷線自動重連
 
 ### 背景（線上事故）
