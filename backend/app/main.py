@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from app.api.routes.anomaly import router as anomaly_router
 from app.api.routes.devices import router as devices_router
@@ -15,6 +15,7 @@ from app.api.routes.simulation import router as simulation_router
 from app.api.routes.simulation_profiles import router as profiles_router
 from app.api.routes.system import router as system_router
 from app.api.routes.templates import router as templates_router
+from app.api.routes.write_events import router as write_events_router
 from app.api.websocket import router as ws_router
 from app.api.websocket import start_broadcast, stop_broadcast
 from app.config import get_settings
@@ -24,7 +25,6 @@ from app.exceptions import (
     app_exception_handler,
     generic_exception_handler,
 )
-from app.models.device import DeviceInstance
 from app.protocols import protocol_manager
 from app.protocols.bacnet_agent import BacnetAdapter
 from app.protocols.modbus_tcp import ModbusTcpAdapter
@@ -33,7 +33,6 @@ from app.protocols.opcua_agent import OpcUaAdapter
 from app.protocols.snmp_agent import SnmpAdapter
 from app.seed.loader import seed_builtin_profiles, seed_builtin_scenarios, seed_builtin_templates
 from app.services import device_service
-from app.services.template_service import get_template as get_template_with_registers
 from app.simulation import simulation_engine
 
 settings = get_settings()
@@ -112,24 +111,10 @@ async def lifespan(app: FastAPI):
     await protocol_manager.start_all()
     logger.info("Protocol manager started")
 
-    # Resume devices that were running before shutdown
+    # Resume devices (and their MQTT publish tasks) that were running
+    # before shutdown
     async with async_session_factory() as session:
-        result = await session.execute(
-            select(DeviceInstance).where(DeviceInstance.status == "running")
-        )
-        running_devices = result.scalars().all()
-
-        resumed = 0
-        for device in running_devices:
-            try:
-                template = await get_template_with_registers(session, device.template_id)
-                await device_service.register_device_runtime(device, template)
-                resumed += 1
-            except Exception:
-                logger.error(
-                    "Failed to resume device %s (%s)",
-                    device.name, device.id, exc_info=True,
-                )
+        resumed = await device_service.resume_running_devices(session)
 
     if resumed:
         logger.info("Resumed %d device(s)", resumed)
@@ -184,6 +169,7 @@ api_v1_router.include_router(templates_router, prefix="/templates", tags=["templ
 api_v1_router.include_router(devices_router, prefix="/devices", tags=["devices"])
 api_v1_router.include_router(simulation_router, prefix="/devices", tags=["simulation"])
 api_v1_router.include_router(anomaly_router, prefix="/devices", tags=["anomaly"])
+api_v1_router.include_router(write_events_router, prefix="/devices", tags=["write-events"])
 api_v1_router.include_router(
     profiles_router, prefix="/simulation-profiles", tags=["simulation-profiles"],
 )

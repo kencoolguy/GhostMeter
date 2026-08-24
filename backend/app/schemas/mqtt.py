@@ -3,9 +3,10 @@
 from pydantic import BaseModel, field_validator
 
 
-class MqttBrokerSettingsRead(BaseModel):
-    """Broker settings response (password masked)."""
+class MqttBrokerWrite(BaseModel):
+    """Broker create/update request."""
 
+    name: str
     host: str = "localhost"
     port: int = 1883
     username: str = ""
@@ -13,16 +14,15 @@ class MqttBrokerSettingsRead(BaseModel):
     client_id: str = "ghostmeter"
     use_tls: bool = False
 
-
-class MqttBrokerSettingsWrite(BaseModel):
-    """Broker settings update request."""
-
-    host: str = "localhost"
-    port: int = 1883
-    username: str = ""
-    password: str = ""
-    client_id: str = "ghostmeter"
-    use_tls: bool = False
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Broker name must not be empty")
+        if len(v) > 100:
+            raise ValueError("Broker name must be at most 100 characters")
+        return v
 
     @field_validator("port")
     @classmethod
@@ -32,10 +32,26 @@ class MqttBrokerSettingsWrite(BaseModel):
         return v
 
 
+class MqttBrokerRead(BaseModel):
+    """Broker response (password masked)."""
+
+    id: str
+    name: str
+    host: str
+    port: int
+    username: str
+    password: str
+    client_id: str
+    use_tls: bool
+    connected: bool = False
+
+
 class MqttPublishConfigRead(BaseModel):
-    """Per-device MQTT publish config response."""
+    """Per-(device, broker) MQTT publish config response."""
 
     device_id: str
+    broker_id: str
+    broker_name: str
     topic_template: str
     payload_mode: str
     publish_interval_seconds: int
@@ -45,7 +61,7 @@ class MqttPublishConfigRead(BaseModel):
 
 
 class MqttPublishConfigWrite(BaseModel):
-    """Per-device MQTT publish config create/update."""
+    """Per-(device, broker) MQTT publish config create/update."""
 
     topic_template: str = "telemetry/{device_name}"
     payload_mode: str = "batch"

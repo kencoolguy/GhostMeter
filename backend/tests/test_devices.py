@@ -1,4 +1,8 @@
+import uuid
+
 from httpx import AsyncClient
+
+from app.config import get_settings
 
 # Reuse template creation helper
 TEMPLATE_PAYLOAD = {
@@ -42,6 +46,16 @@ async def create_device(
             "slave_id": slave_id,
         },
     )
+    assert response.status_code == 201
+    return response.json()["data"]
+
+
+async def create_protocol_template(
+    client: AsyncClient, protocol: str, name: str,
+) -> dict:
+    """Helper: create a template for a given protocol and return its data."""
+    payload = {**TEMPLATE_PAYLOAD, "protocol": protocol, "name": name}
+    response = await client.post("/api/v1/templates", json=payload)
     assert response.status_code == 201
     return response.json()["data"]
 
@@ -162,6 +176,101 @@ class TestBatchCreateDevices:
             },
         )
         assert response.status_code == 422
+
+
+class TestProtocolSlaveIdLimits:
+    """Modbus/BACnet keep the protocol-mandated 1-247 ceiling; SNMP/OPC UA/MQTT
+    don't need one, and each protocol now gets its own port so the (slave_id,
+    port) uniqueness check no longer collides across protocols."""
+
+    async def test_bacnet_slave_id_too_high_rejected(self, client: AsyncClient) -> None:
+        template = await create_protocol_template(client, "bacnet", "BACnet Meter")
+        response = await client.post(
+            "/api/v1/devices",
+            json={"template_id": template["id"], "name": "Bad", "slave_id": 248},
+        )
+        assert response.status_code == 422
+
+    async def test_snmp_slave_id_above_247_allowed(self, client: AsyncClient) -> None:
+        template = await create_protocol_template(client, "snmp", "SNMP Meter")
+        response = await client.post(
+            "/api/v1/devices",
+            json={"template_id": template["id"], "name": "Big", "slave_id": 300},
+        )
+        assert response.status_code == 201
+        assert response.json()["data"]["slave_id"] == 300
+
+    async def test_opcua_slave_id_above_247_allowed(self, client: AsyncClient) -> None:
+        template = await create_protocol_template(client, "opcua", "OPCUA Meter")
+        response = await client.post(
+            "/api/v1/devices",
+            json={"template_id": template["id"], "name": "Big", "slave_id": 1000},
+        )
+        assert response.status_code == 201
+
+    async def test_mqtt_slave_id_above_247_allowed(self, client: AsyncClient) -> None:
+        template = await create_protocol_template(client, "mqtt", "MQTT Meter")
+        response = await client.post(
+            "/api/v1/devices",
+            json={"template_id": template["id"], "name": "Big", "slave_id": 5000},
+        )
+        assert response.status_code == 201
+
+    async def test_devices_on_different_protocols_can_share_slave_id(
+        self, client: AsyncClient,
+    ) -> None:
+        modbus_template = await create_protocol_template(client, "modbus_tcp", "Modbus Meter")
+        bacnet_template = await create_protocol_template(client, "bacnet", "BACnet Meter")
+
+        modbus_resp = await client.post(
+            "/api/v1/devices",
+            json={"template_id": modbus_template["id"], "name": "M5", "slave_id": 5},
+        )
+        assert modbus_resp.status_code == 201
+
+        bacnet_resp = await client.post(
+            "/api/v1/devices",
+            json={"template_id": bacnet_template["id"], "name": "B5", "slave_id": 5},
+        )
+        assert bacnet_resp.status_code == 201
+
+    async def test_device_port_reflects_protocol(self, client: AsyncClient) -> None:
+        settings = get_settings()
+        cases = [
+            ("modbus_tcp", settings.MODBUS_PORT),
+            ("snmp", settings.SNMP_PORT),
+            ("opcua", settings.OPCUA_PORT),
+            ("bacnet", settings.BACNET_PORT),
+        ]
+        for protocol, expected_port in cases:
+            template = await create_protocol_template(client, protocol, f"{protocol} Meter")
+            response = await client.post(
+                "/api/v1/devices",
+                json={"template_id": template["id"], "name": "Dev", "slave_id": 1},
+            )
+            assert response.status_code == 201
+            assert response.json()["data"]["port"] == expected_port
+
+
+class TestBatchProtocolSlaveIdLimits:
+    async def test_bacnet_batch_range_exceeding_limit_rejected(
+        self, client: AsyncClient,
+    ) -> None:
+        template = await create_protocol_template(client, "bacnet", "BACnet Batch")
+        response = await client.post(
+            "/api/v1/devices/batch",
+            json={"template_id": template["id"], "slave_id_start": 240, "slave_id_end": 248},
+        )
+        assert response.status_code == 422
+
+    async def test_snmp_batch_range_above_247_allowed(self, client: AsyncClient) -> None:
+        template = await create_protocol_template(client, "snmp", "SNMP Batch")
+        response = await client.post(
+            "/api/v1/devices/batch",
+            json={"template_id": template["id"], "slave_id_start": 300, "slave_id_end": 310},
+        )
+        assert response.status_code == 201
+        assert len(response.json()["data"]) == 11
 
 
 class TestListDevices:
@@ -290,12 +399,19 @@ class TestDeviceMqttPublishing:
     async def test_list_devices_mqtt_publishing_reflects_enabled_config(
         self, client: AsyncClient,
     ) -> None:
-        """Device with MQTT config (enabled defaults to false) should have mqtt_publishing=False."""
+        """mqtt_publishing is False for disabled configs, True once any is enabled."""
+        broker_resp = await client.post("/api/v1/system/mqtt/brokers", json={
+            "name": "list-broker", "host": "localhost", "port": 1883,
+            "username": "", "password": "", "client_id": "gm", "use_tls": False,
+        })
+        assert broker_resp.status_code == 201
+        broker = broker_resp.json()["data"]
+
         template = await create_template(client)
         device = await create_device(client, template["id"])
         # PUT an MQTT config — enabled defaults to false
         response = await client.put(
-            f"/api/v1/system/devices/{device['id']}/mqtt",
+            f"/api/v1/system/devices/{device['id']}/mqtt/{broker['id']}",
             json={"topic_template": "test/{device_name}", "payload_mode": "batch"},
         )
         assert response.status_code == 200
@@ -305,6 +421,26 @@ class TestDeviceMqttPublishing:
         data = response.json()["data"]
         assert len(data) == 1
         assert data[0]["mqtt_publishing"] is False
+
+        # Enable it directly in the DB — the flag must flip to True (and the
+        # multi-config join must not duplicate the device row)
+        from sqlalchemy import update as sa_update
+
+        import app.database as db
+        from app.models.mqtt import MqttPublishConfig
+
+        async with db.async_session_factory() as session:
+            await session.execute(
+                sa_update(MqttPublishConfig)
+                .where(MqttPublishConfig.device_id == uuid.UUID(device["id"]))
+                .values(enabled=True)
+            )
+            await session.commit()
+
+        response = await client.get("/api/v1/devices")
+        data = response.json()["data"]
+        assert len(data) == 1
+        assert data[0]["mqtt_publishing"] is True
 
 
 class TestGetRegisters:

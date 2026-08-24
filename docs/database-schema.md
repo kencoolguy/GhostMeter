@@ -60,22 +60,22 @@ A single Modbus register entry within a device template. Stores address, data ty
 
 ### `device_instances`
 
-A virtual device instance created from a template. Devices bind to a Modbus slave ID and port, and have a status state machine (stopped/running/error).
+A virtual device instance created from a template. Devices bind to a slave ID and a (server-derived) port, and have a status state machine (stopped/running/error).
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
 | `template_id` | UUID | NOT NULL | — | FK → `device_templates.id` (RESTRICT) |
 | `name` | VARCHAR(200) | NOT NULL | — | Device name |
-| `slave_id` | INTEGER | NOT NULL | — | Modbus Slave ID (1–247) |
+| `slave_id` | INTEGER | NOT NULL | — | Slave ID, ≥1. Ceiling of 247 for `modbus_tcp`/`bacnet` (1-byte protocol fields); unbounded for `snmp`/`opcua`/`mqtt` (display label only — see `app/services/device_service.py::_PROTOCOL_SLAVE_ID_MAX`) |
 | `status` | VARCHAR(20) | NOT NULL | `'stopped'` | `stopped`, `running`, or `error` |
-| `port` | INTEGER | NOT NULL | `502` | Modbus TCP port |
+| `port` | INTEGER | NOT NULL | `502` | Not client-settable — derived server-side from the template's protocol (`_resolve_port`): Modbus 502, SNMP 10161, OPC UA 4840, BACnet 47808, MQTT 1883 (nominal, MQTT has no real listening port). Exists so `(slave_id, port)` partitions the uniqueness check by protocol instead of colliding across them |
 | `description` | TEXT | NULL | — | Human-readable description |
 | `created_at` | TIMESTAMPTZ | NOT NULL | `now()` | Creation time (UTC) |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | `now()` | Last update time (UTC) |
 
 **Constraints:**
-- `UNIQUE (slave_id, port)` — same slave ID cannot be used twice on the same port
+- `UNIQUE (slave_id, port)` — same slave ID cannot be used twice within the same protocol's port
 - `FK template_id → device_templates.id ON DELETE RESTRICT` — templates with devices cannot be deleted
 
 **Relations:**
@@ -117,11 +117,12 @@ Reusable sets of simulation parameters bound to a device template. Built-in prof
 
 ### `mqtt_broker_settings`
 
-Global MQTT broker connection settings. At most one row exists.
+Named MQTT broker connections (multi-row since the multi-broker rework, issue #87).
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
+| `name` | VARCHAR(100) | NOT NULL | — | Unique human-readable broker name |
 | `host` | VARCHAR(255) | NOT NULL | `'localhost'` | Broker hostname |
 | `port` | INTEGER | NOT NULL | `1883` | Broker port |
 | `username` | VARCHAR(255) | NOT NULL | `''` | Auth username |
@@ -129,16 +130,21 @@ Global MQTT broker connection settings. At most one row exists.
 | `client_id` | VARCHAR(255) | NOT NULL | `'ghostmeter'` | MQTT client identifier |
 | `use_tls` | BOOLEAN | NOT NULL | `false` | Use TLS connection |
 
+**Constraints:**
+- `UNIQUE (name)` (`uq_mqtt_broker_settings_name`)
+
 ---
 
 ### `mqtt_publish_configs`
 
-Per-device MQTT publish configuration. One config per device.
+Per-(device, broker) MQTT publish configuration. A device may publish to any
+number of brokers, each with an independent config.
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `id` | UUID | NOT NULL | `uuid_generate_v4()` | Primary key |
 | `device_id` | UUID | NOT NULL | — | FK → `device_instances.id` (CASCADE DELETE) |
+| `broker_id` | UUID | NOT NULL | — | FK → `mqtt_broker_settings.id` (CASCADE DELETE) |
 | `topic_template` | VARCHAR(500) | NOT NULL | `'telemetry/{device_name}'` | MQTT topic template with variables |
 | `payload_mode` | VARCHAR(20) | NOT NULL | `'batch'` | `batch` or `per_register` |
 | `publish_interval_seconds` | INTEGER | NOT NULL | `5` | Publish interval in seconds |
@@ -147,8 +153,9 @@ Per-device MQTT publish configuration. One config per device.
 | `enabled` | BOOLEAN | NOT NULL | `false` | Whether publishing is active |
 
 **Constraints:**
-- `UNIQUE (device_id)` — one publish config per device
+- `UNIQUE (device_id, broker_id)` (`uq_mqtt_publish_device_broker`) — one config per device × broker pair
 - `FK device_id → device_instances.id ON DELETE CASCADE` — config is deleted when device is deleted
+- `FK broker_id → mqtt_broker_settings.id ON DELETE CASCADE` — the REST layer refuses broker deletion while configs exist (`409 BROKER_IN_USE`), so the cascade is a safety net only
 
 ---
 
@@ -223,3 +230,6 @@ Managed by Alembic. Migration files are in `backend/alembic/versions/`.
 | `b2a1062d8287` | Merge simulation_profiles and mqtt migrations |
 | `884c7934de25` | Add oid column to register_definitions |
 | `6e6c8a4265de` | Add scenarios and scenario_steps tables |
+| `f1d19ea21f6e` / `b241433f7174` | Merge heads |
+| `a7c3e91f4b20` | Fix negative max_drift in builtin simulation profiles |
+| `3830d1a0ba1c` | MQTT multi-broker: add `name` to mqtt_broker_settings (existing row → `'default'`), add `broker_id` to mqtt_publish_configs (backfilled), replace `UNIQUE (device_id)` with `UNIQUE (device_id, broker_id)` |

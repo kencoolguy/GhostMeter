@@ -310,10 +310,10 @@ class TestBacnetUpdateRegister:
                 device_id, 99, 3, 1.0, "float32", "big_endian"
             )
 
-    async def test_write_property_rejected(self):
-        """Read-only contract: WriteProperty must return writeAccessDenied and
-        the simulated value must remain unchanged."""
-        from bacpypes3.apdu import ErrorRejectAbortNack
+    async def test_write_property_accepted_but_not_persisted(self):
+        """Accept-and-ignore contract (replaces old writeAccessDenied behaviour):
+        WriteProperty is acked successfully so the client does not see an error,
+        but the simulation engine owns the value — the write must NOT persist."""
         from bacpypes3.primitivedata import ObjectIdentifier
 
         async with _running_adapter() as adapter:
@@ -322,11 +322,11 @@ class TestBacnetUpdateRegister:
             await adapter.update_register(device_id, 0, 3, 220.0, "float32", "big_endian")
             async with _client_app() as client:
                 addr = _device_addr(adapter._port, 1)
-                with pytest.raises(ErrorRejectAbortNack) as exc_info:
-                    await client.write_property(
-                        addr, ObjectIdentifier(("analog-input", 0)), "present-value", 999.0
-                    )
-                assert "write-access-denied" in str(exc_info.value)
+                # Must not raise — the write is acknowledged
+                await client.write_property(
+                    addr, ObjectIdentifier(("analog-input", 0)), "present-value", 999.0
+                )
+                # Value must remain what the simulation engine set, not 999.0
                 value = await client.read_property(
                     addr, ObjectIdentifier(("analog-input", 0)), "present-value"
                 )

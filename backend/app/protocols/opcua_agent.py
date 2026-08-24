@@ -88,6 +88,8 @@ class OpcUaAdapter(ProtocolAdapter):
         self._device_objects: dict[UUID, object] = {}          # device_id → Object node
         self._nodes: dict[tuple[UUID, int, int], object] = {}  # (dev, addr, fc) → node
         self._node_device: dict[ua.NodeId, UUID] = {}          # variable NodeId → device_id
+        # nodeid → (address, name, vtype)
+        self._node_write_meta: dict[ua.NodeId, tuple[int, str, ua.VariantType]] = {}
         self._device_meta: dict[UUID, str] = {}                # device_id → display name
         self._last_values: dict[tuple[UUID, int, int], tuple[float | int, ua.VariantType]] = {}
         self._faulted: set[UUID] = set()  # devices with fault callbacks attached
@@ -111,6 +113,9 @@ class OpcUaAdapter(ProtocolAdapter):
             self._server.subscribe_server_callback(
                 CallbackType.PreRead, self._pre_read_fault_delay,
             )
+            self._server.subscribe_server_callback(
+                CallbackType.PreWrite, self._pre_write_record,
+            )
             self._running = True
             logger.info("OPC UA server started on %s", self._endpoint)
         except Exception:
@@ -124,11 +129,15 @@ class OpcUaAdapter(ProtocolAdapter):
                 await self._server.stop()
             except Exception:
                 logger.debug("Error stopping OPC UA server", exc_info=True)
+        from app.simulation import write_tracker
+        for device_id in set(self._node_device.values()):
+            write_tracker.clear(device_id)
         self._server = None
         self._folder = None
         self._device_objects.clear()
         self._nodes.clear()
         self._node_device.clear()
+        self._node_write_meta.clear()
         self._last_values.clear()
         self._faulted.clear()
         self._device_meta.clear()
@@ -173,6 +182,8 @@ class OpcUaAdapter(ProtocolAdapter):
                     logger.debug("Could not set Description for %s", node_name)
             self._nodes[(device_id, reg.address, reg.function_code)] = var
             self._node_device[var.nodeid] = device_id
+            await var.set_writable(True)
+            self._node_write_meta[var.nodeid] = (reg.address, node_name, vtype)
             self._last_values[(device_id, reg.address, reg.function_code)] = (
                 caster(0), vtype,
             )
@@ -199,6 +210,13 @@ class OpcUaAdapter(ProtocolAdapter):
         self._node_device = {
             nid: did for nid, did in self._node_device.items() if did != device_id
         }
+        self._node_write_meta = {
+            nid: meta
+            for nid, meta in self._node_write_meta.items()
+            if nid in self._node_device
+        }
+        from app.simulation import write_tracker
+        write_tracker.clear(device_id)
         self._last_values = {
             k: v for k, v in self._last_values.items() if k[0] != device_id
         }
@@ -273,6 +291,49 @@ class OpcUaAdapter(ProtocolAdapter):
             return self._good_datavalue(key)  # unknown type → behave normally
 
         return cb
+
+    async def _pre_write_record(self, event, dispatcher) -> None:  # noqa: ANN001
+        """PreWrite server callback: record client writes, then coerce their type.
+
+        Records the client's ORIGINAL value (before any coercion) so the audit
+        trail faithfully reflects what the client sent — coercing first would
+        misreport e.g. a Double 55.9 written to an Int16 node as "55". Then
+        coerces a type-mismatched Variant to the node's declared type in place so
+        asyncua accepts the write and the value round-trips (read-back friendly
+        until the next simulation tick overwrites it).
+
+        Only external (network client) writes are handled — internal simulation
+        updates (update_register → node.write_value, is_external=False) are
+        skipped so they don't appear as client writes. Defensive: a failure here
+        must not disrupt the server."""
+        if not getattr(event, "is_external", False):
+            return
+        try:
+            from app.simulation import write_tracker
+
+            for wv in getattr(event.request_params, "NodesToWrite", None) or []:
+                if wv.AttributeId != ua.AttributeIds.Value:
+                    continue  # ignore non-Value attribute writes (e.g. Description)
+                meta = self._node_write_meta.get(wv.NodeId)
+                if meta is None:
+                    continue  # not one of our register nodes
+                device_id = self._node_device.get(wv.NodeId)
+                if device_id is None:
+                    continue
+                address, node_name, expected_vtype = meta
+                dv = wv.Value
+                if dv is None or dv.Value is None:
+                    continue
+                # Record the client's original value (faithful — before coercion).
+                write_tracker.record(
+                    device_id, "Write", address, [str(dv.Value.Value)], node_name
+                )
+                # Coerce a mismatched Variant type so the write applies cleanly.
+                if dv.Value.VariantType != expected_vtype:
+                    coerced = _coerce_to_range(dv.Value.Value, expected_vtype)
+                    wv.Value = ua.DataValue(ua.Variant(coerced, expected_vtype))
+        except Exception:  # pragma: no cover — defensive; must not disrupt the server
+            logger.warning("Failed to handle OPC UA client write", exc_info=True)
 
     async def _pre_read_fault_delay(self, event, dispatcher) -> None:  # noqa: ANN001
         """PreRead server callback: apply delay faults without blocking.

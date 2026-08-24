@@ -1,5 +1,436 @@
 # Development Log
 
+## 2026-08-24 — 部署文件：環境搬移（Migration）章節
+
+### 做了什麼
+
+`docs/deployment.md` 新增第 7 節「搬移到另一個環境」，涵蓋從本機或 Linode
+把整套系統移到新環境的完整流程：
+
+- 釐清資料邊界：唯一需要搬的狀態是 PostgreSQL（`pgdata` volume）；
+  程式碼在 GitHub、`.env` 是 git-ignored 要手動帶走、write events 只在
+  in-memory ring buffer 不需搬。
+- 匯出用 `docker exec ghostmeter-postgres pg_dump -Fc`（直接對容器，
+  不受 host port 映射影響）；還原用 `pg_restore --clean --if-exists`。
+- **restore 先於 deploy.sh** 的順序約束：dump 帶著 `alembic_version`，
+  先還原再跑 migration 只會補跑更新的 revision，app 啟動 seed 檢查
+  也會發現內建模板已存在而跳過，不會重複塞資料。
+- 版本約束：新環境 checkout 的 code 版本須 ≥ 來源（舊 code 配新 dump 會壞）。
+- 搬移後檢查清單：Tailscale 新 node IP（`BIND_IP` 更新 + node sharing
+  重新分享 + EMS 端改連線 IP）、Cloudflare Tunnel token 綁 tunnel 不綁
+  機器可直接沿用（舊機器要停）、外部 MQTT broker 的來源 IP 限制。
+
+### 決策
+
+- 推薦 `pg_dump` 而非 tar 整個 `pgdata` volume：不用停來源 postgres、
+  無 volume 權限問題、輸出乾淨（兩者都可行，PG 16 對 PG 16）。
+- 純文件變更，無程式碼異動。
+
+### 做了什麼
+
+依 Delta DPM-C520/C530 的 register map（使用者提供的點表截圖）新增內建模板
+`dpm_c530_meter.json` 與預設 profile `dpm_c530_meter_normal.json`：
+
+- **32 個 register**，全部 float32 / Holding Register（FC03），位址照點表
+  0x100 區塊（十進位 256–352）：三相＋平均相電壓、三個線電壓＋平均、
+  三相＋平均電流、三相＋總 PF、頻率、三相＋總 kW/kVAR/kVA、
+  累積 kWh/kVAh/kVARh。
+- **Normal Operation profile**（is_default）走物理一致性設計，比照 SDM630：
+  - 相電壓 gaussian ~220V；線電壓 computed `(Va+Vb)×0.866`（≈ √3×平均），
+    平均值全部 computed
+  - 電流 daily_curve（base 40/38/42、14:00 尖峰，三相刻意微幅不平衡）
+  - kW = V×I×PF/1000、kVA = V×I/1000、總量為三相相加
+  - kVAR 用 `VA × 0.392` 近似（PF 0.92 時 sin(acos(0.92))≈0.392）——
+    expression parser 只支援 + - * /，沒有 `**` 可開根號，屬刻意近似
+  - 累積電量 accumulator，increment 依平均功率換算（24.3 kW → 0.00675 kWh/s）
+
+### 決策
+
+- 點表的 Start Address 十進位值（256 = 0x100）直接當 0-based protocol
+  address 使用，與其他內建模板一致。
+- byte_order 用預設 `big_endian`（點表未載明 word order；模擬器兩端一致即可，
+  若實際 collector 解出亂數再調）。
+- 每個 builtin template 必須有 default profile（`test_seed_profiles` 強制），
+  所以 profile 跟模板同 PR 一起進。
+
+### 驗證
+
+- `test_seed.py` builtin 數量 6 → 7 並斷言新模板名稱。
+- 加寫一次性 sanity script 驗證：schema 過 `TemplateCreate`、register
+  位址無重疊（float32 佔 2 registers）、profile 的 register_name 與模板
+  一一對應、所有 computed expression 依序可求值（p_w≈24.3 kW、
+  p_va≈26.4、p_var≈10.3、線電壓≈381V，數值合理）。
+- 全套 backend pytest 452 passed。
+
+## 2026-07-20 — MQTT broker 斷線自動重連
+
+### 背景（線上事故）
+
+Linode 上兩個 MQTT broker（.49 正式 EnOL VM、.125 Mac 測試 EMQX）的發布同時
+掛掉 7+ 小時：每 5 秒噴 `[code:4] The client is not currently connected`，但
+API `/system/mqtt/brokers` 卻回報 `connected: true`。追查證據鏈：
+
+- 兩個 broker 是**各自獨立**斷線（.49 連上後 3 分鐘、.125 連上後 1.4 小時），
+  斷線後永遠不恢復；容器內到 port 1883 的 established TCP 連線為 0 條
+- 兩個 broker 從 Linode 都 TCP 可達 → 網路沒問題，缺的是重連
+
+### 根因
+
+aiomqtt 沒有內建自動重連（設計上連線生命週期 = context manager 範圍），而
+adapter 的 `connected` flag 只在 `connect_broker()` 成功時設 True，斷線後既
+不偵測也不重連 —— publish loop 在死掉的 client 上每 5 秒失敗一次直到重啟。
+追 git history 確認這是 multi-broker 之前就存在的設計缺陷（舊版 `reconnect()`
+只在改設定時觸發），不是 PR #88 regression；以前 broker 穩定沒暴露，broker
+搬到會睡眠的 Mac 與遠端 VM 後天天踩。
+
+### 修法
+
+連線生命週期補齊，不動 publish task 結構 / fault sim / REST API：
+
+1. **斷線偵測**：`_publish_one` 捕捉 `aiomqtt.MqttError` → `_mark_broker_disconnected()`
+   把 flag 翻 False（API 狀態變誠實；publish loop 走既有 guard 跳過發送，
+   error log 洪水自動停止）並排程重連。
+2. **自動重連**：每個 broker 一個 `_reconnect_loop` task，exponential backoff
+   1s → 60s cap，成功後 flag 復 True，publish loop 下一輪自動恢復發布。
+   `connect_broker` 失敗（啟動時 broker 就掛）也走同一機制。
+3. **生命週期**：`disconnect_broker` / `reconnect_broker`（手動改設定）/ `stop()`
+   都會先取消 pending 的重連 task；broker 被移除時重連 loop 自行終止。
+   `connect_broker` 現在把 settings 存進 `_broker_settings` 供重連使用。
+
+TDD：先寫 5 個失敗測試（斷線標記、backoff 重試到成功、重複標記不疊 task、
+disconnect 取消重連、啟動失敗排程重連）再實作。全套 452 tests 通過。
+
+### 順手修
+
+`test_health_returns_200` 寫死 `version == "0.1.0"`（0.4.x 起就過期，dev 上
+本來就 fail），改為對照 `get_settings().APP_VERSION`。
+
+## 2026-07-18 — Multi-broker MQTT publishing（issue #87）
+
+### 背景
+
+2026-07-18 把 Linode GhostMeter 的 MQTT 發布從測試 broker（.125）切到 EnOL 正式
+broker（.49）時，`MqttBrokerSettings` 是全域單一設定，兩台裝置只能一起切，原本
+接 .125 的 pipeline 直接斷線。Issue #87 記錄了完整的架構調查；這次實作把 MQTT
+層全面改成 multi-broker：多筆命名 broker + 裝置 × broker 獨立 publish config。
+
+### 設計決策（已與 Ken 確認）
+
+1. **Adapter 架構**：單一 `MqttAdapter` 內部管理 `dict[broker_id, aiomqtt.Client]`，
+   publish task 以 `(device_id, broker_id)` 為 key。`ProtocolManager` 完全不動，
+   改動範圍最小。順手修掉舊 bug：以前 `reconnect()` 會取消**所有**裝置的
+   publish task，現在 reconnect/斷線都只影響該 broker 自己的 task。
+2. **API clean break**：舊的 `GET/PUT /system/mqtt` 直接移除（只有自家前端在用，
+   前後端同 PR 一起改），換成 `/system/mqtt/brokers` CRUD。per-device 端點改為
+   `PUT/DELETE /devices/{id}/mqtt/{broker_id}`，start/stop 帶 optional
+   `broker_id`（不帶 = 全部；部分失敗只回滾該 pair 的 enabled）。
+3. **範圍**：後端 + 前端一起做。Settings 頁變 broker 表格（新增/編輯/測試/刪除
+   + 連線狀態），裝置頁變 per-broker config 列表，各自獨立 start/stop。
+
+### 實作重點
+
+- **Migration `3830d1a0ba1c`**：`mqtt_broker_settings` 加 unique `name`（現有
+  單筆 → `'default'`）；`mqtt_publish_configs` 拿掉 `device_id` unique、加
+  `broker_id` FK backfill 到現有 broker，換成 `UNIQUE (device_id, broker_id)`。
+  已在本機含資料的 dev DB 驗證 upgrade → downgrade → upgrade 可逆。升級後部署
+  環境行為不變（既有 config 全掛在 default broker 上）。
+- **刪除保護**：broker 還有 config 引用時回 `409 BROKER_IN_USE`（顯式優於
+  cascade surprise）；duplicate name 回 `409 DUPLICATE_NAME`。計畫原寫 400，
+  改用專案既有的 `ConflictException`（409）慣例。
+- **Export/import**：改為 `mqtt_brokers` 列表，config 以 `broker_name` 參照
+  （name 而非 UUID，跨機器 import 才能對上）；舊格式（單一
+  `mqtt_broker_settings`）仍可 import，落地為 `default` broker。
+  `ImportResult.mqtt_broker_settings_set` → `mqtt_brokers_set`。
+- **裝置生命週期**：device start 逐一啟動所有 enabled config（單一 pair 失敗
+  log-and-continue）；device list 的 `mqtt_publishing` 從 1:1 join 改成 EXISTS
+  subquery（多 config 不會重複列裝置）。
+
+### 驗證
+
+- 後端 447 tests 全綠（`test_health` 需 CI 的 `APP_VERSION=0.1.0` env，本機差異
+  與本次無關）；前端 tsc/eslint/vitest 36 tests/build 全綠。
+- End-to-end 冒煙（本機 backend + 真 EMQX + 獨立 aiomqtt subscriber）：
+  broker A（可連）+ broker B（不通 port）→ start all 部分成功、B 的 enabled
+  正確回滾；A 每秒實際發布（subscriber 收到）；把 B 更新成可連 → 只有 B
+  reconnect，期間 A 的訊息流不中斷（15 → 18 持續遞增）；單獨 start B 後兩個
+  topic 同時進訊息；刪除有 config 的 broker 正確回 409。
+
+## 2026-07-17 — 各協定獨立 slave_id 上限（Modbus/BACnet 247，SNMP/OPC UA/MQTT 不設上限）
+
+### 背景
+
+跟 Ken 討論「GhostMeter 一台能建幾台裝置」時發現一個非預期耦合：`DeviceCreate`/
+`DeviceBatchCreate`/`DeviceUpdate` 的 `port` 欄位 default 一律是 `502`，前端
+Create Modal 也從來不讓使用者填 port。結果 5 種協定（Modbus/SNMP/OPC UA/
+BACnet/MQTT）建立裝置時，`DeviceInstance.port` 全部存成同一個值 `502`，而
+`(slave_id, port)` 又是全系統共用的 DB unique constraint（`device_service.py`
+的 `_check_slave_id_available`）——即使 SNMP 實際監聽的是 10161、OPC UA 是
+4840，跟 Modbus 的 502 毫無關係。
+
+實際後果：`slave_id` 的 1-247 schema validator（原本只是為了符合 Modbus unit
+identifier 是 1-byte 欄位的協定限制）被無差別套用到全部協定，且因為 port 全部
+共用 502，5 種協定其實是在搶同一個「最多 247」的名額池，而不是各自獨立 247。
+
+### 根因與設計判斷
+
+- **真限制（協定規格本身要求）**：Modbus unit identifier、BACnet 的 VLAN MAC
+  都是 1-byte 欄位，1-247 是物理上限，改不掉。
+- **假限制（純粹是程式耦合造成）**：SNMP 用 OID 當 key、OPC UA 用 node、MQTT
+  用 topic 字串，`slave_id` 在這三個協定裡只是顯示用途的標籤，本來就不需要
+  1-247 這個上限；會被卡住純粹是因為 schema validator 跟 `(slave_id, port)`
+  constraint 沒有分協定處理。
+
+修法是把 `port` 從「使用者可填的欄位」改成「後端依 `template.protocol` 推導」
+（`device_service._resolve_port`），讓每個協定各自拿到自己的 `(slave_id, port)`
+命名空間；`slave_id` 的上限檢查則搬到 service 層（`_validate_slave_id_ceiling`），
+因為只有拿到 `template.protocol` 之後才知道該套用哪個協定的規則。Modbus/
+BACnet 保留 247 上限，SNMP/OPC UA/MQTT 不設上限（純受記憶體/event loop
+throughput 限制，非程式碼寫死）。MQTT 沒有真正的監聽 port（devices 是主動
+publish 到 broker），給了一個 nominal 值 `1883`（`MQTT_NOMINAL_PORT`）純粹用
+來讓它跟其他協定分開命名空間，不代表 broker 的真實 port（那是
+`MqttBrokerSettings` 管的）。
+
+### 範圍決策
+
+跟 Ken 確認過，這次**只改後端**：前端 Create/Edit Modal 的 Slave ID 輸入框
+仍然寫死 `max={247}`（`EditDeviceModal.tsx`），且 `DeviceSummary` 沒有回傳
+`protocol` 欄位可供前端判斷。也就是說 SNMP/OPC UA/MQTT 裝置理論上限已經解除，
+但透過現有 UI 仍然建不到 248 台以上——要用的話得直接呼叫 API。`EditDeviceModal`
+的 Port 輸入框現在送出的值會被後端忽略（server 一律重新推導），這是刻意保留
+前端不動的已知副作用，不是遺漏。
+
+### 做法（TDD）
+
+- 先在 `tests/test_devices.py` 加 8 個測試（BACnet 上限阻擋、SNMP/OPC UA/MQTT
+  超過 247 允許、跨協定同 slave_id 共存、`port` 回傳值符合協定、batch 版本的
+  上限/放寬），確認全部因現有行為而失敗（RED，6 fail / 2 pass——BACnet 阻擋
+  的 2 個因為舊 validator 本來就會擋 248 而先過）。
+- `schemas/device.py`：拿掉 `port` 欄位，`slave_id` validator 只留下界
+  （`>= 1`），上界判斷移到 service 層。
+- `services/device_service.py`：新增 `_PROTOCOL_SLAVE_ID_MAX`（只有
+  `modbus_tcp`/`bacnet` 有值）、`_resolve_port()`、`_validate_slave_id_ceiling()`；
+  `create_device`/`batch_create_devices`/`update_device` 都先取得
+  `template.protocol` 再驗證上限、推導 port（`update_device` 原本沒有 fetch
+  template，這次補上）。
+- `config.py`：新增 `MQTT_NOMINAL_PORT = 1883`，附註說明用途。
+
+### 驗證
+
+- `tests/test_devices.py` 34 passed（8 新增全綠）。
+- 全套 backend `pytest`：423 passed, 1 failed——失敗是既有無關的
+  `test_health.py::test_health_returns_200`（硬編版本字串 `0.1.0` vs 目前
+  `0.4.3`，跟這次改動無關，未修）。
+- `ruff check` 通過（`schemas/device.py`、`services/device_service.py`、
+  `config.py`）。
+- 全部既有測試中原本明確傳 `port`（`test_opcua_fault.py` 傳 `port: 4840`、
+  `test_system_export_import.py`/`test_batch_device_ops.py` 傳 `port: 502`）
+  的案例，剛好都跟新的 server-derived 值一致，零改動零破壞。
+
+### 已知後續（未做，等 Ken 要用時再說）
+
+- 前端 Slave ID 上限/協定顯示未同步，若要在 UI 上真的建立 248+ 台 SNMP/OPC
+  UA/MQTT 裝置需要另外處理（`DeviceSummary` 加 `protocol`、Modal 動態調整
+  `max`）。
+- `EditDeviceModal` 的 Port 欄位變成無效輸入（送出會被忽略），沒有拿掉或加
+  提示——維持現狀是本次明確決定，非疏漏。
+
+## 2026-07-17 — MQTT 設定即時生效 + publish topic meta 修復（#81、#82）
+
+### 背景
+
+把 Linode GhostMeter 的 MQTT 發布接到 EnOL 的 EMQX broker 時，實地踩到兩個 bug：
+
+1. **#81**：`PUT /api/v1/system/mqtt` 只把 broker 設定寫進 DB，跑著的
+   `MqttAdapter` 完全不知情——`MqttAdapter.reconnect()` 從 PR 實作以來就是
+   dead code，沒有任何呼叫點。改完設定必須重啟 backend 才生效（實測就是靠
+   `docker compose restart backend` 繞過的）。
+2. **#82**：`POST /api/v1/system/devices/{id}/mqtt/start` 呼叫
+   `start_publishing()` 前沒有先 `set_device_meta()`，publish loop 渲染 topic
+   template 時 meta 缺失、fallback 成 `unknown`——實測訊息全部發到
+   `gm/unknown`（EMQX topic metrics 證實），batch payload 的 `device` 欄位是
+   裸 UUID。唯一會正確設 meta 的路徑是 `device_service.start_device()` 的
+   auto-start（設備啟動時已有 enabled config），所以 UI 上「對運行中設備開啟
+   publishing」這條主要流程是壞的，workaround 是 stop/start 設備一次。
+
+### 做法（TDD：先寫 5 個失敗測試，再實作）
+
+- `mqtt_service.get_device_meta()`：join device + template 撈 topic 渲染需要的
+  (name, slave_id, template_name)；`mqtt/start` 路由在 `start_publishing()` 前
+  先 `set_device_meta()`。
+- `PUT /system/mqtt` 存檔後對 adapter 呼叫 `reconnect()`（用 service 回傳的
+  ORM 物件取「解析後」的密碼——request 可能帶 masked `****`，不能直接用）。
+- `reconnect()` 會取消所有 publish task，所以新增
+  `mqtt_service.resume_enabled_publishing()`：重連成功後把 enabled config ×
+  running device 的 publish task 全部帶 meta 重啟。adapter 未註冊（啟動失敗）
+  時設定照存，行為與舊版一致。
+- 測試用 `FakeMqttAdapter`（錄呼叫順序）替換 protocol_manager 裡的 mqtt
+  adapter，驗證 meta 先於 start_publishing、masked 密碼解析、reconnect 後
+  resume、無 adapter 時仍可存檔。
+
+### 追加：#84 startup resume 不恢復 publishing（同日第二個 PR）
+
+部署 #83 時發現第三個 gap：`main.py` lifespan 的 startup resume 只重建設備
+runtime，不會恢復 MQTT publish task——config 還是 `enabled=true` 但 loop 已死，
+每次重啟/部署 backend 發布就默默斷掉。修法：把 resume 區塊從 lifespan 抽成
+`device_service.resume_running_devices()`（可測），結尾呼叫 #83 新增的
+`resume_enabled_publishing()`。TDD 兩個測試：running+enabled 會恢復（meta 先於
+start_publishing）、stopped+enabled 不會。
+
+### 驗證
+
+- `tests/test_mqtt.py` 27 passed（22 既有 + 5 新增）；#84 後 29 passed；全套
+  backend 417 passed。
+- `test_health.py::test_health_returns_200` 本機失敗為既有環境問題（測試硬編
+  version `0.1.0`，CI 用 workflow env `APP_VERSION: 0.1.0` 釘住，本機無 `.env`
+  吃到預設 `0.4.3`）——與本次修改無關，未動。
+
+## 2026-07-04 — Frontend vitest 測試骨架 + CI gate（#62）
+
+### 背景
+
+前端從 Phase 1 至今零測試——`frontend/src` 只有 `npm run build`/`tsc -b` 把關型別，
+邏輯層（utils/services/stores/hooks）沒有任何自動化驗證，迴歸只能靠手動點測。CI
+`frontend` job 也只跑 typecheck + build，eslint 早在 #63 修乾淨後從沒被 CI 強制執行過。
+
+### 做法
+
+- **測試框架：vitest + jsdom + Testing Library**，不是 Jest——專案已用 Vite 建置
+  （`vite build`），vitest 直接吃同一份 `vite.config.ts`/esbuild pipeline，不需要額外
+  的 babel/ts-jest 轉譯層，設定成本最低。`jsdom` 提供 DOM 環境給 `useWebSocket` 這類
+  依賴 `WebSocket`/`window` 的 hook 測試。
+- **範圍限定在 pure-logic 目錄**：`vite.config.ts` 的 `test.coverage.include` 只收
+  `src/utils/**`、`src/stores/**`、`src/services/**`、`src/hooks/**`，不含
+  `src/pages`、`src/components`——components/pages 需要更重的渲染 + antd mock 成本，
+  這次先把邏輯層的安全網建起來，UI 層測試留給後續（見下方 deferred）。
+- **36 個測試**：涵蓋 utils（純函式）、services（axios API 封裝，`api.test.ts` 用
+  `unknown` cast 存取 axios 內部型別，刻意不用 `any` 以通過 lint gate）、stores
+  （zustand store 的 action/selector 行為）、`useWebSocket` hook（連線/重連生命週期）。
+- **Ratchet coverage threshold**：實測 baseline 為 statements 24.84 / branches 42.04 /
+  functions 20.67 / lines 24.45（`npm run test:coverage` 對上述 4 個目錄的覆蓋率）。
+  門檻鎖在略低於實測值的 **20/40/20/20**——ratchet 用意是「不能倒退」而非要求滿分，
+  之後每加一批測試，門檻可以跟著提高，但這次先用保守值避免一有小改動就紅。
+- **CI 新增兩道 gate**：`.github/workflows/ci.yml` 的 `frontend` job 在 `npm ci` 之後
+  依序插入 `Lint`（`npm run lint`）與（typecheck 之後的）`Test with coverage`
+  （`npm run test:coverage`），順序為 lint → typecheck → test → build，四步驟皆為
+  CI 必要條件（non-zero exit 會讓 job 失敗）。backend job 未變動。
+
+### 已知限制 / Deferred（追蹤於 #62）
+
+- Components/pages 測試（antd 元件渲染、頁面互動）本次不做，覆蓋率門檻刻意只鎖
+  pure-logic 目錄。
+- Playwright e2e（`frontend/e2e/`，`test:e2e` script 已存在）目前不在 CI 跑，仍是
+  本機手動執行；CI 整合留待後續 issue。
+
+## 2026-06-25 — OPC UA 寫入偵測（#72）
+
+### 設計
+
+- **accept + 保留到下一 tick**（read-back friendly）：OPC UA client 常 read-back/subscribe
+  驗證，所以不像 Modbus/BACnet 的 strict accept-and-ignore——node 設 `set_writable(True)`、
+  寫入實際套用、下一 sim tick 才覆蓋。
+- **機制**：`subscribe_server_callback(CallbackType.PreWrite, ...)`（與既有 PreRead fault
+  hook 同一套）。`InternalSession.write` 先 dispatch PreWrite 再套用。callback 從
+  `event.request_params.NodesToWrite` 取值（`wv.Value.Value.Value`）。
+- **只記 external（網路 client）寫入**：`event.is_external` 過濾——PostWrite/PreWrite 對
+  「所有」寫入觸發，包括 `update_register()` 每個 tick 的內部 `node.write_value()`；不過濾
+  的話每個 tick 都被記成 client 寫入。（review 確認 internal session external=False。）
+- **型別 coercion**：asyncua 嚴格型別檢查，loose client 寫 Double 到 Float node 會
+  BadTypeMismatch。PreWrite in-place coerce 到 node 型別讓寫入成功。
+- **記錄忠實性**（review REQUEST-CHANGES 修正）：原本在 PostWrite 取「coerce 後」的值記錄，
+  導致 Double 55.9 寫 Int16 被記成 "55"——誤報 client 意圖。改成單一 PreWrite callback
+  **先記 client 原值、再 coerce 套用**。值的審計忠實，套用值仍 read-back friendly。
+
+### 驗證
+
+- 4 個整合測試（真 asyncua client）：寫入記錄+套用、clear-on-remove、internal 更新不記錄
+  （is_external）、記錄值是 client 原值非 coerced 值。+ 13 OPC UA fault regression。全 17 passed。
+
+### 已知限制（#72 follow-up，已與 Ken 確認記錄為限制）
+
+- OPC UA 寫入未 fault-gating（faulted 設備仍接受寫入，但 attempt 仍記錄）。
+- 更糟：client 寫入 faulted node 會清掉該 node 的 fault value-callback（asyncua 寫入時
+  重設），update_register 不重掛 → 該 node 的 fault 被悄悄停用直到 re-apply。邊緣情境
+  （測試時同時寫入又注入 fault）。正解需 gate faulted 寫入或寫後重掛，另案設計。
+
+## 2026-06-25 — BACnet 寫入偵測 + 寫入事件模型一般化（#72）
+
+### 背景
+
+#71 為 Modbus 做了寫入偵測，但它的 `write_tracker` 資料模型其實是 Modbus 形狀的
+（`function_code: int`、`values: list[int]`）。接 BACnet 時暴露出來：BACnet 沒有
+function code（是 WriteProperty），寫的是 **float** present-value 不是 16-bit words。
+所以這次先把模型一般化，再接 BACnet。
+
+### 做法
+
+- **模型一般化**：`WriteEvent.function_code: int` → `operation: str`（人類標籤）、
+  `values: list[int]` → `list[str]`（字串化，統一容納 Modbus int 與 BACnet float）。
+  Modbus 的 FC→label 對應從前端搬進 Modbus adapter（`_MODBUS_WRITE_OPS`），前端 drawer
+  直接顯示 `operation`、移除 `FC_LABELS`。同步更新 #71 的 4 份測試斷言。
+- **BACnet 記錄 + accept-and-ignore**：`bacnet_agent.py` 的
+  `do_WritePropertyRequest` 原本直接 `raise writeAccessDenied`，改成「取 obj +
+  `apdu.propertyValue.cast_out(property_type, ...)` 解出值 → `write_tracker.record(
+  device_id, "WriteProperty", instance, [str(value)], obj.objectName)` → 回
+  `SimpleAckPDU`」，**不呼叫 `obj.write_property`**（值不持久化，sim engine 仍擁有值）。
+  `object instance == register address`、`obj.objectName` 即 register name。記錄包
+  try/except，絕不影響 ack。`stop()` / `_do_remove_device` 加 `write_tracker.clear`。
+- **行為變更**：BACnet 寫入從「拒絕」變「接受」。既有 `test_write_property_rejected`
+  記錄的是舊行為，改名 `test_write_property_accepted_but_not_persisted`，斷言寫入被
+  ack 且 sim 值不被覆蓋（client 寫 999 後仍維持 220）。
+
+### 驗證
+
+- 後端：BACnet 整合測試（真 bacpypes3 client write → 斷言 operation/address/value/name
+  + 回成功、clear-on-remove）2 passed；BACnet regression 30/30；#71 既有測試（改成
+  operation/string）18 passed。ruff clean。
+- 前端：tsc + eslint + build 全乾淨。
+
+### 待辦
+
+- #72 續：OPC UA（read-back/subscription 前提要重新 brainstorm）、SNMP（SET，最低優先）、
+  MQTT（command topic 需獨立設計 topic/payload）。共用 ring buffer + API + UI 已就位。
+
+## 2026-06-22 — Modbus 寫入偵測（#71）
+
+### 問題
+
+GhostMeter 是唯讀模擬器，EMS 開發者無法驗證自家系統「確實發出了正確的 Modbus 寫入」
+（寫 setpoint 等）。寫入 holding register（FC06/16）被 pymodbus 默默接受、下一 tick 被覆蓋，
+且完全沒有任何記錄（log / API / WS / UI 都看不到）。
+
+### 設計決策
+
+- **accept-and-ignore + record**：接受寫入（client 收到成功回應），但不持久化寫入值
+  （模擬引擎下一 tick 照常覆蓋）。前提已確認 EMS 不做 write-then-read-back 驗證。
+  核心價值在「偵測 + 記錄」，讓使用者驗證 EMS 行為。
+- **記錄層**：仿 `fault_simulator` 做 `write_tracker` singleton — per-device
+  `deque(maxlen=50)` ring buffer + unread 計數，純 in-memory（device stop / server
+  restart 即清空），protocol-agnostic 以便 #72 重用。
+- **攔截點**：`modbus_tcp.py` 的 `trace_pdu` incoming 分支（與 fault 同一 hook，跑在
+  asyncio loop 上、無跨 thread）。FC6/16 從 `pdu.registers` 取值、FC5/15 從 `pdu.bits`
+  取值（pymodbus 3.12.1 實測屬性名）。記錄包 try/except，**絕不影響 Modbus 回應**；
+  fault 抑制（timeout）的寫入也照記，因為使用者要驗證的是 client 是否發出寫入。
+- **投遞**：摘要（unread + latest）搭現有 1Hz monitor snapshot 推前端（不另開 WS channel）。
+- **REST 走乾淨語意**：`GET /write-events` 純讀不改狀態；另開 `POST /write-events/ack`
+  歸零 unread（UI 開抽屜時呼叫）。捨棄「GET 帶 side effect」的捷徑。
+- **UI**：DeviceCard 上 antd `<Tag>` badge（unread>0 金色、已讀過仍可點開灰色），
+  點開 `WriteEventsDrawer` 拉清單；drawer 在 portal 內，外層 stopPropagation 避免觸發
+  卡片導航。
+
+### 驗證
+
+- 後端：write_tracker 單元測試（ring buffer / unread / mark_read / clear）；
+  modbus client 實寫整合測試（FC06/FC16/FC05 coil / 未知 address / read 不記 /
+  remove 清空 / timeout-fault 下仍記錄）；snapshot payload 測試；API list/ack 測試。
+  全套件 **403 passed**（唯一 fail 是既有 `test_health` 版本 pin，與本次無關）。
+- 前端：`tsc --noEmit` + `eslint` + `build` 全乾淨。
+
+### 待辦
+
+- #72：寫入偵測擴展到 OPC UA / BACnet / SNMP / MQTT（共用 ring buffer + API + UI，
+  等實際需求再排）。
+- 既有 `test_health` 寫死 `version == "0.1.0"` 靠 CI env 覆寫才過，屬 stale pin，另案修。
+
 ## 2026-06-12 — 後端依賴 lock + dev/prod 依賴分離（P1）
 
 ### 現況盤點

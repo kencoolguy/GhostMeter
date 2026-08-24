@@ -56,6 +56,25 @@ class MonitorService:
         """Return all events as dicts (newest first)."""
         return [asdict(e) for e in reversed(self._event_log)]
 
+    def build_write_events_payload(self, device_id: UUID) -> dict[str, Any]:
+        """Per-device write-event summary for the monitor snapshot."""
+        from app.simulation import write_tracker
+
+        latest = write_tracker.latest(device_id)
+        latest_data = None
+        if latest is not None:
+            latest_data = {
+                "timestamp": latest.timestamp.isoformat(),
+                "operation": latest.operation,
+                "address": latest.address,
+                "values": latest.values,
+                "register_name": latest.register_name,
+            }
+        return {
+            "unread": write_tracker.get_unread_count(device_id),
+            "latest": latest_data,
+        }
+
     async def get_snapshot(self) -> dict[str, Any]:
         """Build a complete monitor snapshot for WebSocket broadcast.
 
@@ -148,14 +167,18 @@ class MonitorService:
                 "active_fault": active_fault,
                 "stats": stats_data,
                 "mqtt_stats": mqtt_stats_data,
+                "write_events": self.build_write_events_payload(device_id),
             })
 
-        # MQTT broker connection state
+        # MQTT broker connection state ("connected" = any broker connected)
         mqtt_adapter = protocol_manager.get_adapter("mqtt")
         mqtt_broker_connected = False
+        mqtt_brokers: list[dict] = []
         if mqtt_adapter is not None:
             try:
-                mqtt_broker_connected = bool(mqtt_adapter.get_status().get("connected", False))
+                mqtt_status = mqtt_adapter.get_status()
+                mqtt_broker_connected = bool(mqtt_status.get("connected", False))
+                mqtt_brokers = mqtt_status.get("brokers", [])
             except Exception:  # pragma: no cover — defensive
                 logger.warning("Failed to read MQTT adapter status", exc_info=True)
 
@@ -165,6 +188,7 @@ class MonitorService:
             "devices": devices_data,
             "events": self.get_events(),
             "mqtt_broker_connected": mqtt_broker_connected,
+            "mqtt_brokers": mqtt_brokers,
         }
 
 

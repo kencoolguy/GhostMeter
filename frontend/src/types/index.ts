@@ -47,18 +47,21 @@ export type {
 export type {
   CommunicationStats,
   DeviceMonitorData,
+  DeviceWriteEvents,
   FaultInfo,
   MonitorEvent,
   MonitorUpdate,
   MqttStats,
   RegisterData,
   RegisterHistoryPoint,
+  WriteEventSummary,
 } from "./monitor";
 
 export type { ImportResult, SystemExport } from "./system";
 
 export type {
-  MqttBrokerSettings,
+  MqttBroker,
+  MqttBrokerWrite,
   MqttPublishConfig,
   MqttPublishConfigWrite,
   MqttTestResult,
