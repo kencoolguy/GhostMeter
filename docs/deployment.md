@@ -129,6 +129,78 @@ team member 要用 EMS / 工具連設備,必須走 tailnet。用 **node sharing*
 - 連不上最常見原因:登入的帳號跟接受邀請的帳號不同
 - 收回權限:Machines → 該機器 → ⋯ → Share → 移除該 user,不影響其他人
 
+## 7. 搬移到另一個環境(Migration)
+
+整個系統需要搬的「資料」只有一份 —— PostgreSQL(`pgdata` volume)。
+程式碼在 GitHub、設定在 `.env`(git-ignored,**不會**跟著 clone 過來)、
+mosquitto 設定在 repo 裡;write events 只存在 in-memory ring buffer,
+重啟本來就會清空,無法也不需要搬。所以整個移植 =
+**git clone + 複製 `.env` + `pg_dump` / `pg_restore`** 三件事。
+
+### 7.1 在來源機器匯出 DB
+
+```bash
+# 在 repo 目錄下,直接對容器 dump(不用管 host port 映射)
+docker exec ghostmeter-postgres pg_dump -U ghostmeter -d ghostmeter -Fc > ghostmeter.dump
+```
+
+若 `.env` 改過 `POSTGRES_USER` / `POSTGRES_DB`,把參數換成一致的值。
+DB 裡包含:templates(含自訂的)、devices、simulation configs、
+MQTT broker 設定(Settings 頁存的)等全部狀態。
+
+傳到新機器(走 Tailscale 最省事):
+
+```bash
+scp ghostmeter.dump <新機器>:~/
+```
+
+### 7.2 在新環境架好基礎環境
+
+照本文件第 1–2 節:裝 Docker(要對外就裝 Tailscale)、clone repo、
+`cp .env.example .env` 後設定 `POSTGRES_PASSWORD` / `BIND_IP` / `DEBUG=false`。
+**把舊 `.env` 裡的 `CLOUDFLARE_TUNNEL_TOKEN`(若有)一併帶過去。**
+
+注意:checkout 的 code 版本要 ≥ 來源機器的版本(dump 帶有 `alembic_version`,
+新版 code 跑 migration 會自動補上;反過來舊 code 配新 dump 會壞)。
+
+### 7.3 先起 postgres、還原、再 deploy
+
+順序很重要:**先 restore 再跑 `deploy.sh`** —— alembic 看到 dump 帶來的
+`alembic_version` 只會補跑更新的 migration,app 啟動時的 seed 檢查也會
+發現內建模板已存在而跳過:
+
+```bash
+cd ~/ghostmeter
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres
+until [ "$(docker inspect -f '{{.State.Health.Status}}' ghostmeter-postgres)" = "healthy" ]; do sleep 2; done
+
+# 還原(--clean --if-exists 讓重跑也安全)
+docker exec -i ghostmeter-postgres pg_restore -U ghostmeter -d ghostmeter --clean --if-exists < ~/ghostmeter.dump
+
+./deploy.sh
+```
+
+本機開發環境一樣,只是不加 `-f docker-compose.prod.yml`、`.env` 不用 `BIND_IP`。
+
+### 7.4 驗證
+
+```bash
+http http://<BIND_IP>:8000/health
+http http://<BIND_IP>:8000/api/v1/devices   # 舊裝置清單應該都在
+```
+
+### 7.5 搬完後要另外處理的事(不在 DB 裡)
+
+- **Tailscale**:新機器是新 node,IP 會變 → `.env` 的 `BIND_IP` 要填新 IP,
+  之前 node sharing 分享給 team member 的要重新 Share,EMS 端連線 IP 也要改。
+- **Cloudflare Tunnel**:token 綁 tunnel 不綁機器,直接把舊 token 放進新
+  `.env` 即可,connector 會在新機器重新註冊;舊機器記得停掉避免兩邊搶。
+- **外部 MQTT broker**:broker 設定存在 DB 會跟著過去,但 broker 端若有做
+  來源 IP 限制要更新。
+
+> 另一個做法是直接 tar 整個 `pgdata` volume 搬過去(兩邊同為 PG 16 可行),
+> 但 `pg_dump` 乾淨、不用停來源的 postgres、也不怕 volume 權限問題,建議用 dump。
+
 ## 相關檔案
 
 - `docker-compose.prod.yml` — 部署 overlay,把 port 綁到 `BIND_IP`、postgres 不對外

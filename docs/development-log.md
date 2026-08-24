@@ -1,6 +1,30 @@
 # Development Log
 
-## 2026-08-19 — 內建模板：DPM-C530 三相電表
+## 2026-08-24 — 部署文件：環境搬移（Migration）章節
+
+### 做了什麼
+
+`docs/deployment.md` 新增第 7 節「搬移到另一個環境」，涵蓋從本機或 Linode
+把整套系統移到新環境的完整流程：
+
+- 釐清資料邊界：唯一需要搬的狀態是 PostgreSQL（`pgdata` volume）；
+  程式碼在 GitHub、`.env` 是 git-ignored 要手動帶走、write events 只在
+  in-memory ring buffer 不需搬。
+- 匯出用 `docker exec ghostmeter-postgres pg_dump -Fc`（直接對容器，
+  不受 host port 映射影響）；還原用 `pg_restore --clean --if-exists`。
+- **restore 先於 deploy.sh** 的順序約束：dump 帶著 `alembic_version`，
+  先還原再跑 migration 只會補跑更新的 revision，app 啟動 seed 檢查
+  也會發現內建模板已存在而跳過，不會重複塞資料。
+- 版本約束：新環境 checkout 的 code 版本須 ≥ 來源（舊 code 配新 dump 會壞）。
+- 搬移後檢查清單：Tailscale 新 node IP（`BIND_IP` 更新 + node sharing
+  重新分享 + EMS 端改連線 IP）、Cloudflare Tunnel token 綁 tunnel 不綁
+  機器可直接沿用（舊機器要停）、外部 MQTT broker 的來源 IP 限制。
+
+### 決策
+
+- 推薦 `pg_dump` 而非 tar 整個 `pgdata` volume：不用停來源 postgres、
+  無 volume 權限問題、輸出乾淨（兩者都可行，PG 16 對 PG 16）。
+- 純文件變更，無程式碼異動。
 
 ### 做了什麼
 
