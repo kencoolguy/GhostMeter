@@ -47,7 +47,12 @@
 
 ### 驗證
 
-- `ruff` clean；SNMP + OPC UA 相關套件 80 passed（含新測試 10）；完整後端套件見下方。
+- `ruff` clean；SNMP + OPC UA 相關套件 80 passed（含新測試 10）；完整後端套件 **504 passed**（host venv vs `ghostmeter_test`）。
+- 實機（本機 docker 以本分支 rebuild）：`snmpset` 對 ACB-SNMP-01 的 breaker_command 回
+  `Reason: notWritable (That object does not support modification)`，之後 `snmpget` 仍是引擎值 0，
+  write-events 出現 `('Set', 1, ['2'], 'breaker_command')`；未知 OID 同樣 notWritable 且不記錄。
+  OPC UA `ns=2;s=10.breaker_command` / `ns=2;s=10` 直接解析成功、三台 OPCUA-TEST 以
+  `ns=2;s=<slave>.voltage_l1` 讀值正常、client write 仍被記錄；兩台裝置停止後倒序啟動 id 不變。
 
 ## 2026-09-04 — Aggregate 資料模式：跨裝置 register 聚合（issue #95）
 
