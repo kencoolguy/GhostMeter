@@ -1,4 +1,10 @@
-export type DataMode = "static" | "random" | "daily_curve" | "computed" | "accumulator";
+export type DataMode =
+  | "static"
+  | "random"
+  | "daily_curve"
+  | "computed"
+  | "accumulator"
+  | "aggregate";
 
 export interface ProfileConfigEntry {
   register_name: string;

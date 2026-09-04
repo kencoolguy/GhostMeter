@@ -2,7 +2,7 @@
 
 export interface SimulationConfigRequest {
   register_name: string;
-  data_mode: "static" | "random" | "daily_curve" | "computed" | "accumulator";
+  data_mode: "static" | "random" | "daily_curve" | "computed" | "accumulator" | "aggregate";
   mode_params: Record<string, unknown>;
   is_enabled: boolean;
   update_interval_ms: number;
