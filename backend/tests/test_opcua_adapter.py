@@ -425,3 +425,98 @@ class TestOpcUaDeviceWiring:
         finally:
             await protocol_manager.stop_all()
             protocol_manager._adapters.pop("opcua", None)
+
+
+class TestOpcUaStableNodeIds:
+    """Issue #98: NodeIds are string ids keyed by slave_id, not creation-order numbers."""
+
+    @staticmethod
+    def _regs():
+        from app.protocols.base import RegisterInfo
+
+        return [
+            RegisterInfo(0, 3, "float32", "big_endian", name="voltage_l1", unit="V"),
+            RegisterInfo(1, 3, "uint16", "big_endian", name="breaker_command"),
+        ]
+
+    async def test_nodeids_follow_slave_id_and_register_name(self):
+        from asyncua import Client, ua
+
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = free_tcp_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        device_id = uuid.uuid4()
+        try:
+            adapter.set_device_meta(device_id, "ACB")
+            await adapter.add_device(device_id, 10, self._regs())
+            ns = adapter._ns_idx
+            assert adapter._device_objects[device_id].nodeid == ua.NodeId("10", ns)
+            assert adapter._nodes[(device_id, 0, 3)].nodeid == ua.NodeId("10.voltage_l1", ns)
+            assert adapter._nodes[(device_id, 1, 3)].nodeid == ua.NodeId("10.breaker_command", ns)
+
+            await adapter.update_register(device_id, 0, 3, 231.5, "float32", "big_endian")
+            url = f"opc.tcp://127.0.0.1:{port}/ghostmeter/server/"
+            async with Client(url=url) as client:
+                # A client can address the node directly by the documented string id
+                node = client.get_node(f"ns={ns};s=10.voltage_l1")
+                assert await node.read_value() == pytest.approx(231.5)
+                assert (await node.read_browse_name()).Name == "voltage_l1"
+                dev = client.get_node(f"ns={ns};s=10")
+                assert (await dev.read_browse_name()).Name == "ACB (#10)"
+        finally:
+            await adapter.stop()
+
+    async def test_nodeids_do_not_depend_on_creation_order_or_restart(self):
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        port = free_tcp_port()
+        adapter = OpcUaAdapter(host="127.0.0.1", port=port)
+        await adapter.start()
+        a, b = uuid.uuid4(), uuid.uuid4()
+
+        def ids():
+            return {
+                key: adapter._nodes[key].nodeid.to_string()
+                for key in sorted(adapter._nodes, key=lambda k: (str(k[0]), k[1]))
+            }
+
+        try:
+            await adapter.add_device(a, 1, self._regs())
+            await adapter.add_device(b, 2, self._regs())
+            first = ids()
+            assert first[(a, 0, 3)].endswith("s=1.voltage_l1")
+            assert first[(b, 0, 3)].endswith("s=2.voltage_l1")
+
+            # Reverse order after remove → identical ids (would have shifted before #98)
+            await adapter.remove_device(a)
+            await adapter.remove_device(b)
+            await adapter.add_device(b, 2, self._regs())
+            await adapter.add_device(a, 1, self._regs())
+            assert ids() == first
+
+            # Server restart with a different order → identical ids
+            await adapter.stop()
+            await adapter.start()
+            await adapter.add_device(b, 2, self._regs())
+            await adapter.add_device(a, 1, self._regs())
+            assert ids() == first
+        finally:
+            await adapter.stop()
+
+    async def test_readd_after_remove_does_not_collide(self):
+        """Removing a device must free its string NodeIds so the same slave_id can come back."""
+        from app.protocols.opcua_agent import OpcUaAdapter
+
+        adapter = OpcUaAdapter(host="127.0.0.1", port=free_tcp_port())
+        await adapter.start()
+        try:
+            dev = uuid.uuid4()
+            await adapter.add_device(dev, 3, self._regs())
+            await adapter.remove_device(dev)
+            other = uuid.uuid4()
+            await adapter.add_device(other, 3, self._regs())  # same slave_id, new device row
+            assert adapter.get_status()["node_count"] == 2
+        finally:
+            await adapter.stop()
