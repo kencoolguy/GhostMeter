@@ -14,6 +14,14 @@ from app.models.device import DeviceInstance
 from app.models.simulation import SimulationConfig
 from app.models.template import DeviceTemplate
 from app.protocols import protocol_manager
+from app.simulation.aggregate import (
+    AggregateCycleError,
+    find_cycle,
+    format_cycle,
+    load_aggregate_dependencies,
+    load_device_directory,
+    resolve_sources,
+)
 from app.simulation.data_generator import DataGenerator, GeneratorContext
 
 logger = logging.getLogger(__name__)
@@ -49,6 +57,10 @@ class SimulationEngine:
     def __init__(self) -> None:
         self._device_states: dict[UUID, _DeviceTaskState] = {}
         self._device_values: dict[UUID, dict[str, float]] = {}
+        # Last values a device produced before it stopped / restarted. Kept so
+        # ``aggregate`` consumers with on_missing=last_known do not drop to 0
+        # when a source is momentarily down (issue #95).
+        self._last_known_values: dict[UUID, dict[str, float]] = {}
         self._data_generator = DataGenerator()
 
     async def start_device(self, device_id: UUID) -> None:
@@ -69,6 +81,9 @@ class SimulationEngine:
             logger.info("No simulation configs for device %s, skipping", device_id)
             return
 
+        # Resolve aggregate sources + reject dependency cycles before launching
+        aggregate_params = await self._prepare_aggregate_params(device_id, configs)
+
         # Load anomaly schedules
         schedules = await self._load_anomaly_schedules(device_id)
         from app.simulation import anomaly_injector
@@ -76,7 +91,10 @@ class SimulationEngine:
 
         interval = min(c.update_interval_ms for c in configs) / 1000.0
         task = asyncio.create_task(
-            self._run_device(device_id, configs, register_map, device_protocol, interval),
+            self._run_device(
+                device_id, configs, register_map, device_protocol, interval,
+                aggregate_params,
+            ),
             name=f"sim-{device_id}",
         )
         task.add_done_callback(lambda t: self._on_task_done(device_id, t))
@@ -144,6 +162,7 @@ class SimulationEngine:
                 await state.task
             except asyncio.CancelledError:
                 pass
+            self._snapshot_last_known(device_id)
             self._device_values.pop(device_id, None)
             from app.simulation import anomaly_injector
             anomaly_injector.clear_device(device_id)
@@ -162,6 +181,51 @@ class SimulationEngine:
         """Get last generated values for a device (for monitoring)."""
         return dict(self._device_values.get(device_id, {}))
 
+    def _snapshot_last_known(self, device_id: UUID) -> None:
+        """Preserve a device's latest values for aggregate on_missing=last_known."""
+        values = self._device_values.get(device_id)
+        if values:
+            self._last_known_values[device_id] = dict(values)
+
+    async def _prepare_aggregate_params(
+        self, device_id: UUID, configs: list[SimulationConfig],
+    ) -> dict[str, dict]:
+        """Normalize ``aggregate`` mode_params for the run loop, keyed by register name.
+
+        Source references (device names / ids) are resolved to device UUIDs once
+        at launch; unresolvable ones are dropped with a warning and then behave
+        as permanently missing. ``register`` defaults to the aggregating
+        register's own name. Raises :class:`AggregateCycleError` if this device
+        would take part in a dependency cycle (e.g. A sums B while B sums A).
+        """
+        aggregate_configs = [c for c in configs if c.data_mode == "aggregate"]
+        if not aggregate_configs:
+            return {}
+
+        async with async_session_factory() as session:
+            directory = await load_device_directory(session)
+            deps = await load_aggregate_dependencies(session, directory)
+
+        own_sources: set[UUID] = set()
+        prepared: dict[str, dict] = {}
+        for cfg in aggregate_configs:
+            refs = [str(r) for r in cfg.mode_params.get("sources") or []]
+            sources = resolve_sources(directory, refs, strict=False)
+            own_sources.update(sources)
+            prepared[cfg.register_name] = {
+                **cfg.mode_params,
+                "sources": sources,
+                "register": cfg.mode_params.get("register") or cfg.register_name,
+            }
+
+        deps[device_id] = own_sources
+        cycle = find_cycle(deps, device_id)
+        if cycle is not None:
+            raise AggregateCycleError(
+                f"Aggregate dependency cycle: {format_cycle(cycle, directory)}"
+            )
+        return prepared
+
     async def shutdown(self) -> None:
         """Cancel all simulation tasks concurrently."""
         tasks = [st.task for st in self._device_states.values()]
@@ -171,6 +235,7 @@ class SimulationEngine:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._device_values.clear()
+        self._last_known_values.clear()
         logger.info("Simulation engine shut down")
 
     async def _load_device_data(
@@ -243,8 +308,15 @@ class SimulationEngine:
         register_map: dict[str, RegisterMeta],
         protocol: str,
         interval: float,
+        aggregate_params: dict[str, dict] | None = None,
     ) -> None:
-        """Per-device simulation loop."""
+        """Per-device simulation loop.
+
+        ``aggregate_params`` holds engine-normalized params for ``aggregate``
+        registers (see ``_prepare_aggregate_params``); other registers use
+        their stored ``mode_params`` as-is.
+        """
+        aggregate_params = aggregate_params or {}
         start_time = datetime.now(timezone.utc)
         tick_count = 0
         error_count = 0
@@ -254,14 +326,20 @@ class SimulationEngine:
         adapter = protocol_manager.get_adapter(protocol)
         if adapter is None:
             raise RuntimeError(f"Protocol adapter not registered: {protocol!r}")
+        # A crash-restart reaches here with the previous values still present
+        self._snapshot_last_known(device_id)
         self._device_values[device_id] = {}
 
-        # Sort and filter configs — warn once for missing registers
+        # Sort and filter configs — warn once for missing registers.
+        # Aggregate registers go first: they only depend on *other* devices, and
+        # same-device ``computed`` registers (e.g. total_power = Σ power_lx) may
+        # depend on them regardless of template sort_order.
         default_meta = RegisterMeta(0, 3, "float32", "big_endian", 1.0, 9999)
         valid_configs = []
 
-        def _sort_key(c: SimulationConfig) -> int:
-            return register_map.get(c.register_name, default_meta).sort_order
+        def _sort_key(c: SimulationConfig) -> tuple[int, int]:
+            mode_rank = 0 if c.data_mode == "aggregate" else 1
+            return (mode_rank, register_map.get(c.register_name, default_meta).sort_order)
 
         for c in sorted(configs, key=_sort_key):
             if c.register_name in register_map:
@@ -282,6 +360,8 @@ class SimulationEngine:
                     elapsed_seconds=elapsed,
                     tick_count=tick_count,
                     current_hour_utc=now_hour,
+                    peer_values=self._device_values,
+                    peer_last_known=self._last_known_values,
                 )
 
                 tick_had_error = False
@@ -289,8 +369,9 @@ class SimulationEngine:
                     reg = register_map[config.register_name]
 
                     try:
+                        params = aggregate_params.get(config.register_name, config.mode_params)
                         generated = self._data_generator.generate(
-                            config.data_mode, config.mode_params, context,
+                            config.data_mode, params, context,
                         )
                         generated = anomaly_injector.apply(
                             device_id, config.register_name, generated,

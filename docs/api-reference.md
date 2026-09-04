@@ -598,7 +598,7 @@ Simulation profiles are reusable sets of simulation parameters bound to a device
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `register_name` | string | yes | — | Target register name |
-| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator` |
+| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator`, `aggregate` |
 | `mode_params` | object | no | `{}` | Mode-specific parameters |
 | `is_enabled` | boolean | no | `true` | Whether this config is active |
 | `update_interval_ms` | integer | no | `1000` | Update interval (100–60000 ms) |
@@ -767,10 +767,43 @@ For higher-level reusable parameter sets, see [Simulation Profiles](#simulation-
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `register_name` | string | yes | — | Target register name (must exist in the device's template) |
-| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator` |
+| `data_mode` | string | yes | — | One of: `static`, `random`, `daily_curve`, `computed`, `accumulator`, `aggregate` |
 | `mode_params` | object | no | `{}` | Mode-specific parameters (shape depends on `data_mode`) |
 | `is_enabled` | boolean | no | `true` | When `false`, the engine skips this register on each tick |
 | `update_interval_ms` | integer | no | `1000` | Update interval per tick, must be between 100 and 60000 |
+
+#### `mode_params` for `data_mode = "aggregate"` (cross-device aggregation)
+
+Derives this register from the same (or a named) register on **other devices** — e.g. a main meter whose `total_energy` is Σ of its sub-meters (issue #95).
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `op` | string | no | `sum` | One of `sum`, `avg`, `weighted_avg`, `max`, `min` |
+| `sources` | string[] | yes | — | Source devices, each a device **name** or device UUID string. Non-empty, no duplicates, must not include the device itself. Stored as given (names stay portable across export/import); a name shared by several devices is rejected as ambiguous — use the UUID. The web UI always submits UUIDs |
+| `register` | string | no | same as `register_name` | Register to read on each source device. Sources may use a different template as long as the register exists |
+| `weight_register` | string | weighted_avg only | — | Per-source weight register (e.g. `total_power` for a power factor). Rejected for other ops |
+| `on_missing` | string | no | `last_known` | What a source contributes while it is stopped / has no value yet: `last_known` (its last produced value; skipped if it never ran), `zero` (0, still counted in `avg`), `skip` (excluded) |
+
+**Validation (422 `VALIDATION_ERROR`):** unknown or ambiguous source, self-reference, source template lacking `register` / `weight_register`, and dependency cycles (A aggregates B while B aggregates A — checked across all devices' enabled aggregate configs, on both `PUT` and `PATCH`). The engine re-checks cycles at device start; a cycle found there makes `POST /devices/{id}/start` fail with `409 PROTOCOL_ERROR` and the device status `error`.
+
+**Runtime semantics:**
+- Aggregate registers are evaluated **before** the same device's other registers, so a `computed` expression on the main meter (e.g. `{power_l1}+{power_l2}+{power_l3}`) may depend on aggregated ones regardless of template `sort_order`.
+- Each device ticks independently, so the aggregate reads each source's *latest* value — expect a lag of up to one update interval. Negligible for accumulating energy; a small jitter on instantaneous power (as with real meters).
+- A source that is renamed/deleted after being referenced is logged at device start and treated as permanently missing (`on_missing` applies); fix the config to restore it.
+- `weighted_avg` with all weights 0 degrades to a plain mean.
+- Guidance: `sum` for energy/power/current; `avg` for voltage/frequency (never sum them); `weighted_avg` by a power register for power factor.
+
+```jsonc
+{
+  "register_name": "total_energy",
+  "data_mode": "aggregate",
+  "mode_params": {
+    "op": "sum",
+    "sources": ["PM-01", "PM-02", "PM-03"],
+    "on_missing": "last_known"
+  }
+}
+```
 
 #### `SimulationConfigBatchSet` (request — whole device)
 

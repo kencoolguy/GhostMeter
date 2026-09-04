@@ -13,6 +13,13 @@ from app.models.simulation import SimulationConfig
 from app.models.template import DeviceTemplate
 from app.schemas.simulation import SimulationConfigBatchSet, SimulationConfigCreate
 from app.simulation import simulation_engine
+from app.simulation.aggregate import (
+    DeviceDirectory,
+    find_cycle,
+    format_cycle,
+    load_aggregate_dependencies,
+    load_device_directory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +48,91 @@ async def _get_template_register_names(
     result = await session.execute(stmt)
     template = result.scalar_one()
     return {reg.name for reg in template.registers}
+
+
+async def _validate_aggregate_configs(
+    session: AsyncSession,
+    device_id: uuid.UUID,
+    configs: list[SimulationConfigCreate],
+    *,
+    replace_all: bool,
+) -> None:
+    """Semantic validation for ``aggregate`` configs (needs the DB).
+
+    Checks that every source reference resolves to exactly one existing device
+    other than this one, that each source's template actually has the
+    aggregated ``register`` (and ``weight_register``), and that the resulting
+    dependency graph has no cycle. Raises ``ValidationException`` (422) so a
+    typo surfaces at save time instead of as a silent 0.0 in the engine.
+
+    ``replace_all`` says whether ``configs`` replaces the device's whole config
+    set (PUT) or upserts single registers (PATCH-style) for the cycle check.
+    """
+    aggregate_configs = [c for c in configs if c.data_mode == "aggregate"]
+    if not aggregate_configs:
+        return
+
+    directory: DeviceDirectory = await load_device_directory(session)
+    register_names_cache: dict[uuid.UUID, set[str]] = {}
+
+    async def _registers_of(template_id: uuid.UUID) -> set[str]:
+        if template_id not in register_names_cache:
+            register_names_cache[template_id] = await _get_template_register_names(
+                session, template_id,
+            )
+        return register_names_cache[template_id]
+
+    new_sources: set[uuid.UUID] = set()
+    for cfg in aggregate_configs:
+        register = cfg.mode_params.get("register") or cfg.register_name
+        weight_register = cfg.mode_params.get("weight_register")
+        for ref in cfg.mode_params["sources"]:
+            try:
+                source_id = directory.resolve(ref)
+            except ValueError as e:
+                raise ValidationException(f"Register '{cfg.register_name}': {e}") from None
+            if source_id == device_id:
+                raise ValidationException(
+                    f"Register '{cfg.register_name}': aggregate source '{ref}' "
+                    "is the device itself"
+                )
+            source_registers = await _registers_of(directory.by_id[source_id].template_id)
+            for name in (register, weight_register):
+                if name and name not in source_registers:
+                    raise ValidationException(
+                        f"Register '{cfg.register_name}': aggregate source '{ref}' "
+                        f"has no register '{name}'"
+                    )
+            new_sources.add(source_id)
+
+    deps = await load_aggregate_dependencies(session, directory)
+    if replace_all:
+        deps[device_id] = new_sources
+    else:
+        # Upsert: this device's other aggregate registers keep their sources, but the
+        # registers being replaced must contribute only their *new* sources.
+        replaced = {c.register_name for c in configs}
+        stmt = select(SimulationConfig).where(
+            SimulationConfig.device_id == device_id,
+            SimulationConfig.data_mode == "aggregate",
+            SimulationConfig.is_enabled.is_(True),
+            SimulationConfig.register_name.not_in(replaced),
+        )
+        result = await session.execute(stmt)
+        kept: set[uuid.UUID] = set(new_sources)
+        for existing in result.scalars().all():
+            for ref in existing.mode_params.get("sources") or []:
+                try:
+                    kept.add(directory.resolve(str(ref)))
+                except ValueError:
+                    continue  # stale reference — the engine treats it as missing
+        deps[device_id] = kept
+
+    cycle = find_cycle(deps, device_id)
+    if cycle is not None:
+        raise ValidationException(
+            f"Aggregate dependency cycle: {format_cycle(cycle, directory)}"
+        )
 
 
 async def _reload_if_running(device_id: uuid.UUID) -> None:
@@ -90,6 +182,8 @@ async def set_simulation_configs(
             )
         seen.add(cfg.register_name)
 
+    await _validate_aggregate_configs(session, device_id, data.configs, replace_all=True)
+
     # Delete existing configs
     await session.execute(
         delete(SimulationConfig).where(SimulationConfig.device_id == device_id)
@@ -133,6 +227,10 @@ async def update_simulation_config(
         raise ValidationException(
             f"Register '{register_name}' not found in device template"
         )
+
+    await _validate_aggregate_configs(
+        session, device_id, [config_data], replace_all=False,
+    )
 
     # Find existing config
     stmt = select(SimulationConfig).where(

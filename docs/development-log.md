@@ -1,5 +1,75 @@
 # Development Log
 
+## 2026-09-04 — Aggregate 資料模式：跨裝置 register 聚合（issue #95）
+
+### 做了什麼
+
+新增 `data_mode = "aggregate"`，讓總表的 register 結構性地等於分表的聚合，
+取代先前 MVCB / PM-01..09 靠「參數對齊」的暫解：
+
+- **`app/simulation/aggregate.py`（新）**：`DeviceDirectory`（名稱 / UUID →
+  device id 解析，重名回 ambiguous）、`find_cycle`（DFS 三色標記，回傳環路徑）、
+  DB loader（全裝置目錄、所有 enabled aggregate config 的相依圖）。API 層與
+  engine 共用。
+- **`data_generator.py`**：`GeneratorContext` 多兩個唯讀 view
+  `peer_values`（運行中裝置的即時值）與 `peer_last_known`（停止 / 重啟前的最後值），
+  `_generate_aggregate` 實作 `sum / avg / weighted_avg / max / min` 與
+  `on_missing = last_known / zero / skip`。
+- **`engine.py`**：啟動時把 `sources` 解析成 UUID、`register` 補預設同名，
+  然後對全系統相依圖做環偵測（有環丟 `AggregateCycleError`）；新增
+  `_last_known_values` 快取（`stop_device` 與 crash-restart 前快照）；
+  排序改成 `(aggregate 優先, sort_order)`，讓總表自己的 `computed`
+  （如 `total_power = Σ power_lx`）可以依賴 aggregate 結果。
+- **`schemas/simulation.py`**：`VALID_DATA_MODES` 加 `aggregate`；
+  `model_validator` 擋結構錯誤（op 白名單、sources 非空 / 無重複 / 字串、
+  `weighted_avg` 必帶 `weight_register`、其他 op 不可帶、`on_missing` 白名單）並補預設值。
+- **`services/simulation_service.py`**：`_validate_aggregate_configs` 查 DB 驗證
+  來源存在且唯一、非自己、來源 template 真的有該 register（與 weight_register）、
+  以及跨裝置環偵測（PUT 整組取代 / PATCH 單筆 upsert 兩種語意都處理）。
+- **`services/device_service.py`**：`register_device_runtime` 對
+  `AggregateCycleError` 不再吞掉（設定錯不是暫時性故障），
+  `POST /start` 回 409 並把裝置設 `error`，不會出現「running 但沒模擬」。
+- **Frontend**：`DataMode` union 加 `aggregate`；`utils/aggregateParams.ts`
+  （parse / serialize / 來源選項；重名裝置改用 id）+ 10 個 vitest；
+  `AggregateParamsEditor` 在 Simulation 的 Data Mode tab 取代 raw JSON textarea
+  （來源多選、op、register、weight_register、on_missing + 用法提示）。
+
+### 決策
+
+- **`sources` 接受「裝置名稱」或 UUID，且照原樣儲存**：system export /
+  import 本來就用 `device_name` 識別裝置，手寫 API / 匯入檔用名稱才能跨環境搬。重名時 422 要求改用 id。
+  **前端一律送 UUID**（Ken 的決定，2026-09-04）：改名或重名不會改變已存設定的指向；
+  編輯器載入時把既有設定裡的名稱對應成 id，對不到的照原樣顯示成 tag 讓後端在存檔時回報。
+- **Engine 啟動時解析不到的來源只 warning、不擋啟動**：分表被刪或改名不該讓總表
+  在 backend 重啟後 resume 失敗；API 存檔時的 422 才是主要防線。
+- **`on_missing` 預設 `last_known`**（issue 建議）：停一顆分表總表不會瞬間掉 1/N。
+  `zero` 會算進 `avg` 分母；`skip` 完全排除；全部缺值回 0.0。
+- **`weighted_avg` 權重總和為 0 時退化為算術平均**（例如全部分表功率 0 時 PF 仍有意義）。
+- 環偵測在 API 與 engine 各做一次：API 是使用者看得到的錯誤，engine 是 import /
+  profile 直寫 DB 繞過 API 時的最後防線。
+- 不驗證 `sources` 的 template 與總表相同（issue 邊界 4）：只比對 register 名稱存在。
+- 沿用 tick 不同步的行為（各裝置獨立 task），只在文件說明滯後 ≤ 1 個 update interval。
+
+### 驗證
+
+- 後端：`ruff` clean；`test_aggregate.py`（13）、`test_data_generator.py` aggregate（12）、
+  `test_simulation_engine.py` aggregate（6，無 DB / 無網路，fake adapter）、
+  `test_simulation_api.py` aggregate（11）；相關套件 76 passed；完整後端套件 **494 passed**（475 + BACnet adapter 19）（host venv vs `ghostmeter_test`）。
+- 前端：`tsc -b` / `eslint .` clean；vitest 48 passed，coverage 高於 ratchet 門檻。
+  本機 rebuild 後用 Playwright 開 Simulation → MVCB2：13 列 aggregate 各顯示 10 個來源 tag（名稱 + 模板），
+  Save All 後 DB 內 130 個 sources 全為 UUID、MVCB2 維持 running、Modbus 實讀誤差 0.0000%。
+- **E2E（host backend 8001 + Modbus 5020、獨立 DB `ghostmeter_e2e`，pymodbus client 實讀）**：
+  3 顆分表 + MVCB（sum energy/power、avg voltage、weighted_avg PF by total_power）
+  誤差 0.00000%；停 PM-02 時總表維持 last-known 不掉；PM-02 重啟後誤差 0.00006%
+  （一個 tick 的滯後）；新增 PM-04 到 sources 後總表自動變大、誤差 0.00000%；
+  PM-01 → MVCB → PM-01 環回 422 `Aggregate dependency cycle: PM-01 → MVCB → PM-01`；
+  來源打錯字回 422 且被拒的裝置維持 running。
+
+### 部署注意
+
+需 rebuild `ghostmeter-backend` image；與 enol-next 共用 `docker_default` 網段，
+rebuild 後容器 IP 可能變動，不要與 enol-next 同時 rebuild，並確認 enol-next 的 Modbus IP。
+
 ## 2026-08-24 — 部署文件：環境搬移（Migration）章節
 
 ### 做了什麼

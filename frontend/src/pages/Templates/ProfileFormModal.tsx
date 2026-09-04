@@ -24,6 +24,7 @@ const DATA_MODE_OPTIONS = [
   { value: "daily_curve", label: "Daily Curve" },
   { value: "computed", label: "Computed" },
   { value: "accumulator", label: "Accumulator" },
+  { value: "aggregate", label: "Aggregate" },
 ];
 
 interface ConfigRow {

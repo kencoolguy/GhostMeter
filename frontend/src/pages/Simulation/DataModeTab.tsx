@@ -2,8 +2,11 @@ import { Button, Input, InputNumber, Select, Switch, Table, message } from "antd
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { deviceApi } from "../../services/deviceApi";
+import { useDeviceStore } from "../../stores/deviceStore";
 import { useSimulationStore } from "../../stores/simulationStore";
 import type { RegisterValue, SimulationConfigRequest } from "../../types";
+import { normalizeSourcesToIds } from "../../utils/aggregateParams";
+import { AggregateParamsEditor } from "./AggregateParamsEditor";
 
 const DATA_MODE_OPTIONS = [
   { value: "static", label: "Static" },
@@ -11,6 +14,7 @@ const DATA_MODE_OPTIONS = [
   { value: "daily_curve", label: "Daily Curve" },
   { value: "computed", label: "Computed" },
   { value: "accumulator", label: "Accumulator" },
+  { value: "aggregate", label: "Aggregate" },
 ];
 
 interface ConfigRow {
@@ -25,6 +29,8 @@ interface ConfigRow {
 
 export function DataModeTab({ deviceId }: { deviceId: string }) {
   const { configs, loading, fetchConfigs, saveConfigs } = useSimulationStore();
+  // Source-device candidates for the aggregate editor (fetched by the page)
+  const devices = useDeviceStore((s) => s.devices);
   const [registers, setRegisters] = useState<RegisterValue[]>([]);
   // User edits overlaid on the server-derived base rows, keyed by register name.
   const [edits, setEdits] = useState<Record<string, Partial<ConfigRow>>>({});
@@ -80,6 +86,14 @@ export function DataModeTab({ deviceId }: { deviceId: string }) {
         message.error(`Invalid JSON in params for register "${row.register_name}"`);
         return;
       }
+      if (row.data_mode === "aggregate" && Array.isArray(parsedParams.sources)) {
+        // Always submit device ids, even for untouched rows that still hold
+        // name references from an API-written or imported config.
+        parsedParams = {
+          ...parsedParams,
+          sources: normalizeSourcesToIds(parsedParams.sources as string[], devices),
+        };
+      }
       configRequests.push({
         register_name: row.register_name,
         data_mode: row.data_mode,
@@ -126,14 +140,23 @@ export function DataModeTab({ deviceId }: { deviceId: string }) {
       title: "Parameters (JSON)",
       dataIndex: "mode_params",
       key: "mode_params",
-      render: (value: string, record) => (
-        <Input.TextArea
-          value={value}
-          rows={2}
-          style={{ fontFamily: "monospace", fontSize: 12 }}
-          onChange={(e) => updateRow(record.key, "mode_params", e.target.value)}
-        />
-      ),
+      render: (value: string, record) =>
+        record.data_mode === "aggregate" ? (
+          <AggregateParamsEditor
+            value={value}
+            registerName={record.register_name}
+            deviceId={deviceId}
+            devices={devices}
+            onChange={(json) => updateRow(record.key, "mode_params", json)}
+          />
+        ) : (
+          <Input.TextArea
+            value={value}
+            rows={2}
+            style={{ fontFamily: "monospace", fontSize: 12 }}
+            onChange={(e) => updateRow(record.key, "mode_params", e.target.value)}
+          />
+        ),
     },
     {
       title: "Interval (ms)",
