@@ -36,9 +36,10 @@
 
 ### 決策
 
-- **`sources` 以「裝置名稱」為主、UUID 為輔，且照原樣儲存**：system export /
-  import 本來就用 `device_name` 識別裝置，存名稱才能跨環境搬。重名時 422 要求改用 id；
-  前端選單對重名裝置自動送 id。
+- **`sources` 接受「裝置名稱」或 UUID，且照原樣儲存**：system export /
+  import 本來就用 `device_name` 識別裝置，手寫 API / 匯入檔用名稱才能跨環境搬。重名時 422 要求改用 id。
+  **前端一律送 UUID**（Ken 的決定，2026-09-04）：改名或重名不會改變已存設定的指向；
+  編輯器載入時把既有設定裡的名稱對應成 id，對不到的照原樣顯示成 tag 讓後端在存檔時回報。
 - **Engine 啟動時解析不到的來源只 warning、不擋啟動**：分表被刪或改名不該讓總表
   在 backend 重啟後 resume 失敗；API 存檔時的 422 才是主要防線。
 - **`on_missing` 預設 `last_known`**（issue 建議）：停一顆分表總表不會瞬間掉 1/N。
@@ -54,7 +55,9 @@
 - 後端：`ruff` clean；`test_aggregate.py`（13）、`test_data_generator.py` aggregate（12）、
   `test_simulation_engine.py` aggregate（6，無 DB / 無網路，fake adapter）、
   `test_simulation_api.py` aggregate（11）；相關套件 76 passed；完整後端套件 **494 passed**（475 + BACnet adapter 19）（host venv vs `ghostmeter_test`）。
-- 前端：`tsc -b` / `eslint .` clean；vitest 46 passed，coverage 高於 ratchet 門檻。
+- 前端：`tsc -b` / `eslint .` clean；vitest 48 passed，coverage 高於 ratchet 門檻。
+  本機 rebuild 後用 Playwright 開 Simulation → MVCB2：13 列 aggregate 各顯示 10 個來源 tag（名稱 + 模板），
+  Save All 後 DB 內 130 個 sources 全為 UUID、MVCB2 維持 running、Modbus 實讀誤差 0.0000%。
 - **E2E（host backend 8001 + Modbus 5020、獨立 DB `ghostmeter_e2e`，pymodbus client 實讀）**：
   3 顆分表 + MVCB（sum energy/power、avg voltage、weighted_avg PF by total_power）
   誤差 0.00000%；停 PM-02 時總表維持 last-known 不掉；PM-02 重啟後誤差 0.00006%

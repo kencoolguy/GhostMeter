@@ -3,6 +3,7 @@ import type { DeviceSummary } from "../types";
 import {
   buildSourceOptions,
   DEFAULT_AGGREGATE_PARAMS,
+  normalizeSourcesToIds,
   parseAggregateParams,
   serializeAggregateParams,
 } from "./aggregateParams";
@@ -97,15 +98,15 @@ describe("serializeAggregateParams", () => {
 });
 
 describe("buildSourceOptions", () => {
-  it("excludes the device itself and uses names for unique devices", () => {
+  it("excludes the device itself and always uses ids as values", () => {
     const options = buildSourceOptions(
       [device({ id: "a", name: "MVCB" }), device({ id: "b", name: "PM-01" })],
       "a",
     );
-    expect(options).toEqual([{ value: "PM-01", label: "PM-01 (Meter)" }]);
+    expect(options).toEqual([{ value: "b", label: "PM-01 (Meter)" }]);
   });
 
-  it("falls back to ids for duplicate names", () => {
+  it("disambiguates duplicate names in the label only", () => {
     const options = buildSourceOptions(
       [
         device({ id: "11111111-aaaa", name: "PM" }),
@@ -114,7 +115,7 @@ describe("buildSourceOptions", () => {
       "self",
     );
     expect(options.map((o) => o.value)).toEqual(["11111111-aaaa", "22222222-bbbb"]);
-    expect(options[0].label).toContain("11111111");
+    expect(options[0].label).toBe("PM (Meter, 11111111)");
   });
 
   it("sorts by label", () => {
@@ -122,6 +123,22 @@ describe("buildSourceOptions", () => {
       [device({ id: "1", name: "PM-02" }), device({ id: "2", name: "PM-01" })],
       "self",
     );
-    expect(options.map((o) => o.value)).toEqual(["PM-01", "PM-02"]);
+    expect(options.map((o) => o.value)).toEqual(["2", "1"]);
+  });
+});
+
+describe("normalizeSourcesToIds", () => {
+  const devices = [
+    device({ id: "id-1", name: "PM-01" }),
+    device({ id: "id-2", name: "PM" }),
+    device({ id: "id-3", name: "PM" }),
+  ];
+
+  it("maps unique names to ids and keeps ids as-is", () => {
+    expect(normalizeSourcesToIds(["PM-01", "id-3"], devices)).toEqual(["id-1", "id-3"]);
+  });
+
+  it("keeps ambiguous and unknown references verbatim", () => {
+    expect(normalizeSourcesToIds(["PM", "PM-99"], devices)).toEqual(["PM", "PM-99"]);
   });
 });

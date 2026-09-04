@@ -779,7 +779,7 @@ Derives this register from the same (or a named) register on **other devices** �
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `op` | string | no | `sum` | One of `sum`, `avg`, `weighted_avg`, `max`, `min` |
-| `sources` | string[] | yes | — | Source devices, each a device **name** or device UUID string. Non-empty, no duplicates, must not include the device itself. Names are stored as given (portable across export/import); a name shared by several devices is rejected as ambiguous — use the UUID |
+| `sources` | string[] | yes | — | Source devices, each a device **name** or device UUID string. Non-empty, no duplicates, must not include the device itself. Stored as given (names stay portable across export/import); a name shared by several devices is rejected as ambiguous — use the UUID. The web UI always submits UUIDs |
 | `register` | string | no | same as `register_name` | Register to read on each source device. Sources may use a different template as long as the register exists |
 | `weight_register` | string | weighted_avg only | — | Per-source weight register (e.g. `total_power` for a power factor). Rejected for other ops |
 | `on_missing` | string | no | `last_known` | What a source contributes while it is stopped / has no value yet: `last_known` (its last produced value; skipped if it never ran), `zero` (0, still counted in `avg`), `skip` (excluded) |

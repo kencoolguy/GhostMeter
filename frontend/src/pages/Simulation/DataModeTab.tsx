@@ -5,6 +5,7 @@ import { deviceApi } from "../../services/deviceApi";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { useSimulationStore } from "../../stores/simulationStore";
 import type { RegisterValue, SimulationConfigRequest } from "../../types";
+import { normalizeSourcesToIds } from "../../utils/aggregateParams";
 import { AggregateParamsEditor } from "./AggregateParamsEditor";
 
 const DATA_MODE_OPTIONS = [
@@ -84,6 +85,14 @@ export function DataModeTab({ deviceId }: { deviceId: string }) {
       } catch {
         message.error(`Invalid JSON in params for register "${row.register_name}"`);
         return;
+      }
+      if (row.data_mode === "aggregate" && Array.isArray(parsedParams.sources)) {
+        // Always submit device ids, even for untouched rows that still hold
+        // name references from an API-written or imported config.
+        parsedParams = {
+          ...parsedParams,
+          sources: normalizeSourcesToIds(parsedParams.sources as string[], devices),
+        };
       }
       configRequests.push({
         register_name: row.register_name,

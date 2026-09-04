@@ -5,6 +5,7 @@ import {
   AGGREGATE_OPS,
   ON_MISSING_MODES,
   buildSourceOptions,
+  normalizeSourcesToIds,
   parseAggregateParams,
   serializeAggregateParams,
   type AggregateParams,
@@ -27,6 +28,8 @@ interface AggregateParamsEditorProps {
 /**
  * Structured editor for `data_mode = "aggregate"` params. Reads/writes the same
  * JSON string the raw-params textarea uses, so the save path is unchanged.
+ * Sources are always written as device ids; name references found in an
+ * existing config are mapped to ids on load so the Select can display them.
  */
 export function AggregateParamsEditor({
   value,
@@ -35,7 +38,10 @@ export function AggregateParamsEditor({
   devices,
   onChange,
 }: AggregateParamsEditorProps) {
-  const params = useMemo(() => parseAggregateParams(value), [value]);
+  const params = useMemo(() => {
+    const parsed = parseAggregateParams(value);
+    return { ...parsed, sources: normalizeSourcesToIds(parsed.sources, devices) };
+  }, [value, devices]);
   const sourceOptions = useMemo(
     () => buildSourceOptions(devices, deviceId),
     [devices, deviceId],

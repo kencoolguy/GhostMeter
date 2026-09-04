@@ -87,9 +87,10 @@ export interface SourceOption {
 /**
  * Selectable source devices for an aggregating device.
  *
- * The backend accepts a device name or id. Names are preferred (they survive
- * export/import across environments), but a name shared by several devices is
- * ambiguous, so those devices are referenced by id instead. The aggregating
+ * The backend accepts a device name or id; the UI always sends the **id** so a
+ * later rename or a second device with the same name can never change what a
+ * saved config points at. The label carries the human-readable name (and the
+ * first id characters when several devices share a name). The aggregating
  * device itself is excluded (self-reference is rejected server-side).
  */
 export function buildSourceOptions(
@@ -102,14 +103,36 @@ export function buildSourceOptions(
   }
   return devices
     .filter((d) => d.id !== selfDeviceId)
-    .map((d) => {
-      const ambiguous = (nameCount.get(d.name) ?? 0) > 1;
-      return {
-        value: ambiguous ? d.id : d.name,
-        label: ambiguous
+    .map((d) => ({
+      value: d.id,
+      label:
+        (nameCount.get(d.name) ?? 0) > 1
           ? `${d.name} (${d.template_name}, ${d.id.slice(0, 8)})`
           : `${d.name} (${d.template_name})`,
-      };
-    })
+    }))
     .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Map stored source references to device ids so they match the option values.
+ *
+ * Configs written through the API (or imported) may reference devices by
+ * name; a name that resolves to exactly one device becomes that device's id.
+ * Ambiguous or unknown references are kept verbatim so the Select shows them
+ * as plain tags and the backend can report the problem on save.
+ */
+export function normalizeSourcesToIds(
+  sources: string[],
+  devices: DeviceSummary[],
+): string[] {
+  const ids = new Set(devices.map((d) => d.id));
+  const byName = new Map<string, string[]>();
+  for (const d of devices) {
+    byName.set(d.name, [...(byName.get(d.name) ?? []), d.id]);
+  }
+  return sources.map((ref) => {
+    if (ids.has(ref)) return ref;
+    const matches = byName.get(ref);
+    return matches?.length === 1 ? matches[0] : ref;
+  });
 }
