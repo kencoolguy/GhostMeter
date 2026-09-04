@@ -87,8 +87,40 @@ class _DynamicMibController(AbstractMibInstrumController):
         return result
 
     def write_variables(self, *var_binds, **context):
-        """Read-only agent: reject writes."""
-        return [(name, rfc1905.NoSuchObject()) for name, _ in var_binds]
+        """Read-only agent: record every SET attempt, then reject it (issue #97).
+
+        Each varbind that maps to a registered OID is recorded in the shared
+        write-events buffer (like Modbus / BACnet / OPC UA client writes) with
+        the client's value as sent. The request is then refused with
+        ``notWritable`` — an explicit, distinguishable rejection instead of the
+        silent drop (client timeout) that happened while no SET responder was
+        registered. Under an ``exception`` fault the reply is ``genErr``, the
+        same as reads; the attempt is still recorded first.
+        """
+        from app.simulation import write_tracker
+
+        faulted_oid: str | None = None
+        for name, value in var_binds:
+            oid = ".".join(str(x) for x in name)
+            entry = self._adapter._oid_map.get(oid)
+            if entry is None:
+                continue
+            device_id, register_name = entry
+            try:
+                write_tracker.record(
+                    device_id,
+                    "Set",
+                    self._adapter._oid_addresses.get(oid, 0),
+                    [value.prettyPrint()],
+                    register_name if register_name != oid else None,
+                )
+            except Exception:  # pragma: no cover — defensive; must not break the reply
+                logger.warning("Failed to record SNMP SET for %s", device_id, exc_info=True)
+            if faulted_oid is None:
+                faulted_oid = oid
+        if faulted_oid is not None:
+            self._raise_for_exception_fault(faulted_oid)
+        raise smi_error.NotWritableError(idx=0)
 
 
 class _FaultAwareResponderMixin:
@@ -167,14 +199,25 @@ class _FaultAwareBulkCommandResponder(_FaultAwareResponderMixin, cmdrsp.BulkComm
     pass
 
 
+class _FaultAwareSetCommandResponder(_FaultAwareResponderMixin, cmdrsp.SetCommandResponder):
+    pass
+
+
 class SnmpAdapter(ProtocolAdapter):
-    """SNMPv2c command responder (agent). Responds to GET/GETNEXT/WALK."""
+    """SNMPv2c command responder (agent).
+
+    Serves GET/GETNEXT/GETBULK from the simulation engine's current values.
+    SET is accepted at the protocol level only to be recorded as a client
+    write attempt and then refused with ``notWritable`` (read-only simulator).
+    """
 
     def __init__(self, port: int = 10161, community: str = "public") -> None:
         super().__init__()
         self._port = port
         self._community = community
         self._running = False
+        # OID string → register address (write-event `address` field)
+        self._oid_addresses: dict[str, int] = {}
         # OID string → (device_id, register_name) mapping
         self._oid_map: dict[str, tuple[UUID, str]] = {}
         # OID string → data_type for O(1) lookup in resolve_oid
@@ -221,6 +264,7 @@ class SnmpAdapter(ProtocolAdapter):
                 _FaultAwareGetCommandResponder(self._snmp_engine, snmp_context),
                 _FaultAwareNextCommandResponder(self._snmp_engine, snmp_context),
                 _FaultAwareBulkCommandResponder(self._snmp_engine, snmp_context),
+                _FaultAwareSetCommandResponder(self._snmp_engine, snmp_context),
             )
             for responder in responders:
                 responder._ghost_adapter = self
@@ -243,8 +287,12 @@ class SnmpAdapter(ProtocolAdapter):
             except Exception:
                 logger.debug("Error closing SNMP transport dispatcher", exc_info=True)
             self._snmp_engine = None
+        from app.simulation import write_tracker
+        for device_id in self._device_oids:
+            write_tracker.clear(device_id)
         self._oid_map.clear()
         self._oid_data_types.clear()
+        self._oid_addresses.clear()
         self._device_oids.clear()
         self._sorted_oids.clear()
         self._sorted_oid_keys.clear()
@@ -279,6 +327,7 @@ class SnmpAdapter(ProtocolAdapter):
             # OID string for registers without a name.
             self._oid_map[oid] = (device_id, reg.name or oid)  # type: ignore[arg-type]
             self._oid_data_types[oid] = reg.data_type  # type: ignore[arg-type]
+            self._oid_addresses[oid] = reg.address  # type: ignore[index]
             device_oid_list.append(oid)  # type: ignore[arg-type]
 
         self._device_oids[device_id] = device_oid_list
@@ -295,7 +344,10 @@ class SnmpAdapter(ProtocolAdapter):
         for oid in oids:
             self._oid_map.pop(oid, None)
             self._oid_data_types.pop(oid, None)
+            self._oid_addresses.pop(oid, None)
         self._invalidate_sorted_oids()
+        from app.simulation import write_tracker
+        write_tracker.clear(device_id)
         logger.info(
             "SNMP: unregistered %d OIDs for device %s", len(oids), device_id
         )
