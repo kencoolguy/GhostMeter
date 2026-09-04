@@ -1,5 +1,59 @@
 # Development Log
 
+## 2026-09-04 — SNMP SET 無聲丟棄（#97）與 OPC UA NodeId 浮動（#98）
+
+### 背景
+
+在為 EnOL 準備各 protocol 斷路器的寫入測試時，實測發現兩件事：
+`snmpset` 對 GhostMeter 會 timeout 而不是收到錯誤；OPC UA 的 `breaker_command`
+是 `ns=2;i=40` 這種數字 id，重啟後會變。
+
+### 做了什麼
+
+**#97 SNMP SET**
+- 根因：`snmp_agent.py` 只註冊 Get / GetNext / GetBulk 三個 responder，沒有
+  `SetCommandResponder`，pysnmp 收到 SET PDU 找不到處理者就直接丟掉不回應；
+  `write_variables()` 回 `NoSuchObject` 的「拒絕」是從沒被呼叫過的死碼。
+- 修法：新增 `_FaultAwareSetCommandResponder`（沿用 mixin，timeout / intermittent /
+  delay 行為與 GET 一致）；`write_variables()` 對每個對得到 OID 的 varbind 呼叫
+  `write_tracker.record(device_id, "Set", register.address, [value.prettyPrint()],
+  register_name)`，之後 `raise smi_error.NotWritableError(idx=0)` → client 收到
+  `notWritable`（errorStatus 17）。`exception` 故障下先記錄再回 `genErr`。
+  新增 `_oid_addresses` 對照表提供 write-event 的 `address`；remove_device / stop 時
+  清掉該裝置的 write events（與其他 adapter 一致）。
+- 測試 `test_snmp_write_detection.py`（7）：真的透過 UDP 送 SET — notWritable 且有紀錄、
+  字串值以文字記錄、未知 OID notWritable 且不記錄、SET 後 GET 值不變、timeout 故障下
+  無回應也無紀錄（PDU 在到 MIB controller 前就被丟）、exception 故障回 genErr 仍記錄、
+  remove_device 清事件。
+
+**#98 OPC UA NodeId**
+- 根因：`add_object(ns_idx, name)` / `add_variable(ns_idx, name, …)` 只給 namespace
+  index，asyncua 用每個 namespace 一個遞增計數器配 `i=N`；resume 查詢沒有 ORDER BY、
+  運行中任何 add/remove 都會讓後續 node 位移。
+- 修法：`device_object_nodeid()` → `ns=<idx>;s=<slave_id>`、`register_nodeid()` →
+  `ns=<idx>;s=<slave_id>.<register_name>`，browse name 以 `ua.QualifiedName(name, ns)`
+  維持原樣。slave_id 在同 protocol port 內唯一，裝置名稱可改可重複所以不拿來當鍵。
+- 測試（`test_opcua_adapter.py` 新增 3）：id 等於預期字串且 client 可用
+  `ns=2;s=10.voltage_l1` 直接讀值、remove 後倒序重加與 server 重啟後 id 完全相同、
+  remove 後同 slave_id 可再加（string id 已釋放）。
+
+### 決策
+
+- SNMP SET 回 `notWritable` 而不是像 Modbus / BACnet 一樣「假裝成功」：SNMP 的
+  read-only 物件本來就該這樣回；EnOL 端會看到明確錯誤而不是 timeout。
+- OPC UA 用 slave_id 而非裝置名稱當 NodeId 鍵，接受一次性的 breaking change；
+  CHANGELOG / api-reference 已標示，部署後 EnOL 的 OPC UA 點位 NodeId 要換一次。
+- 記錄 SNMP 值用 `prettyPrint()`，Gauge32 等數值得到純數字字串，OctetString 得到文字。
+
+### 驗證
+
+- `ruff` clean；SNMP + OPC UA 相關套件 80 passed（含新測試 10）；完整後端套件 **504 passed**（host venv vs `ghostmeter_test`）。
+- 實機（本機 docker 以本分支 rebuild）：`snmpset` 對 ACB-SNMP-01 的 breaker_command 回
+  `Reason: notWritable (That object does not support modification)`，之後 `snmpget` 仍是引擎值 0，
+  write-events 出現 `('Set', 1, ['2'], 'breaker_command')`；未知 OID 同樣 notWritable 且不記錄。
+  OPC UA `ns=2;s=10.breaker_command` / `ns=2;s=10` 直接解析成功、三台 OPCUA-TEST 以
+  `ns=2;s=<slave>.voltage_l1` 讀值正常、client write 仍被記錄；兩台裝置停止後倒序啟動 id 不變。
+
 ## 2026-09-04 — Aggregate 資料模式：跨裝置 register 聚合（issue #95）
 
 ### 做了什麼

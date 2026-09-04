@@ -303,10 +303,21 @@ Base path: `/api/v1/devices`
 | `modbus_tcp` | 247 | Modbus unit identifier is a 1-byte field (1–247; 0 and 248–255 are broadcast/reserved) |
 | `bacnet` | 247 | Devices sit on a virtual BACnet/IP network keyed by a 1-byte MAC (`slave_id`); MAC 254 is reserved for the router |
 | `snmp` | none | Devices are keyed by OID, not slave_id — slave_id is a display label only |
-| `opcua` | none | Devices are keyed by node, not slave_id — slave_id is a display label only |
+| `opcua` | none | Devices are keyed by node; `slave_id` is the stable key in the node ids — object `ns=<idx>;s=<slave_id>`, variables `ns=<idx>;s=<slave_id>.<register_name>` (see OPC UA node addressing below) |
 | `mqtt` | none | Devices are keyed by topic, not slave_id — slave_id is a display label only |
 
 Each protocol also gets its own `port` value (see `DeviceSummary.port`), so `(slave_id, port)` uniqueness is scoped per protocol — e.g. a Modbus device and a BACnet device can both use `slave_id=5`. For SNMP/OPC UA/MQTT the practical ceiling is host memory and per-adapter event-loop throughput, not a coded limit.
+
+##### OPC UA node addressing
+
+Every OPC UA device is an Object under `Objects/GhostMeter` with one Variable per template register. NodeIds are **stable string ids keyed by `slave_id`** (issue #98), so they survive backend restarts and device add/remove:
+
+| Node | NodeId | Browse name |
+|------|--------|-------------|
+| Device object | `ns=<idx>;s=<slave_id>` | `<device name> (#<slave_id>)` (or `Device_<slave_id>` if no name) |
+| Register variable | `ns=<idx>;s=<slave_id>.<register_name>` | `<register_name>` |
+
+`<idx>` is the index of namespace `http://ghostmeter.local/opcua/` (`2` on a default server). Example: slave 10, register `breaker_command` → `ns=2;s=10.breaker_command`. Renaming a device changes only the browse name.
 
 #### `DeviceSummary` (response — list items)
 
@@ -521,7 +532,7 @@ Get register definitions for a device. Phase 3: values are always `null`.
 
 #### `GET /api/v1/devices/{device_id}/write-events`
 
-List recorded client write attempts for a device, newest first. The simulator is read-only: writes (Modbus FC05/06/15/16) are accepted-and-ignored, but each attempt is recorded in a per-device in-memory ring buffer (max 50). This is a **pure read** — it does not reset the unread count.
+List recorded client write attempts for a device, newest first. The simulator is read-only: Modbus (FC05/06/15/16), BACnet `WriteProperty` and OPC UA `Write` are accepted-and-ignored, SNMP `SET` is refused with `notWritable` — in every case the attempt is recorded in a per-device in-memory ring buffer (max 50). This is a **pure read** — it does not reset the unread count.
 
 **Path param:** `device_id` (UUID)
 
@@ -530,9 +541,9 @@ List recorded client write attempts for a device, newest first. The simulator is
 | Field | Type | Description |
 |-------|------|-------------|
 | `timestamp` | datetime | When the write was received (UTC) |
-| `operation` | string | Human-readable write operation label (e.g. `Write Register`, `Write Registers`, `Write Coil` for Modbus, `WriteProperty` for BACnet, `Write` for OPC UA) |
-| `address` | int | Modbus register/coil address, or BACnet object instance |
-| `values` | string[] | Stringified written values (Modbus words, coil `0`/`1`, or a BACnet float present-value) |
+| `operation` | string | Human-readable write operation label (e.g. `Write Register`, `Write Registers`, `Write Coil` for Modbus, `WriteProperty` for BACnet, `Write` for OPC UA, `Set` for SNMP) |
+| `address` | int | Modbus register/coil address, BACnet object instance, OPC UA / SNMP template register address |
+| `values` | string[] | Stringified written values (Modbus words, coil `0`/`1`, a BACnet float present-value, an OPC UA variant, or the SNMP value's `prettyPrint()` text) |
 | `register_name` | string\|null | Matching register/object name, or `null` if the address maps to none |
 
 **Error cases:**

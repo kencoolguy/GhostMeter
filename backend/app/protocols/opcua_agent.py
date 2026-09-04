@@ -64,6 +64,16 @@ def _coerce_to_range(value: float, vtype: ua.VariantType) -> float | int:
     return num
 
 
+def device_object_nodeid(ns_idx: int, slave_id: int) -> ua.NodeId:
+    """NodeId of a device's Object node: ``ns=<idx>;s=<slave_id>``."""
+    return ua.NodeId(str(slave_id), ns_idx)
+
+
+def register_nodeid(ns_idx: int, slave_id: int, register_name: str) -> ua.NodeId:
+    """NodeId of a register's Variable node: ``ns=<idx>;s=<slave_id>.<register_name>``."""
+    return ua.NodeId(f"{slave_id}.{register_name}", ns_idx)
+
+
 class OpcUaAdapter(ProtocolAdapter):
     """Single shared OPC UA server exposing all devices in one address space."""
 
@@ -157,15 +167,23 @@ class OpcUaAdapter(ProtocolAdapter):
 
         meta_name = self._device_meta.get(device_id)
         display_name = f"{meta_name} (#{slave_id})" if meta_name else f"Device_{slave_id}"
-        dev_obj = await self._folder.add_object(self._ns_idx, display_name)
+        # Stable string NodeIds keyed by slave_id (issue #98). asyncua would
+        # otherwise auto-number nodes in creation order, so ids shifted on every
+        # restart / device add-remove and broke clients that store NodeIds.
+        # slave_id is unique per protocol port; the display name is not (it can
+        # be renamed and duplicated), so it only feeds the browse name.
+        dev_obj = await self._folder.add_object(
+            device_object_nodeid(self._ns_idx, slave_id),
+            ua.QualifiedName(display_name, self._ns_idx),
+        )
         self._device_objects[device_id] = dev_obj
 
         for reg in registers:
             node_name = reg.name or f"reg_{reg.address}"
             vtype, caster = _TYPE_MAP.get(reg.data_type, (ua.VariantType.Double, float))
             var = await dev_obj.add_variable(
-                self._ns_idx,
-                node_name,
+                register_nodeid(self._ns_idx, slave_id, node_name),
+                ua.QualifiedName(node_name, self._ns_idx),
                 caster(0),
                 varianttype=vtype,
             )
