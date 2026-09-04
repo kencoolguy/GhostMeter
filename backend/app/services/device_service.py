@@ -21,6 +21,7 @@ from app.schemas.device import (
 from app.services import mqtt_service, simulation_profile_service
 from app.services.template_service import get_template as get_template_with_registers
 from app.simulation import simulation_engine
+from app.simulation.aggregate import AggregateCycleError
 
 logger = logging.getLogger(__name__)
 
@@ -413,6 +414,10 @@ async def register_device_runtime(
 
     try:
         await simulation_engine.start_device(device.id)
+    except AggregateCycleError:
+        # A configuration error, not a transient failure — surface it so the
+        # device is marked error instead of "running" with a dead simulation.
+        raise
     except Exception as e:
         logger.error("Failed to start simulation for device %s: %s", device.id, e)
 

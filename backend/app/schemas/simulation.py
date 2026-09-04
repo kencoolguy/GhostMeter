@@ -6,7 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-VALID_DATA_MODES = {"static", "random", "daily_curve", "computed", "accumulator"}
+from app.simulation.aggregate import AGGREGATE_OPS, DEFAULT_ON_MISSING, ON_MISSING_MODES
+
+VALID_DATA_MODES = {"static", "random", "daily_curve", "computed", "accumulator", "aggregate"}
 VALID_FAULT_TYPES = {"delay", "timeout", "exception", "intermittent"}
 
 
@@ -34,6 +36,47 @@ class SimulationConfigCreate(BaseModel):
         if v > 60000:
             raise ValueError("update_interval_ms must be <= 60000")
         return v
+
+    @model_validator(mode="after")
+    def validate_aggregate_params(self) -> "SimulationConfigCreate":
+        """Structural checks for ``aggregate`` mode_params (op / sources / on_missing).
+
+        Existence of the referenced devices and registers, plus cycle detection,
+        need the DB and live in ``simulation_service``. Rejecting shape errors
+        here returns a 422 at the API boundary instead of a silent 0.0 in the
+        engine.
+        """
+        if self.data_mode != "aggregate":
+            return self
+        params = self.mode_params
+
+        op = params.setdefault("op", "sum")
+        if op not in AGGREGATE_OPS:
+            raise ValueError(f"aggregate op must be one of {list(AGGREGATE_OPS)}")
+
+        sources = params.get("sources")
+        if not isinstance(sources, list) or not sources:
+            raise ValueError("aggregate sources must be a non-empty list of device names/ids")
+        if not all(isinstance(s, str) and s.strip() for s in sources):
+            raise ValueError("aggregate sources must be non-empty strings")
+        if len(set(sources)) != len(sources):
+            raise ValueError("aggregate sources must not contain duplicates")
+
+        register = params.get("register")
+        if register is not None and (not isinstance(register, str) or not register.strip()):
+            raise ValueError("aggregate register must be a non-empty string when given")
+
+        weight_register = params.get("weight_register")
+        if op == "weighted_avg":
+            if not isinstance(weight_register, str) or not weight_register.strip():
+                raise ValueError("aggregate weighted_avg requires a weight_register")
+        elif weight_register is not None:
+            raise ValueError("aggregate weight_register is only valid with op weighted_avg")
+
+        on_missing = params.setdefault("on_missing", DEFAULT_ON_MISSING)
+        if on_missing not in ON_MISSING_MODES:
+            raise ValueError(f"aggregate on_missing must be one of {list(ON_MISSING_MODES)}")
+        return self
 
 
 class SimulationConfigBatchSet(BaseModel):
